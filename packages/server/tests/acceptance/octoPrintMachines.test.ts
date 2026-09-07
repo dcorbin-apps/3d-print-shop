@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { startOctoPrintServer } from '@3d-print-shop/octoprint-sim';
 import type { OctoPrintServer } from '@3d-print-shop/octoprint-sim';
 import { JobStore } from '../../src/JobStore';
-import { OctoPrintMachines, apiKeyVariableFor } from '../../src/OctoPrintMachines';
+import { OctoPrintMachines } from '../../src/OctoPrintMachines';
 import type { OctoPrint } from '../../src/OctoPrint';
 
 // AIDEV-NOTE: a real socket to a real stand-in OctoPrint, because both claims here are about the
@@ -16,18 +16,17 @@ describe('reaching a printer', () => {
   let spool: string;
   let shop: JobStore;
   let machines: OctoPrintMachines;
-
-  const ORIGINAL_ENV = process.env;
+  let keys: Map<string, string>;
 
   async function addPrinter(name: string, address: string): Promise<void> {
     await shop.addPrinter({ name, buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address });
   }
 
   beforeEach(async () => {
-    process.env = { ...ORIGINAL_ENV, [apiKeyVariableFor('mk4')]: 'a-key' };
+    keys = new Map([['mk4', 'a-key']]);
     spool = await mkdtemp(path.join(tmpdir(), 'print-shop-machines-'));
     shop = new JobStore(spool);
-    machines = new OctoPrintMachines();
+    machines = new OctoPrintMachines(keys);
 
     server = await startOctoPrintServer(0, () => undefined);
     await addPrinter('mk4', `http://127.0.0.1:${server.port}`);
@@ -43,7 +42,6 @@ describe('reaching a printer', () => {
 
     await server?.close();
     server = undefined;
-    process.env = ORIGINAL_ENV;
     await rm(spool, { recursive: true, force: true });
   });
 
@@ -101,24 +99,15 @@ describe('reaching a printer', () => {
   });
 
   it('refuses a printer whose key was left blank', async () => {
-    process.env[apiKeyVariableFor('mk4')] = '  ';
+    keys.set('mk4', '  ');
 
-    await expect(machines.reach(await shop.printerNamed('mk4'))).rejects.toThrow('PRINT_SHOP_KEY_MK4');
+    await expect(machines.reach(await shop.printerNamed('mk4'))).rejects.toThrow('no API key for mk4');
   });
 
-  it('refuses a printer whose key nobody has set, naming the variable', async () => {
+  // Named rather than numbered, so an operator is told which file to put it in and under what.
+  it('refuses a printer nobody has given a key, saying where one goes', async () => {
     await addPrinter('mini', `http://127.0.0.1:${server!.port}`);
 
-    await expect(machines.reach(await shop.printerNamed('mini'))).rejects.toThrow('PRINT_SHOP_KEY_MINI');
-  });
-});
-
-describe('where a printer\'s key is read from', () => {
-  // Named after the printer, so a shop with several machines has one variable each.
-  it.each([
-    ['mk4', 'PRINT_SHOP_KEY_MK4'],
-    ['mini-2', 'PRINT_SHOP_KEY_MINI_2'],
-  ])('reads %s from %s', (printer, variable) => {
-    expect(apiKeyVariableFor(printer)).toBe(variable);
+    await expect(machines.reach(await shop.printerNamed('mini'))).rejects.toThrow('no API key for mini - the shop reads it from printer-keys.json');
   });
 });

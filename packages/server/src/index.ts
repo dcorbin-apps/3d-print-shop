@@ -1,7 +1,9 @@
-export { DEFAULT_PORT, LOOPBACK, UnusableRequest, createApi, serve } from './api.js';
+export { DEFAULT_PORT, LOOPBACK, NotAKnownCaller, NotTheirs, UnusableRequest, createApi, serve } from './api.js';
 export type { ShopHooks } from './api.js';
+export { CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersIn, defaultEtc, printerKeysIn } from './credentials.js';
+export type { Caller, Role } from './credentials.js';
 export { Foreman } from './Foreman.js';
-export { OctoPrintMachines, apiKeyVariableFor } from './OctoPrintMachines.js';
+export { OctoPrintMachines } from './OctoPrintMachines.js';
 export type { Machines } from './Foreman.js';
 export type { BuildVolume, Job, JobDetails, JobPhase, JobRecord, JobState, PrinterOutcome } from './Job.js';
 export { InvalidSubmission, generatedDisplayName, validateDetails } from './Job.js';

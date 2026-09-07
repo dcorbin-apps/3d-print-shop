@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -81,9 +81,9 @@ describe('the shop, running as its own process', () => {
     return (await runCommandSaying(args)).code;
   }
 
-  function runCommandSaying(args: string[]): Promise<{ code: number; stdout: string }> {
+  function runCommandSaying(args: string[], carrying: Record<string, string> = {}): Promise<{ code: number; stdout: string }> {
     return new Promise((resolve, reject) => {
-      const command = spawn('node', ['--import', 'tsx', SHOP, ...args]);
+      const command = spawn('node', ['--import', 'tsx', SHOP, ...args], { env: { ...process.env, ...carrying } });
       let stdout = '';
 
       command.stdout.on('data', (said: Buffer) => (stdout += said.toString()));
@@ -109,6 +109,14 @@ describe('the shop, running as its own process', () => {
 
   async function submitPlayerBox(shop: RunningShop): Promise<Response> {
     return submitGcode(shop, GCODE);
+  }
+
+  // 0600, because the shop refuses to read credentials anybody else could.
+  async function credentialsNaming(callers: { name: string; role: string; token: string }[]): Promise<string> {
+    const etc = await mkdtemp(path.join(tmpdir(), 'print-shop-etc-'));
+    await writeFile(path.join(etc, 'callers.json'), JSON.stringify(callers), { mode: 0o600 });
+
+    return etc;
   }
 
   async function submitGcode(shop: RunningShop, gcode: string): Promise<Response> {
@@ -214,21 +222,73 @@ describe('the shop, running as its own process', () => {
     expect(await over.json()).toEqual({ error: `gcode is longer than the ${oneMegabyte} bytes this shop takes` });
   }, 30_000);
 
-  // Nothing the shop answers is authenticated, so the interface it binds is the whole of the access
-  // control - which makes it the operator's decision rather than a default nobody sees.
+  // AIDEV-NOTE: the whole path a token travels - an environment variable, into HttpShop, onto the
+  // wire as a header, and back out as a role the shop enforces. Every other test of this reaches the
+  // routes with fetch and a hand-written header, which proves nothing about the client that clients
+  // actually use.
+  describe('an operator carrying a token', () => {
+    const ADMIN = 'dave-token';
+    const USER = 'gamebox-token';
+
+    async function guardedShop(): Promise<RunningShop> {
+      const etc = await credentialsNaming([
+        { name: 'dave', role: 'admin', token: ADMIN },
+        { name: 'gamebox', role: 'user', token: USER },
+      ]);
+      const shop = await startShopOver(spool, ['--etc', etc]);
+      started.push(shop);
+
+      return shop;
+    }
+
+    it('is let in when the token is one the shop knows', async () => {
+      const shop = await guardedShop();
+
+      const listing = await runCommandSaying(['printer', '--shop-url', shop.url, 'list'], { PRINT_SHOP_TOKEN: ADMIN });
+
+      expect(listing.code).toBe(0);
+    }, 30_000);
+
+    it('is refused when carrying no token at all', async () => {
+      const shop = await guardedShop();
+
+      expect(await runCommand(['printer', '--shop-url', shop.url, 'list'])).toBe(1);
+    }, 30_000);
+
+    // The role travels with the token: the same command, the same shop, a different caller.
+    it('is refused a printer command when the token is only a user', async () => {
+      const shop = await guardedShop();
+
+      const stopping = ['printer', '--shop-url', shop.url, 'stop', 'mk4', 'door is open'];
+
+      expect((await runCommandSaying(stopping, { PRINT_SHOP_TOKEN: USER })).code).toBe(1);
+    }, 30_000);
+  });
+
+  // Loopback is the default because nothing else is authenticated by default - so the interface it
+  // binds is the access control, and going past it is the operator's decision rather than a default.
   describe('where it listens', () => {
-    it('is loopback, so a shop nothing authenticates is not on the network', async () => {
+    it('is loopback, so a shop naming no callers is not on the network', async () => {
       expect((await shopIsRunning()).address).toBe('127.0.0.1');
+    }, 30_000);
+
+    // The pair that matters: past loopback, a shop that named nobody would be one ANYBODY could
+    // submit to, delete a printer on, or shut down - so it does not start at all.
+    it('will not go past loopback when nobody is named who may call', async () => {
+      const refused = await runCommandSaying(['serve', '--spool', spool, '--port', '0', '--listen', '::1', '--etc', spool]);
+
+      expect(refused.code).toBe(1);
     }, 30_000);
 
     // `::1` rather than an address off this machine: it proves the option is carried through to the
     // listener without a test that opens a port to the network.
     it('is the address --listen names, and it answers there', async () => {
-      const shop = await startShopOver(spool, ['--listen', '::1']);
+      const etc = await credentialsNaming([{ name: 'dave', role: 'admin', token: 'a-token' }]);
+      const shop = await startShopOver(spool, ['--listen', '::1', '--etc', etc]);
       started.push(shop);
 
       expect(shop.address).toBe('::1');
-      expect((await fetch(`${shop.url}/printers`)).status).toBe(200);
+      expect((await fetch(`${shop.url}/printers`, { headers: { authorization: 'Bearer a-token' } })).status).toBe(200);
     }, 30_000);
   });
 });

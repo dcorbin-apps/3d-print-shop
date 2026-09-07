@@ -2,11 +2,12 @@
 import { Command, InvalidArgumentError } from 'commander';
 import type { AddressInfo } from 'node:net';
 import { HttpShop, SHOP_URL_ENV, defaultShopUrl } from '@3d-print-shop/client';
-import { DEFAULT_PORT, serve } from './api.js';
+import { DEFAULT_PORT, LOOPBACK, serve } from './api.js';
 import { Foreman } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
 import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
+import { ETC_ENV, callersIn, defaultEtc, printerKeysIn } from './credentials.js';
 import { judgeJob, listJobs } from './jobAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { claimSpool } from './spoolLock.js';
@@ -42,15 +43,32 @@ export function createCLI(): Command {
       `the largest gcode it will take, and the room it keeps spare for one (or ${MAX_GCODE_ENV})`,
       readMegabytes
     )
-    .action(async (options: { port: number; listen?: string; spool?: string; maxGcode?: number }) => {
+    .option('--etc <path>', `where its credentials are kept (or ${ETC_ENV}; defaults to ${defaultEtc()})`)
+    .action(async (options: { port: number; listen?: string; spool?: string; maxGcode?: number; etc?: string }) => {
       const store = new JobStore(options.spool ?? defaultSpoolRoot(), { maxGcodeBytes: options.maxGcode });
+      const etc = options.etc ?? defaultEtc();
+
+      // AIDEV-NOTE: credentials are optional, and that is what lets a bare `serve` work on a machine
+      // nobody has set up yet - it answers on loopback, where the only callers are already on the
+      // box. Opening it past loopback with nobody named is the one combination refused: a shop on
+      // the network with no callers is one anybody can submit to, delete a printer on, or shut down.
+      //
+      // Not caught: a credentials file that is THERE and wrong stops the shop. Reading a typo as
+      // "nobody configured" would answer a mistake in the security file by removing the security.
+      const callers = await callersIn(etc);
+      const printerKeys = await printerKeysIn(etc);
+      const listenOn = options.listen ?? LOOPBACK;
+
+      if (listenOn !== LOOPBACK && (callers === undefined || callers.size === 0)) {
+        throw new Error(`--listen ${listenOn} reaches past this machine, and ${etc} names nobody who may call - so anyone could`);
+      }
 
       // Before anything else: a spool that is not there, or is already being served, is a shop that
       // must refuse to start rather than start and do damage.
       await store.ready();
       const releaseSpool = await claimSpool(options.spool ?? defaultSpoolRoot());
 
-      const machines = new OctoPrintMachines();
+      const machines = new OctoPrintMachines(printerKeys);
       const foreman = new Foreman(store, machines.reach);
 
       // AIDEV-NOTE: every change the API makes is a moment something might be startable, so the
@@ -79,7 +97,7 @@ export function createCLI(): Command {
         void foreman.watchersSettled().then(() => say(['3d-print-shop has stopped']));
       };
 
-      const shopServer = await serve(store, options.port, { changed: lookForWork, shutDown: stopTheShop }, options.listen);
+      const shopServer = await serve(store, options.port, { changed: lookForWork, shutDown: stopTheShop, callers }, listenOn);
 
       // What a supervised service is stopped with. `launchd` and `systemd` both send it, and one
       // that ignored it would be killed with prints still being watched.
@@ -91,7 +109,10 @@ export function createCLI(): Command {
       // because whether this shop can be reached from the network is the difference between the
       // default and `--listen`, and it is worth being able to see which one is running.
       const bound = shopServer.address() as AddressInfo;
-      say([`3d-print-shop is listening on ${bound.address}:${bound.port}`]);
+      say([
+        `3d-print-shop is listening on ${bound.address}:${bound.port}`,
+        callers === undefined ? `${etc} names no callers, so anyone reaching that address may ask anything` : `${callers.size} caller(s) may ask`,
+      ]);
 
       // A restart does not stop a machine. Prints that were already running are picked up first,
       // then anything that could start now - nothing else will wake this up until a change arrives.

@@ -1,14 +1,9 @@
 import { OctoPrint } from './OctoPrint.js';
+import { PRINTER_KEYS_FILE } from './credentials.js';
 import type { Machines } from './Foreman.js';
 import type { Printer } from './printing.js';
 import type { RegisteredPrinter } from './Printer.js';
 
-// AIDEV-NOTE: a key belongs in neither of a printer's files. `printer add` would put it in shell
-// history and in `ps`, and the spool is the shop's working directory rather than a credential store
-// - so it is named after the printer and read from the environment, the way the spool root is.
-export function apiKeyVariableFor(printerName: string): string {
-  return `PRINT_SHOP_KEY_${printerName.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
-}
 
 /**
  * Turns a registration into something that can actually be talked to.
@@ -21,6 +16,13 @@ export function apiKeyVariableFor(printerName: string): string {
 export class OctoPrintMachines {
   private readonly reached = new Map<string, { address: string; machine: OctoPrint }>();
 
+  // AIDEV-NOTE: a key belongs in neither of a printer's files. `printer add` would put it in shell
+  // history and in `ps`, and the spool is the shop's working directory rather than a credential
+  // store - so it is read from a file only its owner can read, and keyed by the printer's own name.
+  // It was an environment variable until that had to go into a launchd plist, which is world
+  // readable; see design/3d-print-shop.md.
+  constructor(private readonly keys: ReadonlyMap<string, string> = new Map()) {}
+
   readonly reach: Machines = async (printer: RegisteredPrinter): Promise<Printer> => {
     const already = this.reached.get(printer.name);
     if (already?.address === printer.address) return already.machine;
@@ -28,7 +30,7 @@ export class OctoPrintMachines {
     // The operator moved it. The old client is talking to the wrong machine.
     already?.machine.disconnect();
 
-    const machine = new OctoPrint({ baseUrl: printer.address, apiKey: apiKeyFor(printer.name) });
+    const machine = new OctoPrint({ baseUrl: printer.address, apiKey: this.keyFor(printer.name) });
     await machine.connect();
     this.reached.set(printer.name, { address: printer.address, machine });
 
@@ -45,14 +47,13 @@ export class OctoPrintMachines {
 
     this.reached.clear();
   }
-}
 
-function apiKeyFor(printerName: string): string {
-  const variable = apiKeyVariableFor(printerName);
-  const key = process.env[variable];
-  if (key === undefined || key.trim() === '') {
-    throw new Error(`no API key for ${printerName} - the shop reads it from ${variable}`);
+  private keyFor(printerName: string): string {
+    const key = this.keys.get(printerName);
+    if (key === undefined || key.trim() === '') {
+      throw new Error(`no API key for ${printerName} - the shop reads it from ${PRINTER_KEYS_FILE}, keyed by the printer's name`);
+    }
+
+    return key;
   }
-
-  return key;
 }

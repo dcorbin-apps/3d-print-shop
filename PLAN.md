@@ -39,15 +39,15 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### Security
 
-Nothing here is authenticated. Whoever can reach the port can submit work, delete a printer, or stop
-the shop mid-print - which is now only whoever is on the machine, `serve` having been shut to
-loopback, but `--listen` opens it again and a token is what makes that safe.
+A shop that names no callers answers anything, which is why it binds loopback unless told otherwise
+and refuses `--listen` past loopback with nobody named. What is left is what a token does not cover.
 
-- [ ] A token on the API — `PRINT_SHOP_TOKEN` beside `PRINT_SHOP_KEY_*`, checked in one middleware.
-  Cheap because every caller goes through `HttpShop`: one place to send it, one to check it. Two
-  audiences eventually — a client submits and reads; only an operator touches printers or shuts down
-- [ ] `POST /shutdown` first, if only one route gets a token. It needs no state and stops a shop that
-  is watching prints
+- [ ] Rotating a token means editing `callers.json` and restarting; there is no way to add or revoke
+  one while the shop runs. Re-reading the file on SIGHUP is the boring answer
+- [ ] Nothing generates a token. An operator invents one, and one invented by hand is one somebody
+  chose - `3d-print-shop token` printing 32 random bytes would cost nothing and remove that
+- [ ] A name is checked and then dropped. `request.caller` is set and read by nobody, waiting for
+  the logging below - which is the whole point of a name rather than a shared secret
 - [ ] Take the stored path from OctoPrint's answer instead of guessing it. `send()` throws the
   upload response away and everything downstream recomputes `remotePathFor(job)`, which is only
   right for as long as the shop's idea of what the printer stored matches the printer's. The

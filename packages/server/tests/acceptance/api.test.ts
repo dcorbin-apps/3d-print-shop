@@ -347,6 +347,106 @@ describe('the shop over HTTP', () => {
     });
   });
 
+  // AIDEV-NOTE: over real HTTP because what is being proven is what a request carrying a token does,
+  // and every route is reached the way a caller reaches it. The permission table is the security
+  // boundary, so what a `user` may NOT do is asserted route by route rather than in the general.
+  describe('who is asking', () => {
+    let guarded: Server;
+    let guardedUrl: string;
+
+    const ADMIN = 'dave-token';
+    const USER = 'gamebox-token';
+
+    beforeEach(async () => {
+      guarded = await serve(shop, 0, {
+        callers: new Map([
+          [ADMIN, { name: 'dave', role: 'admin' as const }],
+          [USER, { name: 'gamebox', role: 'user' as const }],
+        ]),
+      });
+      guardedUrl = `http://127.0.0.1:${(guarded.address() as AddressInfo).port}`;
+    });
+
+    afterEach(async () => {
+      await new Promise<void>((resolve) => guarded.close(() => resolve()));
+    });
+
+    function as(token: string | undefined, method: string, path: string, body?: unknown): Promise<Response> {
+      return fetch(`${guardedUrl}${path}`, {
+        method,
+        headers: {
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+          ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    }
+
+    it('refuses a caller carrying no token at all', async () => {
+      const response = await as(undefined, 'GET', '/jobs');
+
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({ error: 'this shop does not know that token' });
+    });
+
+    it('refuses a token it does not know', async () => {
+      expect((await as('made-up', 'GET', '/jobs')).status).toBe(401);
+    });
+
+    // The same answer either way, so a caller cannot learn which tokens exist by watching for a
+    // different refusal.
+    it('says the same thing to a bad token as to none', async () => {
+      const missing = await as(undefined, 'GET', '/jobs');
+      const wrong = await as('made-up', 'GET', '/jobs');
+
+      expect(await wrong.json()).toEqual(await missing.json());
+    });
+
+    it.each([
+      ['GET', '/jobs'],
+      ['GET', '/jobs/1'],
+      ['GET', '/printers'],
+    ])('lets a user %s %s', async (method, path) => {
+      expect((await as(USER, method, path)).status).not.toBe(403);
+    });
+
+    it('lets a user submit a job', async () => {
+      const body = new FormData();
+      body.append('job', JSON.stringify(playerBox));
+      body.append('gcode', new Blob(['G1\n']), 'print.gcode');
+
+      const response = await fetch(`${guardedUrl}/jobs`, { method: 'POST', body, headers: { authorization: `Bearer ${USER}` } });
+
+      expect(response.status).toBe(201);
+    });
+
+    it.each([
+      ['POST', '/shutdown', {}],
+      ['PUT', '/jobs/1/verdict', { verdict: 'approved' }],
+      ['POST', '/printers', { name: 'mini', buildVolume: MK4, address: 'http://mini' }],
+      ['DELETE', '/printers/mk4', undefined],
+      ['PUT', '/printers/mk4/filament', { loaded: ['PLA'] }],
+      ['PUT', '/printers/mk4/status', { stopped: true, reason: 'door' }],
+    ])('will not let a user %s %s', async (method, path, body) => {
+      const response = await as(USER, method, path, body);
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: `${method} ${path} is for an admin, and gamebox is not one` });
+    });
+
+    it.each([
+      ['PUT', '/printers/mk4/filament', { loaded: ['PLA'] }],
+      ['PUT', '/printers/mk4/status', { stopped: true, reason: 'door' }],
+    ])('lets an admin %s %s', async (method, path, body) => {
+      expect((await as(ADMIN, method, path, body)).status).toBe(200);
+    });
+
+    // A route nobody classified needs an admin, so forgetting one makes the shop stricter.
+    it('needs an admin for a route it has never heard of', async () => {
+      expect((await as(USER, 'POST', '/something-added-later')).status).toBe(403);
+    });
+  });
+
   // The spool root is made when the shop is installed and never by the shop - so a missing one is a
   // machine that was never set up, which is the service's fault and not the client's.
   describe('when the shop was never installed', () => {

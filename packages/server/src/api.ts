@@ -5,6 +5,7 @@ import type { Server } from 'node:http';
 import { InvalidSubmission } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
 import { NoSuchJob, NoSuchPrinter, SpoolUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
+import type { Caller } from './credentials.js';
 import type { JobStore } from './JobStore.js';
 import { DEFAULT_PORT } from '@3d-print-shop/client';
 import type { PrinterRecord } from './Printer.js';
@@ -51,12 +52,50 @@ export { DEFAULT_PORT } from '@3d-print-shop/client';
 // AIDEV-NOTE: the printing loop is deliberately absent. startPrinting, couldNotStart,
 // finishedPrinting and the gcode itself are the loop's own bookkeeping, and publishing them would
 // invite a second writer into a store built for one - see design/3d-print-shop.md, "The API".
+/** Nobody presented a token this shop knows. */
+export class NotAKnownCaller extends Error {}
+
+/** A caller this shop knows, asking for something their role does not cover. */
+export class NotTheirs extends Error {}
+
+// AIDEV-NOTE: the USER-permitted routes are the list, not the admin ones - so a route nobody
+// classified needs admin, and forgetting makes the shop stricter rather than looser. The same
+// worry as the `changed` hook below (a list somebody forgets to add to), answered the other way:
+// there, a miss costs a wake-up; here, a miss would hand a submitting client the shutdown button.
+const OPEN_TO_EVERY_CALLER: ReadonlyArray<{ method: string; path: RegExp }> = [
+  { method: 'POST', path: /^\/jobs$/ },
+  { method: 'GET', path: /^\/jobs$/ },
+  { method: 'GET', path: /^\/jobs\/[^/]+$/ },
+  { method: 'GET', path: /^\/printers$/ },
+];
+
+function needsAdmin(method: string, urlPath: string): boolean {
+  return !OPEN_TO_EVERY_CALLER.some((open) => open.method === method && open.path.test(urlPath));
+}
+
+// AIDEV-NOTE: `Bearer` because it is what every HTTP client already knows how to send, and because
+// a header keeps the token out of a URL - which is where things get logged, cached and pasted.
+function tokenIn(header: string | undefined): string | undefined {
+  const said = /^Bearer (.+)$/.exec(header ?? '');
+
+  return said?.[1];
+}
+
 /** What the shop tells whoever is running it. */
 export interface ShopHooks {
   /** Told after every change, so something can decide whether a print could start. */
   changed?: () => void;
   /** Told to shut the shop down. Answered before it happens, because it cannot be answered after. */
   shutDown?: () => void;
+  /** Who may talk to this shop, by their token. Absent means anyone reaching the port may. */
+  callers?: ReadonlyMap<string, Caller>;
+}
+
+declare module 'express-serve-static-core' {
+  interface Request {
+    /** Who is asking, once a token has said so. Absent when the shop has no callers configured. */
+    caller?: Caller;
+  }
 }
 
 export function createApi(shop: JobStore, hooks: ShopHooks = {}): Express {
@@ -64,6 +103,25 @@ export function createApi(shop: JobStore, hooks: ShopHooks = {}): Express {
   api.use(express.json());
 
   const changed = hooks.changed ?? ((): void => undefined);
+  const callers = hooks.callers;
+
+  // AIDEV-NOTE: before everything, so no route has to remember. A shop given no callers at all is
+  // one nobody has set up credentials for - it answers on loopback and refuses nothing, which is
+  // what makes a bare `serve` work on a fresh machine; cli.ts is what refuses to open that to the
+  // network. Who asked is put on the request rather than used here: the log has nowhere to write it
+  // yet, and a name in an ANSWER would tell an unauthenticated caller which names exist.
+  api.use((request, _response, next) => {
+    if (callers === undefined) return next();
+
+    const caller = callers.get(tokenIn(request.header('authorization')) ?? '');
+    if (caller === undefined) throw new NotAKnownCaller('this shop does not know that token');
+    if (needsAdmin(request.method, request.path) && caller.role !== 'admin') {
+      throw new NotTheirs(`${request.method} ${request.path} is for an admin, and ${caller.name} is not one`);
+    }
+
+    request.caller = caller;
+    next();
+  });
 
   // AIDEV-NOTE: told once, here, for every request that CHANGED something - rather than from each
   // route that happens to change something. A per-route list is a list somebody forgets to add to,
@@ -304,6 +362,8 @@ function statusFor(error: unknown): number {
   // A shop whose spool is not there was never installed. That is the machine's fault, not the
   // client's, and a client that retries later is doing the right thing.
   if (error instanceof SpoolUnavailable) return 503;
+  if (error instanceof NotAKnownCaller) return 401;
+  if (error instanceof NotTheirs) return 403;
   if (error instanceof TooMuchToTake) return 413;
   if (error instanceof InvalidSubmission || error instanceof UnusableRequest) return 400;
   // What express.json() throws at a body that is not JSON; it carries the offending body.

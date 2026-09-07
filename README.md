@@ -62,6 +62,26 @@ same spool is refused and a crash leaves nothing to clean up.
 Every command but `serve` is a client of a running shop and takes `--shop-url` (or `PRINT_SHOP_URL`;
 `http://localhost:7373` by default). Only `serve` names a spool, because only `serve` holds one.
 
+**Who may call it** is `/etc/3d-print-shop/callers.json`, a list of names, roles and tokens:
+
+```json
+[ { "name": "gamebox", "role": "user",  "token": "..." },
+  { "name": "dave",    "role": "admin", "token": "..." } ]
+```
+
+A `user` submits jobs and reads what the shop holds. An `admin` does everything else - printers,
+verdicts, and shutting down. A caller presents its token as `Authorization: Bearer ...`, which
+`HttpShop` sends for you from `PRINT_SHOP_TOKEN` or `~/.config/3d-print-shop/token`.
+
+The shop's own credentials for reaching each printer are a separate file,
+`/etc/3d-print-shop/printer-keys.json`, keyed by the printer's name - separate because copying the
+first file to a client machine should not hand it every printer's key. Both are 0600, and the shop
+refuses to read either if anybody else can.
+
+**No `callers.json` means no authentication**, which is what lets a fresh install run: it answers
+whatever reaches it. That is safe on loopback and nowhere else, so `--listen` past loopback with
+nobody named refuses to start.
+
 **The shop listens on loopback.** Nothing it answers is authenticated, so whoever can reach the port
 can submit work, delete a printer, or stop the shop mid-print - and `127.0.0.1` keeps that to the
 machine it runs on. `serve --listen <address>` says otherwise, and `--listen 0.0.0.0` puts an

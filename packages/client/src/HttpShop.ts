@@ -1,13 +1,20 @@
 import type { Job, JobDetails, Verdict } from './Job.js';
 import type { PrinterRecord, RegisteredPrinter } from './Printer.js';
 import type { PrinterAdded, Shop } from './Shop.js';
+import { defaultToken } from './token.js';
 
 const DESCRIPTION_PART = 'job';
 const GCODE_PART = 'gcode';
 
 /** The shop over its HTTP API, which is the only way in - it runs as its own process. */
 export class HttpShop implements Shop {
-  constructor(private readonly url: string) {}
+  // AIDEV-NOTE: the token is taken once, here, so every request carries it without a caller
+  // remembering to. Undefined is a caller that has none, which a shop with no callers configured
+  // answers anyway - so a first run needs no setting up, and a shop that HAS callers refuses it.
+  constructor(
+    private readonly url: string,
+    private readonly token: string | undefined = defaultToken()
+  ) {}
 
   async jobs(): Promise<Job[]> {
     return ((await this.answered('GET', '/jobs')) as WireJob[]).map(asJob);
@@ -86,8 +93,14 @@ export class HttpShop implements Shop {
   }
 
   private async attempt(method: string, path: string, body?: unknown): Promise<Response> {
+    const sent = sending(body);
+
     try {
-      return await fetch(`${this.url}${path}`, { method, ...sending(body) });
+      return await fetch(`${this.url}${path}`, {
+        method,
+        ...sent,
+        headers: { ...sent.headers, ...(this.token === undefined ? {} : { authorization: `Bearer ${this.token}` }) },
+      });
     } catch {
       throw new Error(`Cannot reach the print shop at ${this.url}. Is it running? Start it with: 3d-print-shop serve`);
     }
