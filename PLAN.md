@@ -10,6 +10,12 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The service
 
+- [ ] SIGTERM does not always end the process. `disconnect()` sets `disconnectRequested` and closes
+  the socket, but nothing cancels a reconnect backoff that is already pending - and the default delay
+  is a bare `setTimeout`, so an armed timer holds the event loop open for up to the 60s cap after the
+  shop has finished shutting down. Seen for real: of seven shops left pointing at a sim that had
+  gone, two exited on SIGTERM and five had to be killed. A supervisor would do the same, mid-print.
+  `OctoPrint.disconnect()` needs to cancel the pending delay, which means the timer has to be held
 - [ ] Resume a stopped printer from its own status rather than only on an operator's word
 - [ ] Positional filaments, when there is a printer with more than one extruder. Scheduling uses
   only a job's FIRST filament today, which is right for one extruder and wrong for several: the
