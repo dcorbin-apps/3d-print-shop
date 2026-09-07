@@ -67,6 +67,11 @@ can submit work, delete a printer, or stop the shop mid-print - and `127.0.0.1` 
 machine it runs on. `serve --listen <address>` says otherwise, and `--listen 0.0.0.0` puts an
 unauthenticated shop on the network, which is a thing to decide rather than a thing to default to.
 
+**It takes gcode up to 128MB**, and keeps that much room spare on the spool before accepting any
+job — the spool is how the shop survives a restart, so filling it would lose everything it holds,
+not just the job that overflowed. `serve --max-gcode <megabytes>` (or `PRINT_SHOP_MAX_GCODE_MB`)
+raises it. OctoPrint's own default is 1GB, so the shop is the binding limit until then.
+
 **A verdict is not a formality.** A printer holds its bed until a person has judged what came off it,
 so a shop nobody gives verdicts to prints one thing per machine and then stops.
 

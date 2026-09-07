@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, jest } from '@jest/globals';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -243,6 +243,107 @@ describe('the shop over HTTP', () => {
       await send('POST', '/shutdown', {});
 
       expect(mockChanged).not.toHaveBeenCalled();
+    });
+  });
+
+  // AIDEV-NOTE: the spool IS the recovery model, so an upload that fills it loses every job the shop
+  // is holding and not only the one that overflowed. These are the limits that stop that, driven
+  // over real HTTP because what is being proven is where the bytes stop - not that a number was set.
+  describe('a submission bigger than the shop will take', () => {
+    let small: Server;
+    let smallUrl: string;
+
+    // Small enough that the test sends bytes rather than megabytes; the rule under test is the same.
+    const CAP = 64;
+
+    beforeEach(async () => {
+      const store = new JobStore(spool, { maxGcodeBytes: CAP });
+      await store.addPrinter({ name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS });
+      small = await serve(store, 0);
+      smallUrl = `http://127.0.0.1:${(small.address() as AddressInfo).port}`;
+    });
+
+    afterEach(async () => {
+      await new Promise<void>((resolve) => small.close(() => resolve()));
+    });
+
+    async function submitTo(url: string, body: FormData): Promise<Response> {
+      return fetch(`${url}/jobs`, { method: 'POST', body });
+    }
+
+    function submission(gcode: string): FormData {
+      const body = new FormData();
+      body.append('job', JSON.stringify(playerBox));
+      body.append('gcode', new Blob([gcode]), 'print.gcode');
+      return body;
+    }
+
+    // The description arrives before the gcode by contract, so refusing an outsized one is refusing
+    // before anything has been written - which is why this one may refuse where a part count cannot.
+    it('refuses a description longer than it will read', async () => {
+      const body = new FormData();
+      body.append('job', JSON.stringify({ ...playerBox, metadata: { padding: 'x'.repeat(1024 * 1024) } }));
+      body.append('gcode', new Blob(['G1\n']), 'print.gcode');
+
+      const response = await submitTo(smallUrl, body);
+
+      expect(response.status).toBe(413);
+      expect(await response.json()).toEqual({ error: `the job part is longer than ${1024 * 1024} bytes` });
+    });
+
+    it('takes one exactly as big as the cap', async () => {
+      expect((await submitTo(smallUrl, submission('G'.repeat(CAP)))).status).toBe(201);
+    });
+
+    it('refuses one a single byte over', async () => {
+      const response = await submitTo(smallUrl, submission('G'.repeat(CAP + 1)));
+
+      expect(response.status).toBe(413);
+      expect(await response.json()).toEqual({ error: `gcode is longer than the ${CAP} bytes this shop takes` });
+    });
+
+    // busboy truncates at the cap and ends the stream as though the file were whole, so the danger
+    // is not a rejected job - it is an ACCEPTED one holding half a print.
+    it('keeps nothing at all of one it refused', async () => {
+      await submitTo(smallUrl, submission('G'.repeat(CAP + 1)));
+
+      expect(await (await fetch(`${smallUrl}/jobs`)).json()).toEqual([]);
+      await expect(readdir(path.join(spool, 'jobs'))).resolves.toEqual([]);
+    });
+
+    // Past the part count busboy discards rather than raising, which is the same thing that already
+    // happens to a part with a name the shop does not read. The first gcode part is the submission.
+    it('ignores a second gcode part rather than refusing a job it has already taken', async () => {
+      const body = submission('G1\n');
+      body.append('gcode', new Blob(['G2\n']), 'other.gcode');
+
+      const response = await submitTo(smallUrl, body);
+
+      expect(response.status).toBe(201);
+      expect(await response.json()).toMatchObject({ id: 1, gcodeBytes: 3 });
+    });
+  });
+
+  // A full disk is the machine's fault, not the client's, so it is told to come back rather than
+  // told it did something wrong. Room for the BIGGEST job, because this one's size is not yet known.
+  describe('when the spool has no room left', () => {
+    it('takes nothing, and says to come back later', async () => {
+      const full = new JobStore(spool, { maxGcodeBytes: 1024, freeBytes: () => Promise.resolve(512) });
+      const server = await serve(full, 0);
+
+      try {
+        const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+        const body = new FormData();
+        body.append('job', JSON.stringify(playerBox));
+        body.append('gcode', new Blob(['G1\n']), 'print.gcode');
+
+        const response = await fetch(`${url}/jobs`, { method: 'POST', body });
+
+        expect(response.status).toBe(503);
+        expect(await response.json()).toEqual({ error: `${spool} has 512 bytes free, and the shop keeps 1024 spare for a job` });
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
     });
   });
 

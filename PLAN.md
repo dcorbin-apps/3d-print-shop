@@ -48,9 +48,6 @@ loopback, but `--listen` opens it again and a token is what makes that safe.
   audiences eventually — a client submits and reads; only an operator touches printers or shuts down
 - [ ] `POST /shutdown` first, if only one route gets a token. It needs no state and stops a shop that
   is watching prints
-- [ ] Limits on the upload. `busboy` is given none, so a submission writes into the spool until the
-  disk is full — and the spool is the whole recovery model. A file count, a size, and a check that
-  there is room before accepting
 - [ ] Take the stored path from OctoPrint's answer instead of guessing it. `send()` throws the
   upload response away and everything downstream recomputes `remotePathFor(job)`, which is only
   right for as long as the shop's idea of what the printer stored matches the printer's. The

@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { InvalidSubmission } from '../src/Job';
 import type { BuildVolume, JobDetails, PrinterOutcome } from '../src/Job';
-import { JobStore, NoSuchJob, NoSuchPrinter, SpoolUnavailable, WrongState } from '../src/JobStore';
+import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, SpoolUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
 
 async function readAll(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -496,5 +496,30 @@ describe('JobStore', () => {
 
       await expect(fs.stat(path.join(tmpdir(), 'print-shop-that-was-never-installed'))).rejects.toThrow();
     });
+  });
+});
+
+describe('the largest gcode a shop takes', () => {
+  const wasSaid = process.env[MAX_GCODE_ENV];
+
+  afterEach(() => {
+    if (wasSaid === undefined) delete process.env[MAX_GCODE_ENV];
+    else process.env[MAX_GCODE_ENV] = wasSaid;
+  });
+
+  it('is 128MB when nothing says otherwise', () => {
+    delete process.env[MAX_GCODE_ENV];
+    expect(defaultMaxGcodeBytes()).toBe(128 * 1024 * 1024);
+  });
+
+  it('is what the environment says, in megabytes', () => {
+    process.env[MAX_GCODE_ENV] = '512';
+    expect(defaultMaxGcodeBytes()).toBe(512 * 1024 * 1024);
+  });
+
+  // A shop that refused every job, or read a typo as one, is worse than one using its default.
+  it.each([['0'], ['plenty'], ['']])('falls back to the default when told %p', (said) => {
+    process.env[MAX_GCODE_ENV] = said;
+    expect(defaultMaxGcodeBytes()).toBe(128 * 1024 * 1024);
   });
 });

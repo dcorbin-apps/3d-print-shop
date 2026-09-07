@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -8,6 +8,39 @@ import type { BuildVolume, Job, JobDetails, JobRecord, PrinterOutcome } from './
 import { canTake } from './Printer.js';
 import type { Holding, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
 import { defaultSpoolRoot } from './spoolRoot.js';
+
+// AIDEV-NOTE: the largest gcode this shop will take, and so also the room it insists on having
+// before it takes any. A kit runs to tens of megabytes, so the default is several times the biggest
+// thing expected rather than a number anyone should meet - an operator whose slicer outgrows it
+// raises it, and the spool's filesystem is what has to afford it.
+const DEFAULT_MAX_GCODE_MB = 128;
+
+export const MAX_GCODE_ENV = 'PRINT_SHOP_MAX_GCODE_MB';
+
+/**
+ * The largest gcode this shop takes, in bytes. Said in whole megabytes because that is the unit a
+ * gcode file is discussed in, and an operator raising it should not have to count zeroes.
+ *
+ * OctoPrint itself takes 1GB by default (`server.uploads.maxSize`), so this is the binding limit
+ * until it is raised past that.
+ */
+export function defaultMaxGcodeBytes(): number {
+  const said = process.env[MAX_GCODE_ENV];
+  const megabytes = said !== undefined && /^\d+$/.test(said) && Number(said) > 0 ? Number(said) : DEFAULT_MAX_GCODE_MB;
+
+  return megabytes * 1024 * 1024;
+}
+
+/** What a shop will hold, and how it finds out. Overridden by tests, which have neither the disk nor the patience. */
+export interface SpoolLimits {
+  maxGcodeBytes?: number;
+  freeBytes?: (root: string) => Promise<number>;
+}
+
+async function spaceFreeOn(root: string): Promise<number> {
+  const room = await statfs(root);
+  return room.bavail * room.bsize;
+}
 
 const JOBS_DIR = 'jobs';
 const PRINTERS_DIR = 'printers';
@@ -26,6 +59,9 @@ export class NoPrinterCanTakeIt extends InvalidSubmission {}
 export class WrongState extends Error {}
 export class SpoolUnavailable extends Error {}
 
+/** More than the shop will hold. Not a malformed request - just a bigger one than it takes. */
+export class TooMuchToTake extends Error {}
+
 /**
  * Everything the shop is holding, on disk. One directory per job and one per printer, so reading it
  * back is a scan and surviving a restart costs nothing - there is no index to keep in step.
@@ -37,7 +73,18 @@ export class JobStore {
   // and nothing here supports that.
   private changing: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly root: string = defaultSpoolRoot()) {}
+  /** The largest gcode this shop takes. Read by whatever is receiving an upload, so it can stop one. */
+  readonly maxGcodeBytes: number;
+
+  private readonly freeBytes: (root: string) => Promise<number>;
+
+  constructor(
+    private readonly root: string = defaultSpoolRoot(),
+    limits: SpoolLimits = {}
+  ) {
+    this.maxGcodeBytes = limits.maxGcodeBytes ?? defaultMaxGcodeBytes();
+    this.freeBytes = limits.freeBytes ?? spaceFreeOn;
+  }
 
   /**
    * The details are checked before a byte is read; the gcode is streamed straight to disk, never
@@ -47,6 +94,7 @@ export class JobStore {
   async submit(details: JobDetails, gcode: Readable): Promise<Job> {
     validateDetails(details);
     await this.requireSpool();
+    await this.requireRoomForOne();
     await this.requireSomePrinterCouldTakeIt(details);
 
     const id = await this.serialised(() => this.allocateId());
@@ -54,7 +102,7 @@ export class JobStore {
     await mkdir(directory, { recursive: true });
 
     try {
-      const gcodeBytes = await streamToFile(gcode, path.join(directory, GCODE_FILE));
+      const gcodeBytes = await streamToFile(gcode, path.join(directory, GCODE_FILE), this.maxGcodeBytes);
       if (gcodeBytes === 0) {
         throw new InvalidSubmission('a job needs gcode, and the stream delivered none');
       }
@@ -336,6 +384,19 @@ export class JobStore {
     }
   }
 
+  // AIDEV-NOTE: room for the BIGGEST job it would accept, not for this one - the size of an upload
+  // is not known until it has arrived, and by then it is already on the disk. Refusing early keeps
+  // the shop from filling the spool it recovers from, which would lose every job it is holding and
+  // not only the one that overflowed. A full disk is the machine's problem, so a client is told to
+  // come back later rather than told it did something wrong.
+  private async requireRoomForOne(): Promise<void> {
+    const free = await this.freeBytes(this.root);
+
+    if (free < this.maxGcodeBytes) {
+      throw new SpoolUnavailable(`${this.root} has ${free} bytes free, and the shop keeps ${this.maxGcodeBytes} spare for a job`);
+    }
+  }
+
   private async allocateId(): Promise<number> {
     const file = path.join(this.root, NEXT_ID_FILE);
     const next = await readFile(file, 'utf-8')
@@ -397,12 +458,20 @@ function asJob(record: JobRecord, printers: RegisteredPrinter[]): Job {
 // half way leaves nothing that looks like a finished file.
 //
 // Counting here rather than trusting a Content-Length: the bytes that arrived are what was stored.
-async function streamToFile(source: Readable, file: string): Promise<number> {
+async function streamToFile(source: Readable, file: string, limit: number): Promise<number> {
   const scratch = `${file}.writing`;
   let bytes = 0;
 
+  // AIDEV-NOTE: the cap is enforced where the bytes are already being counted, and enforced by
+  // failing the stream the write is reading - so the failure lands inside the pipeline below and
+  // unwinds the half-written job with everything else. Refusing it any earlier does not work: a
+  // stream destroyed before pipeline() is attached leaves it neither resolved nor rejected, and the
+  // request simply never answers. Measured, and it cost an afternoon.
   source.on('data', (chunk: Buffer | string) => {
     bytes += Buffer.byteLength(chunk);
+    if (bytes > limit) {
+      source.destroy(new TooMuchToTake(`gcode is longer than the ${limit} bytes this shop takes`));
+    }
   });
 
   await pipeline(source, createWriteStream(scratch));

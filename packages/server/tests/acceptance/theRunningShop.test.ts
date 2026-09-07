@@ -108,9 +108,13 @@ describe('the shop, running as its own process', () => {
   }
 
   async function submitPlayerBox(shop: RunningShop): Promise<Response> {
+    return submitGcode(shop, GCODE);
+  }
+
+  async function submitGcode(shop: RunningShop, gcode: string): Promise<Response> {
     const body = new FormData();
     body.append('job', JSON.stringify({ filaments: ['PLA-SpaceGray'], displayName: 'Player Box' }));
-    body.append('gcode', new Blob([GCODE]), 'print.gcode');
+    body.append('gcode', new Blob([gcode]), 'print.gcode');
 
     return fetch(`${shop.url}/jobs`, { method: 'POST', body });
   }
@@ -193,6 +197,21 @@ describe('the shop, running as its own process', () => {
     const again = await shopIsRunning();
 
     expect(await (await fetch(`${again.url}/jobs`)).json()).toMatchObject([{ id: 1, displayName: 'Player Box', state: 'queued' }]);
+  }, 30_000);
+
+  // The cap belongs to the operator: a slicer that outgrows the default has to be able to say so,
+  // and the shop keeps that much room spare on the spool for every job it accepts.
+  it('takes gcode up to the size --max-gcode names, and no more', async () => {
+    const shop = await startShopOver(spool, ['--max-gcode', '1']);
+    started.push(shop);
+    await addMk4(shop);
+
+    const oneMegabyte = 1024 * 1024;
+    expect((await submitGcode(shop, 'G'.repeat(oneMegabyte))).status).toBe(201);
+
+    const over = await submitGcode(shop, 'G'.repeat(oneMegabyte + 1));
+    expect(over.status).toBe(413);
+    expect(await over.json()).toEqual({ error: `gcode is longer than the ${oneMegabyte} bytes this shop takes` });
   }, 30_000);
 
   // Nothing the shop answers is authenticated, so the interface it binds is the whole of the access

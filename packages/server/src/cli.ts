@@ -6,7 +6,7 @@ import { DEFAULT_PORT, serve } from './api.js';
 import { Foreman } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
-import { JobStore } from './JobStore.js';
+import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
 import { judgeJob, listJobs } from './jobAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { claimSpool } from './spoolLock.js';
@@ -37,8 +37,13 @@ export function createCLI(): Command {
     // No default here: serve() holds it, and a second copy of an address is a second thing to change.
     .option('--listen <address>', 'the address to listen on - loopback unless said otherwise, and anything else is on the network')
     .option('--spool <path>', `where the shop keeps its work (or ${SPOOL_ROOT_ENV}; defaults to ${defaultSpoolRoot()})`)
-    .action(async (options: { port: number; listen?: string; spool?: string }) => {
-      const store = new JobStore(options.spool ?? defaultSpoolRoot());
+    .option(
+      '--max-gcode <megabytes>',
+      `the largest gcode it will take, and the room it keeps spare for one (or ${MAX_GCODE_ENV})`,
+      readMegabytes
+    )
+    .action(async (options: { port: number; listen?: string; spool?: string; maxGcode?: number }) => {
+      const store = new JobStore(options.spool ?? defaultSpoolRoot(), { maxGcodeBytes: options.maxGcode });
 
       // Before anything else: a spool that is not there, or is already being served, is a shop that
       // must refuse to start rather than start and do damage.
@@ -187,6 +192,16 @@ export function readJobId(value: string): number {
   }
 
   return Number(value);
+}
+
+// In whole megabytes, because that is the unit gcode is talked about in. Zero would be a shop that
+// refuses everything, which is a typo rather than a thing anyone means.
+export function readMegabytes(value: string): number {
+  if (!/^\d+$/.test(value) || Number(value) === 0) {
+    throw new InvalidArgumentError(`cannot read "${value}" as a number of megabytes`);
+  }
+
+  return Number(value) * 1024 * 1024;
 }
 
 // Digits and nothing else, because Number() reads an empty --port as 0 - which listens on whatever

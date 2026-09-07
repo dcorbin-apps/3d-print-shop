@@ -4,7 +4,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import type { Server } from 'node:http';
 import { InvalidSubmission } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
-import { NoSuchJob, NoSuchPrinter, SpoolUnavailable, WrongState } from './JobStore.js';
+import { NoSuchJob, NoSuchPrinter, SpoolUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
 import type { JobStore } from './JobStore.js';
 import { DEFAULT_PORT } from '@3d-print-shop/client';
 import type { PrinterRecord } from './Printer.js';
@@ -17,6 +17,27 @@ export class UnusableRequest extends Error {}
 // of the access control - so it is loopback, and reaching further is something an operator asks for
 // with `serve --listen`.
 export const LOOPBACK = '127.0.0.1';
+
+// AIDEV-NOTE: busboy is given no limits of its own accord, and without them a submission writes
+// into the spool until the disk is full - which loses every job the shop is holding, because the
+// spool IS the recovery model. These are the shape of a submission rather than a guess: one file,
+// one description, and enough slack that a client adding a part is told so instead of being cut off.
+// AIDEV-NOTE: these bound what a submission may cost, and busboy DISCARDS what is past them rather
+// than raising - which is what is wanted here. A part beyond the count is ignored the same way a
+// part with an unknown name already is. What is deliberately NOT done is refusing the request when
+// one of them is hit: a count is reached after the gcode part has been read, and by then the job
+// may be committed, so a refusal would answer 413 while the job it denies sits in the spool.
+//
+// No fileSize among them: the store stops the gcode itself, at the byte it is already counting, and
+// a second cap here would only be a second place to get an off-by-one wrong. busboy raises 'limit'
+// on REACHING fileSize rather than passing it, which is exactly that mistake waiting to happen.
+const SUBMISSION_LIMITS = {
+  files: 1,
+  fields: 4,
+  parts: 8,
+  fieldSize: 1024 * 1024,
+  fieldNameSize: 100,
+};
 
 const DESCRIPTION_PART = 'job';
 const SHUTDOWN_PATH = '/shutdown';
@@ -186,12 +207,19 @@ export function serve(shop: JobStore, port: number = DEFAULT_PORT, hooks?: ShopH
 // the part to the store as the stream the store exists to take.
 function submission(shop: JobStore, request: Request): Promise<Job> {
   return new Promise<Job>((resolve, reject) => {
-    const parts = busboy({ headers: request.headers });
+    const parts = busboy({ headers: request.headers, limits: SUBMISSION_LIMITS });
     let details: JobDetails | undefined;
     let taken = false;
 
-    parts.on('field', (name, value) => {
+    parts.on('field', (name, value, info) => {
       if (name !== DESCRIPTION_PART) return;
+
+      // Truncated JSON would fail to parse anyway, and be reported as a client that sent something
+      // malformed rather than something too long.
+      if (info.valueTruncated) {
+        reject(new TooMuchToTake(`the ${DESCRIPTION_PART} part is longer than ${SUBMISSION_LIMITS.fieldSize} bytes`));
+        return;
+      }
 
       try {
         details = JSON.parse(value) as JobDetails;
@@ -199,6 +227,8 @@ function submission(shop: JobStore, request: Request): Promise<Job> {
         reject(new UnusableRequest(`the ${DESCRIPTION_PART} part is not JSON`));
       }
     });
+
+
 
     parts.on('file', (name, contents) => {
       if (name !== GCODE_PART) {
@@ -213,6 +243,7 @@ function submission(shop: JobStore, request: Request): Promise<Job> {
       }
 
       taken = true;
+
       shop.submit(details, contents).then(resolve, (refusal: unknown) => {
         // The answer is already decided, but a client part way through an upload has to stay
         // connected long enough to read it - so what is still arriving is drained, not dropped.
@@ -274,6 +305,7 @@ function statusFor(error: unknown): number {
   // A shop whose spool is not there was never installed. That is the machine's fault, not the
   // client's, and a client that retries later is doing the right thing.
   if (error instanceof SpoolUnavailable) return 503;
+  if (error instanceof TooMuchToTake) return 413;
   if (error instanceof InvalidSubmission || error instanceof UnusableRequest) return 400;
   // What express.json() throws at a body that is not JSON; it carries the offending body.
   if (error instanceof SyntaxError && 'body' in error) return 400;
