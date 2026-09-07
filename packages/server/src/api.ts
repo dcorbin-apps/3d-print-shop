@@ -18,19 +18,18 @@ export class UnusableRequest extends Error {}
 // with `serve --listen`.
 export const LOOPBACK = '127.0.0.1';
 
-// AIDEV-NOTE: busboy is given no limits of its own accord, and without them a submission writes
-// into the spool until the disk is full - which loses every job the shop is holding, because the
-// spool IS the recovery model. These are the shape of a submission rather than a guess: one file,
-// one description, and enough slack that a client adding a part is told so instead of being cut off.
-// AIDEV-NOTE: these bound what a submission may cost, and busboy DISCARDS what is past them rather
-// than raising - which is what is wanted here. A part beyond the count is ignored the same way a
-// part with an unknown name already is. What is deliberately NOT done is refusing the request when
-// one of them is hit: a count is reached after the gcode part has been read, and by then the job
-// may be committed, so a refusal would answer 413 while the job it denies sits in the spool.
+// AIDEV-NOTE: NOTHING here stops a large upload - there is no fileSize among these deliberately.
+// The store caps the gcode itself, at the byte it is already counting, and what that protects is the
+// spool: it IS the recovery model, so filling it loses every job the shop holds and not only the one
+// that overflowed. A second cap here would be a second place to get an off-by-one wrong, and busboy
+// raises 'limit' on REACHING fileSize rather than passing it - exactly that mistake waiting to
+// happen. The one size in this list is fieldSize, which bounds the description and nothing else.
 //
-// No fileSize among them: the store stops the gcode itself, at the byte it is already counting, and
-// a second cap here would only be a second place to get an off-by-one wrong. busboy raises 'limit'
-// on REACHING fileSize rather than passing it, which is exactly that mistake waiting to happen.
+// What these bound is how many PARTS a submission may cost, and busboy discards what is past them
+// rather than raising - which is what is wanted. A part beyond the count is ignored the same way a
+// part with an unknown name already is. What is deliberately NOT done is refusing the request when
+// one of them is hit: a count is reached after the gcode part has been read, and by then the job may
+// be committed, so a refusal would answer 413 with the job it denies sitting in the spool.
 const SUBMISSION_LIMITS = {
   files: 1,
   fields: 4,
