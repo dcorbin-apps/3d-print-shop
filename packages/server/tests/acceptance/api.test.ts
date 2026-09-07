@@ -187,13 +187,20 @@ describe('the shop over HTTP', () => {
       expect(await response.json()).toEqual({ error: `job ${job.id} is queued, so there is no print to judge` });
     });
 
+    it('abandons a print, and the job leaves the shop without being printed again', async () => {
+      const job = await awaitingApproval();
+
+      expect((await send('PUT', `/jobs/${job.id}/verdict`, { verdict: 'abandoned' })).status).toBe(204);
+      expect((await ask(`/jobs/${job.id}`)).status).toBe(404);
+    });
+
     it('refuses a verdict it does not know', async () => {
       const job = await awaitingApproval();
 
-      const response = await send('PUT', `/jobs/${job.id}/verdict`, { verdict: 'abandoned' });
+      const response = await send('PUT', `/jobs/${job.id}/verdict`, { verdict: 'good enough' });
 
       expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'a verdict is approved or rejected, not "abandoned"' });
+      expect(await response.json()).toEqual({ error: 'a verdict is approved, rejected or abandoned, not "good enough"' });
     });
   });
 

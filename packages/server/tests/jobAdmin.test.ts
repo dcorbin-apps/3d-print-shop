@@ -59,6 +59,11 @@ describe('minding the work', () => {
       expect(mockVerdict).toHaveBeenCalledWith(7, 'approved');
     });
 
+    it('says an abandoned job has gone, and why that is not approval', async () => {
+      expect(await judgeJob(shop, 7, 'abandoned')).toEqual(['job 7 abandoned - and gone, with no good print to show for it']);
+      expect(mockVerdict).toHaveBeenCalledWith(7, 'abandoned');
+    });
+
     it('says a rejected one is back to be printed again', async () => {
       mockVerdict.mockResolvedValue(job({ id: 7 }));
 

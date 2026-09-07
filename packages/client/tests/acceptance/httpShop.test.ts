@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { HttpShop } from '../../src/HttpShop';
-import type { JobDetails, PrinterRecord } from '../../src';
+import type { JobDetails, PrinterRecord, Verdict } from '../../src';
 
 // AIDEV-NOTE: a real socket to a stand-in shop, not the shop itself. What is worth proving here is
 // what goes over the WIRE and what comes back off it - the order of a multipart body, a time that
@@ -99,13 +99,13 @@ describe('the shop over HTTP', () => {
   });
 
   describe('a verdict', () => {
-    // One route and a value, so the third verdict this shop expects arrives without a new way in.
-    it('sends the word the shop reads', async () => {
+    // One route and a value, so every verdict goes the same way in and none of them is an endpoint.
+    it.each<[Verdict]>([['approved'], ['rejected'], ['abandoned']])('sends %s as the word the shop reads', async (verdict) => {
       answers = { status: 204, body: undefined };
 
-      await shop.verdict(7, 'approved');
+      await shop.verdict(7, verdict);
 
-      expect(asked[0]).toMatchObject({ method: 'PUT', url: '/jobs/7/verdict', body: '{"verdict":"approved"}' });
+      expect(asked[0]).toMatchObject({ method: 'PUT', url: '/jobs/7/verdict', body: `{"verdict":"${verdict}"}` });
     });
 
     it('answers with nothing for a job that has left the shop', async () => {

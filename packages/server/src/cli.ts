@@ -116,6 +116,12 @@ export function createCLI(): Command {
     .argument('<id>', 'which job', readJobId)
     .action(async (id: number) => say(await judgeJob(shop(job.opts()), id, 'rejected')));
 
+  job
+    .command('abandon')
+    .description('Give up on a print - the job leaves the shop, and is not printed again')
+    .argument('<id>', 'which job', readJobId)
+    .action(async (id: number) => say(await judgeJob(shop(job.opts()), id, 'abandoned')));
+
   const printer = program
     .command('printer')
     .description('The printers this shop prints on');

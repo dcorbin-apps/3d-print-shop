@@ -39,8 +39,11 @@ export type JobPhase = Exclude<JobState, 'queued'>;
 /** How the printer stopped. None of these is a verdict on whether the print is usable. */
 export type PrinterOutcome = 'finished' | 'failed' | 'cancelled';
 
-/** What a person says about a print that has finished. */
-export type Verdict = 'approved' | 'rejected';
+/**
+ * What a person says about a print that has finished. `abandoned` is the one that is neither: the
+ * print was no good and it is not worth another - the job leaves the shop as an approved one does.
+ */
+export type Verdict = 'approved' | 'rejected' | 'abandoned';
 
 /** A job as the shop reports it. */
 export interface Job extends JobDetails {

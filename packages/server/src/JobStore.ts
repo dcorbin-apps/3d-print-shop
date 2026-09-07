@@ -168,13 +168,15 @@ export class JobStore {
 
   /** The operator says the print is good. The job leaves the shop, gcode and record together. */
   async approve(id: number): Promise<void> {
-    const printerName = await this.requireAwaitingApproval(id);
+    await this.leaveTheShop(id);
+  }
 
-    // AIDEV-NOTE: let go FIRST, delete second. A crash between them leaves a job nothing is holding,
-    // which reads as queued and can be printed again. The other order leaves a printer holding a job
-    // that is not there, which is a machine that looks busy for ever.
-    await this.letGo(printerName, 'awaiting-approval');
-    await rm(this.jobDir(id), { recursive: true, force: true });
+  // AIDEV-NOTE: the same as approving, and named apart from it because the difference is real to the
+  // person giving it and the shop is what forgets it. A shop that could tell them apart afterwards
+  // would be keeping a history of work done, which is the one thing it does not hold.
+  /** The operator gives up on it. No reprint, and it leaves the shop as an approved job does. */
+  async abandon(id: number): Promise<void> {
+    await this.leaveTheShop(id);
   }
 
   /** The operator says it failed. Back to the queue, to be printed again from the same gcode. */
@@ -249,6 +251,16 @@ export class JobStore {
     await this.changeStatus(name, (status) => ({ ...status, loaded: filaments }));
 
     return this.printerNamed(name);
+  }
+
+  private async leaveTheShop(id: number): Promise<void> {
+    const printerName = await this.requireAwaitingApproval(id);
+
+    // AIDEV-NOTE: let go FIRST, delete second. A crash between them leaves a job nothing is holding,
+    // which reads as queued and can be printed again. The other order leaves a printer holding a job
+    // that is not there, which is a machine that looks busy for ever.
+    await this.letGo(printerName, 'awaiting-approval');
+    await rm(this.jobDir(id), { recursive: true, force: true });
   }
 
   private async letGo(printerName: string, phase: Holding['phase']): Promise<void> {

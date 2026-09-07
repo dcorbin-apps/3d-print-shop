@@ -139,7 +139,7 @@ come to name a different one.
 
 ```
 submitted --> queued --> printing --> awaiting-approval --approved--> (gone)
-                ^          (a printer holds it)      |
+                ^          (a printer holds it)      |  --abandoned-> (gone)
                 +--------- rejected ------------------+   (the printer lets go)
 ```
 
@@ -157,8 +157,11 @@ the part is still on the bed until a person has looked at it - and somebody look
 what approving or rejecting means. So a printer goes on holding a job, and its bed, until the
 verdict arrives. It is the only evidence the shop gets that the bed was cleared.
 
-A third verdict - abandon, meaning "do not reprint, but it was not a success" - is likely once there
-is an API to ask for it.
+**Abandoning is the third verdict**, meaning "do not reprint, but it was not a success". What it
+does to the shop is what approving does - the printer lets go, and the job and its gcode are gone -
+and the difference is only in what the operator meant by it. The shop cannot tell them apart
+afterwards, because telling them apart afterwards is a history of work done, which this does not
+keep.
 
 **Nothing incomplete is ever visible.** The gcode is streamed to a scratch name and renamed; the
 record is written last and atomically. A submission that fails or delivers nothing takes its whole
@@ -237,7 +240,7 @@ gamebox and curl all speak it without acquiring anything to do so.
 POST   /jobs                    submit
 GET    /jobs                    what is queued, and what each is waiting for
 GET    /jobs/{id}
-PUT    /jobs/{id}/verdict       approved | rejected
+PUT    /jobs/{id}/verdict       approved | rejected | abandoned
 GET    /printers
 POST   /printers                add one, or change what the shop knows about one already here
 DELETE /printers/{name}
@@ -265,9 +268,9 @@ print changes, which is why it is a route rather than a file somebody edits.
 Publishing them would invite a second writer into a store built for one, and would hand out states
 no client is in a position to set honestly - only the loop knows whether a printer took a job.
 
-**A verdict is a resource, not an action.** `PUT /jobs/7/verdict` carrying `approved` or `rejected`,
-rather than `POST /jobs/7/approve`. The third verdict this design expects - abandon - then arrives
-as another value instead of another endpoint, and a verdict on a job that has not finished printing
+**A verdict is a resource, not an action.** `PUT /jobs/7/verdict` carrying `approved`, `rejected` or
+`abandoned`, rather than `POST /jobs/7/approve`. The third of them arrived as another value on the
+same route rather than a third endpoint, and a verdict on a job that has not finished printing
 is a 409 on the one thing being set rather than an unexplained failure of a verb. A printer's
 `stop` and `start` are the same shape, which is why they are a status to be set and not two routes.
 

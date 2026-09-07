@@ -79,23 +79,30 @@ export function createApi(shop: JobStore, hooks: ShopHooks = {}): Express {
     response.json(job);
   });
 
-  // AIDEV-NOTE: a verdict is a resource rather than an /approve and a /reject, so the third one this
-  // design expects - abandon - arrives as another value instead of another route, and a verdict on a
-  // job that has not finished printing is a 409 on the thing being set.
+  // AIDEV-NOTE: a verdict is a resource rather than an /approve, a /reject and an /abandon, so each
+  // one is a value on the same route, and a verdict on a job that has not finished printing is a 409
+  // on the thing being set. Only rejecting answers with a job - the other two leave nothing to say.
   api.put('/jobs/:id/verdict', async (request, response) => {
     const { verdict } = request.body as { verdict?: unknown };
 
-    if (verdict === 'approved') {
-      await shop.approve(jobId(request.params.id));
-      response.status(204).end();
+    if (verdict !== 'approved' && verdict !== 'rejected' && verdict !== 'abandoned') {
+      throw new UnusableRequest(`a verdict is approved, rejected or abandoned, not ${JSON.stringify(verdict)}`);
+    }
+
+    const id = jobId(request.params.id);
+
+    if (verdict === 'rejected') {
+      response.json(await shop.reject(id));
       return;
     }
 
-    if (verdict !== 'rejected') {
-      throw new UnusableRequest(`a verdict is approved or rejected, not ${JSON.stringify(verdict)}`);
+    if (verdict === 'approved') {
+      await shop.approve(id);
+    } else {
+      await shop.abandon(id);
     }
 
-    response.json(await shop.reject(jobId(request.params.id)));
+    response.status(204).end();
   });
 
   api.get('/printers', async (_request, response) => {

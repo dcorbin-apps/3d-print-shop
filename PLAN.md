@@ -15,8 +15,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   only a job's FIRST filament today, which is right for one extruder and wrong for several: the
   index is the extruder the slicer assigned, so `[red, blue]` and `[blue, red]` are different
   requirements. `startsWith()` in `packages/server/src/selection.ts` is the one place to revisit
-- [ ] A third verdict, "abandon" — do not reprint, but it was not a success. The API is already
-  shaped for it: a verdict is a resource, so this is another value rather than another route
 - [ ] Nothing says how many times a job has run. The count was the one thing about a job that
   changed and nothing scheduled on it, so it went when job records became immutable. Saying "this is
   the third attempt" needs a history of finished prints, which the shop does not keep

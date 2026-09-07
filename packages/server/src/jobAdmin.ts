@@ -16,7 +16,10 @@ export async function listJobs(shop: Shop): Promise<string[]> {
 export async function judgeJob(shop: Shop, id: number, verdict: Verdict): Promise<string[]> {
   const judged = await shop.verdict(id, verdict);
 
-  return [judged ? `job ${id} rejected - back in the queue, to print again from the same gcode` : `job ${id} approved - and gone`];
+  if (judged) return [`job ${id} rejected - back in the queue, to print again from the same gcode`];
+  if (verdict === 'abandoned') return [`job ${id} abandoned - and gone, with no good print to show for it`];
+
+  return [`job ${id} approved - and gone`];
 }
 
 function whereItIs(job: Job): string {

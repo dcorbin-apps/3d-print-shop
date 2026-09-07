@@ -228,6 +228,18 @@ describe('JobStore', () => {
       expect((await shop.printerNamed('mk4')).holding).toBeUndefined();
     });
 
+    // Abandoning is approving in what it does to the shop and the opposite of it in what it means:
+    // there is no good print, and no reprint either.
+    it('removes an abandoned job the same way, and frees the printer', async () => {
+      await shop.startPrinting('mk4', id);
+      await shop.finishedPrinting('mk4', 'failed');
+
+      await shop.abandon(id);
+
+      expect(await shop.find(id)).toBeUndefined();
+      expect((await shop.printerNamed('mk4')).holding).toBeUndefined();
+    });
+
     it('does not hand out the id of an approved job again', async () => {
       await shop.startPrinting('mk4', id);
       await shop.finishedPrinting('mk4', 'finished');
@@ -314,11 +326,14 @@ describe('JobStore', () => {
     });
 
     // Nothing has been printed to judge.
-    it.each<['approve' | 'reject']>([['approve'], ['reject']])('refuses to %s a job still queued', async (verdict) => {
-      const { id } = await shop.submit(details(), gcode());
+    it.each<['approve' | 'reject' | 'abandon']>([['approve'], ['reject'], ['abandon']])(
+      'refuses to %s a job still queued',
+      async (verdict) => {
+        const { id } = await shop.submit(details(), gcode());
 
-      await expect(shop[verdict](id)).rejects.toThrow(WrongState);
-    });
+        await expect(shop[verdict](id)).rejects.toThrow(WrongState);
+      }
+    );
 
     // The machine is still printing it. Letting the printer go would queue the job for a second
     // machine while the first is still running it.
