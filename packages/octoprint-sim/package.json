@@ -1,0 +1,31 @@
+{
+  "name": "@3d-print-shop/octoprint-sim",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tests/tsconfig.json",
+    "test": "echo \"tests run from root\" && exit 0"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "multer": "^2.2.0",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5",
+    "@types/multer": "^2",
+    "@types/ws": "^8",
+    "typescript": "^5.9.3"
+  },
+  "author": "dcorbin",
+  "license": "ISC"
+}

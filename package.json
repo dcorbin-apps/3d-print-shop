@@ -1,0 +1,40 @@
+{
+  "name": "3d-print-shop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "shop": "tsx packages/server/src/main.ts",
+    "build": "yarn workspaces foreach -A -pt run build",
+    "typecheck": "yarn workspaces foreach -Apt run typecheck",
+    "lint": "eslint .",
+    "ut": "./scripts/test.sh --testPathIgnorePatterns /tests/acceptance/",
+    "at": "./scripts/test.sh tests/acceptance",
+    "test": "./scripts/test.sh"
+  },
+  "keywords": [],
+  "author": "dcorbin",
+  "license": "ISC",
+  "description": "A service that takes print jobs and gets them onto a printer",
+  "devDependencies": {
+    "@jest/globals": "^29.4.5",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.9.2",
+    "eslint": "^9",
+    "eslint-config-prettier": "^10",
+    "globals": "^15",
+    "jest": "^29.4.5",
+    "prettier": "^3",
+    "ts-jest": "^29.4.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8"
+  },
+  "packageManager": "yarn@4.9.1+sha512.f95ce356460e05be48d66401c1ae64ef84d163dd689964962c6888a9810865e39097a5e9de748876c2e0bf89b232d583c33982773e9903ae7a76257270986538",
+  "engines": {
+    "node": ">=22.16 <23"
+  }
+}

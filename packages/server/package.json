@@ -1,0 +1,37 @@
+{
+  "name": "@3d-print-shop/server",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tests/tsconfig.json",
+    "test": "echo \"tests run from root\" && exit 0"
+  },
+  "keywords": [],
+  "author": "dcorbin",
+  "license": "ISC",
+  "devDependencies": {
+    "@3d-print-shop/octoprint-sim": "workspace:*",
+    "@types/busboy": "^1",
+    "@types/express": "^5",
+    "typescript": "^5.9.3",
+    "ws": "^8.21.3"
+  },
+  "bin": {
+    "3d-print-shop": "./dist/main.js"
+  },
+  "dependencies": {
+    "@3d-print-shop/client": "workspace:*",
+    "busboy": "^1.6.0",
+    "commander": "^14.0.2",
+    "express": "^5.2.1"
+  }
+}
