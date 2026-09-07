@@ -63,8 +63,11 @@ and refuses `--listen` past loopback with nobody named. What is left is what a t
 - [ ] The 503s still name the spool - "<path> is not there", "<path> has N bytes free". Deliberate
   and tested, and arguably fine for a caller the shop has named, but the same path a 500 no longer
   gives away. Decide whether an authenticated caller may know where the spool is
-- [ ] Modes on what the spool holds. Nothing sets one, so gcode and printer records land at whatever
-  the umask gives
+- [ ] The spool ROOT's own mode is nobody's job. The shop sets 0700/0600 on what it creates, but a
+  root anybody can write is one where a whole job directory can be renamed away regardless. The
+  installer makes the root, so either it sets the mode or `ready()` refuses a wide one
+- [ ] Anything already in a spool keeps the mode it was written with - a record is written once and
+  never rewritten, so an existing install stays as it was until every job has left
 - [ ] One name guard shared by the four `/printers/:name` routes. Only `add` checks for a separator;
   the others are safe because a record must be found first, which is true today by accident
 

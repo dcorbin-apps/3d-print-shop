@@ -42,6 +42,13 @@ async function spaceFreeOn(root: string): Promise<number> {
   return room.bavail * room.bsize;
 }
 
+// AIDEV-NOTE: the spool is the shop's alone, and integrity is the reason before secrecy. A spool
+// another user can WRITE is one where a job's gcode can be swapped for different gcode, and the shop
+// sends whatever is there to a printer without question. The ROOT's own mode is the installer's to
+// set - these are the entries the shop creates itself.
+const DIRECTORY_MODE = 0o700;
+const FILE_MODE = 0o600;
+
 const JOBS_DIR = 'jobs';
 const PRINTERS_DIR = 'printers';
 const NEXT_ID_FILE = 'next-id';
@@ -99,7 +106,7 @@ export class JobStore {
 
     const id = await this.serialised(() => this.allocateId());
     const directory = this.jobDir(id);
-    await mkdir(directory, { recursive: true });
+    await mkdir(directory, { recursive: true, mode: DIRECTORY_MODE });
 
     try {
       const gcodeBytes = await streamToFile(gcode, path.join(directory, GCODE_FILE), this.maxGcodeBytes);
@@ -238,7 +245,7 @@ export class JobStore {
   /** Adds a printer, or changes what the shop knows about one already here. */
   async addPrinter(record: PrinterRecord): Promise<void> {
     await this.requireSpool();
-    await mkdir(this.printerDir(record.name), { recursive: true });
+    await mkdir(this.printerDir(record.name), { recursive: true, mode: DIRECTORY_MODE });
     await writeAtomically(this.printerFile(record.name), asJson(record));
 
     // Only when there is none. Re-adding a printer must not forget what is loaded on it, or that it
@@ -474,7 +481,7 @@ async function streamToFile(source: Readable, file: string, limit: number): Prom
     }
   });
 
-  await pipeline(source, createWriteStream(scratch));
+  await pipeline(source, createWriteStream(scratch, { mode: FILE_MODE }));
   await rename(scratch, file);
 
   return bytes;
@@ -489,7 +496,7 @@ function asJson(value: unknown): string {
 // it described is then invisible while the rest of its directory still sits there.
 async function writeAtomically(file: string, contents: string): Promise<void> {
   const scratch = `${file}.writing`;
-  await writeFile(scratch, contents);
+  await writeFile(scratch, contents, { mode: FILE_MODE });
   await rename(scratch, file);
 }
 

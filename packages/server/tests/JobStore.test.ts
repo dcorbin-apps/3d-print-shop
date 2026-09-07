@@ -477,6 +477,37 @@ describe('JobStore', () => {
   // AIDEV-NOTE: /var/spool/cups is made at install time and owned by the service's user. A missing
   // root means a machine that was never set up, and creating one would put the shop's work
   // somewhere nobody is looking.
+  // AIDEV-NOTE: integrity before secrecy. A spool another user can write is one where a job's gcode
+  // can be swapped for different gcode, and the shop sends what is there to a printer unquestioned.
+  describe('what the shop leaves on disk', () => {
+    async function modeOf(...where: string[]): Promise<string> {
+      return ((await fs.stat(path.join(spool, ...where))).mode & 0o777).toString(8);
+    }
+
+    it('keeps a job to itself, directory and contents', async () => {
+      await shop.submit(details({ displayName: 'Player Box' }), gcode());
+
+      expect(await modeOf('jobs', '1')).toBe('700');
+      expect(await modeOf('jobs', '1', 'print.gcode')).toBe('600');
+      expect(await modeOf('jobs', '1', 'job.json')).toBe('600');
+    });
+
+    it('keeps a printer to itself, record and status alike', async () => {
+      await shop.load('mk4', ['PLA']);
+
+      expect(await modeOf('printers', 'mk4')).toBe('700');
+      expect(await modeOf('printers', 'mk4', 'printer.json')).toBe('600');
+      expect(await modeOf('printers', 'mk4', 'status.json')).toBe('600');
+    });
+
+    // Written by the same atomic rename as everything else, so it is easy to miss.
+    it('keeps the id counter to itself', async () => {
+      await shop.submit(details(), gcode());
+
+      expect(await modeOf('next-id')).toBe('600');
+    });
+  });
+
   describe('when the spool is not there', () => {
     const absent = (): JobStore => new JobStore(path.join(tmpdir(), 'print-shop-that-was-never-installed'));
 
