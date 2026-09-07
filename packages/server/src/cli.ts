@@ -34,8 +34,10 @@ export function createCLI(): Command {
     .command('serve')
     .description('Run the shop, so clients can submit work and ask after it')
     .option('--port <port>', 'the port to listen on', readPort, DEFAULT_PORT)
+    // No default here: serve() holds it, and a second copy of an address is a second thing to change.
+    .option('--listen <address>', 'the address to listen on - loopback unless said otherwise, and anything else is on the network')
     .option('--spool <path>', `where the shop keeps its work (or ${SPOOL_ROOT_ENV}; defaults to ${defaultSpoolRoot()})`)
-    .action(async (options: { port: number; spool?: string }) => {
+    .action(async (options: { port: number; listen?: string; spool?: string }) => {
       const store = new JobStore(options.spool ?? defaultSpoolRoot());
 
       // Before anything else: a spool that is not there, or is already being served, is a shop that
@@ -72,7 +74,7 @@ export function createCLI(): Command {
         void foreman.watchersSettled().then(() => say(['3d-print-shop has stopped']));
       };
 
-      const shopServer = await serve(store, options.port, { changed: lookForWork, shutDown: stopTheShop });
+      const shopServer = await serve(store, options.port, { changed: lookForWork, shutDown: stopTheShop }, options.listen);
 
       // What a supervised service is stopped with. `launchd` and `systemd` both send it, and one
       // that ignored it would be killed with prints still being watched.
@@ -80,8 +82,11 @@ export function createCLI(): Command {
       process.on('SIGINT', stopTheShop);
 
       // Where it actually IS, not where it was asked to be. Port 0 means "any free one", and
-      // an operator who used it has no other way to find out which.
-      say([`3d-print-shop is listening on ${(shopServer.address() as AddressInfo).port}`]);
+      // an operator who used it has no other way to find out which. The address is said too,
+      // because whether this shop can be reached from the network is the difference between the
+      // default and `--listen`, and it is worth being able to see which one is running.
+      const bound = shopServer.address() as AddressInfo;
+      say([`3d-print-shop is listening on ${bound.address}:${bound.port}`]);
 
       // A restart does not stop a machine. Prints that were already running are picked up first,
       // then anything that could start now - nothing else will wake this up until a change arrives.

@@ -18,6 +18,8 @@ describe('the shop, running as its own process', () => {
 
   interface RunningShop {
     url: string;
+    /** The address it actually bound, which is what `--listen` is for. */
+    address: string;
     stop: () => Promise<void>;
     /** Settles when the process has ended, however it was asked to. */
     stopped: Promise<void>;
@@ -30,20 +32,21 @@ describe('the shop, running as its own process', () => {
     return startShopOver(spool);
   }
 
-  function startShopOver(root: string): Promise<RunningShop> {
+  function startShopOver(root: string, alsoSaying: string[] = []): Promise<RunningShop> {
     return new Promise<RunningShop>((resolve, reject) => {
-      const shop = spawn('node', ['--import', 'tsx', SHOP, 'serve', '--spool', root, '--port', '0']);
+      const shop = spawn('node', ['--import', 'tsx', SHOP, 'serve', '--spool', root, '--port', '0', ...alsoSaying]);
       let said = '';
       let complaint = '';
 
       shop.stdout.on('data', (chunk: Buffer) => {
         said += chunk.toString();
 
-        // The port it actually took, which is the only way to find an ephemeral one.
-        const listening = /listening on (\d+)/.exec(said);
+        // The address and port it actually took, which is the only way to find an ephemeral one.
+        const listening = /listening on (\S+):(\d+)/.exec(said);
         if (listening) {
           resolve({
-            url: `http://127.0.0.1:${listening[1]}`,
+            address: listening[1],
+            url: reachedAt(listening[1], listening[2]),
             stop: () => stopShop(shop),
             stopped: new Promise<void>((ended) => shop.on('close', () => ended())),
           });
@@ -57,6 +60,11 @@ describe('the shop, running as its own process', () => {
       shop.on('error', reject);
       shop.on('close', (code) => reject(new Error(`the shop stopped before it was listening (${code}) ${complaint}`)));
     });
+  }
+
+  // An IPv6 address is bracketed in a URL, where an IPv4 one must not be.
+  function reachedAt(address: string, port: string): string {
+    return address.includes(':') ? `http://[${address}]:${port}` : `http://${address}:${port}`;
   }
 
   function stopShop(shop: ChildProcess): Promise<void> {
@@ -186,4 +194,22 @@ describe('the shop, running as its own process', () => {
 
     expect(await (await fetch(`${again.url}/jobs`)).json()).toMatchObject([{ id: 1, displayName: 'Player Box', state: 'queued' }]);
   }, 30_000);
+
+  // Nothing the shop answers is authenticated, so the interface it binds is the whole of the access
+  // control - which makes it the operator's decision rather than a default nobody sees.
+  describe('where it listens', () => {
+    it('is loopback, so a shop nothing authenticates is not on the network', async () => {
+      expect((await shopIsRunning()).address).toBe('127.0.0.1');
+    }, 30_000);
+
+    // `::1` rather than an address off this machine: it proves the option is carried through to the
+    // listener without a test that opens a port to the network.
+    it('is the address --listen names, and it answers there', async () => {
+      const shop = await startShopOver(spool, ['--listen', '::1']);
+      started.push(shop);
+
+      expect(shop.address).toBe('::1');
+      expect((await fetch(`${shop.url}/printers`)).status).toBe(200);
+    }, 30_000);
+  });
 });

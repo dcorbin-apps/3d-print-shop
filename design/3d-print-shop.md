@@ -298,6 +298,7 @@ by that file, which `fetch` streams.
 
 ```
 3d-print-shop serve --spool /var/spool/3d-print-shop     run the shop, so clients can reach it
+3d-print-shop serve --listen 0.0.0.0                     ... from off this machine, which is a decision
 3d-print-shop printer add mk4 250x210x220 http://octopi.local
 3d-print-shop printer list                              what it has, and what each is doing
 3d-print-shop printer load mk4 PLA-Red                  what is on the machine now
@@ -313,6 +314,11 @@ by that file, which `fetch` streams.
 **The verdict commands are not a convenience.** A printer holds its bed until a person has judged
 what came off it, so a shop with no way to give a verdict prints one thing per machine and then
 stops.
+
+**Loopback is the default because nothing is authenticated.** Every route the shop answers is open
+to whoever reaches the port, so until there is a token the interface it binds IS the access control -
+and the one that costs nothing is the one where there is no network to reach it over. `--listen` is
+how an operator takes that off, in one place, having been told what it is for.
 
 `add` takes an address and no key, deliberately: see "What changes, and what does not".
 

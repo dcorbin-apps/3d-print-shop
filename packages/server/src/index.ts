@@ -1,4 +1,4 @@
-export { DEFAULT_PORT, UnusableRequest, createApi, serve } from './api.js';
+export { DEFAULT_PORT, LOOPBACK, UnusableRequest, createApi, serve } from './api.js';
 export type { ShopHooks } from './api.js';
 export { Foreman } from './Foreman.js';
 export { OctoPrintMachines, apiKeyVariableFor } from './OctoPrintMachines.js';

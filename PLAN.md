@@ -33,11 +33,10 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### Security
 
-Nothing here is authenticated, and `serve` binds every interface where `octoprint-sim` binds
-loopback. Whoever can reach the port can submit work, delete a printer, or stop the shop mid-print.
+Nothing here is authenticated. Whoever can reach the port can submit work, delete a printer, or stop
+the shop mid-print - which is now only whoever is on the machine, `serve` having been shut to
+loopback, but `--listen` opens it again and a token is what makes that safe.
 
-- [ ] Bind loopback by default, with `--listen <address>` to say otherwise. One line, and it removes
-  most of the exposure on its own
 - [ ] A token on the API — `PRINT_SHOP_TOKEN` beside `PRINT_SHOP_KEY_*`, checked in one middleware.
   Cheap because every caller goes through `HttpShop`: one place to send it, one to check it. Two
   audiences eventually — a client submits and reads; only an operator touches printers or shuts down

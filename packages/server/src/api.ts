@@ -12,6 +12,12 @@ import type { PrinterRecord } from './Printer.js';
 /** The request was not one the shop could act on - as opposed to one it could and would not. */
 export class UnusableRequest extends Error {}
 
+// AIDEV-NOTE: nothing here is authenticated, so whoever can reach the port can submit work, delete a
+// printer, or stop the shop mid-print. Until there is a token, the interface it binds is the whole
+// of the access control - so it is loopback, and reaching further is something an operator asks for
+// with `serve --listen`.
+export const LOOPBACK = '127.0.0.1';
+
 const DESCRIPTION_PART = 'job';
 const SHUTDOWN_PATH = '/shutdown';
 const GCODE_PART = 'gcode';
@@ -164,9 +170,9 @@ export function createApi(shop: JobStore, hooks: ShopHooks = {}): Express {
 // which cli.ts's `serve` gives to a Foreman - so a job submitted over HTTP is started as soon as
 // there is a free printer with its filament loaded, and sits queued only while there is not.
 // Nothing here reaches a machine itself, which is what keeps the store's one writer one writer.
-export function serve(shop: JobStore, port: number = DEFAULT_PORT, hooks?: ShopHooks): Promise<Server> {
+export function serve(shop: JobStore, port: number = DEFAULT_PORT, hooks?: ShopHooks, address: string = LOOPBACK): Promise<Server> {
   return new Promise((resolve, reject) => {
-    const server = createApi(shop, hooks).listen(port, () => resolve(server));
+    const server = createApi(shop, hooks).listen(port, address, () => resolve(server));
     server.on('error', reject);
   });
 }

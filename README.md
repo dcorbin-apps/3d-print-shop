@@ -62,6 +62,11 @@ same spool is refused and a crash leaves nothing to clean up.
 Every command but `serve` is a client of a running shop and takes `--shop-url` (or `PRINT_SHOP_URL`;
 `http://localhost:7373` by default). Only `serve` names a spool, because only `serve` holds one.
 
+**The shop listens on loopback.** Nothing it answers is authenticated, so whoever can reach the port
+can submit work, delete a printer, or stop the shop mid-print - and `127.0.0.1` keeps that to the
+machine it runs on. `serve --listen <address>` says otherwise, and `--listen 0.0.0.0` puts an
+unauthenticated shop on the network, which is a thing to decide rather than a thing to default to.
+
 **A verdict is not a formality.** A printer holds its bed until a person has judged what came off it,
 so a shop nobody gives verdicts to prints one thing per machine and then stops.
 
