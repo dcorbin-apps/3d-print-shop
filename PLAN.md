@@ -51,9 +51,16 @@ loopback, but `--listen` opens it again and a token is what makes that safe.
 - [ ] Limits on the upload. `busboy` is given none, so a submission writes into the spool until the
   disk is full — and the spool is the whole recovery model. A file count, a size, and a check that
   there is room before accepting
-- [ ] Validate `remotePath`, or drop it. It is a client's string handed straight to OctoPrint, so a
-  `../` or an absolute path is a path on the PRINTER, and two jobs can be made to collide on one
-  name. Always naming it `job-<id>.gcode` is the boring answer
+- [ ] Take the stored path from OctoPrint's answer instead of guessing it. `send()` throws the
+  upload response away and everything downstream recomputes `remotePathFor(job)`, which is only
+  right for as long as the shop's idea of what the printer stored matches the printer's. The
+  response carries the name it actually used, and a print's completion event is matched on that
+  string - so reading it back removes the guess. It cannot live on the job, which is written once;
+  it belongs on the printer's `holding`, beside everything else that moves
+- [ ] Confirm the `remotePath` rule against a real OctoPrint - the printer here is offline, so the
+  rule in `validateDetails` was written from the API docs and pathvalidate's, not from a machine.
+  The one known gap: the docs show `20mm-ümläut-böx.gcode` stored as `20mm-umlaut-box.gcode`
+  without saying what transliterates it, so a non-ASCII name may be accepted here and renamed there
 - [ ] Decide what `printer add` may be pointed at. The shop uploads megabytes to that address with
   the printer's API key attached, so whoever can add a printer can point the shop anywhere
 - [ ] A 500 answers with the raw error message, which for a filesystem failure carries the spool
