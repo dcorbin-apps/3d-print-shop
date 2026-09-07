@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Readable } from 'node:stream';
-import { OctoPrint, reconnectDelayMs } from '../src';
+import { OctoPrint, reconnectAfter, reconnectDelayMs } from '../src';
 import type { HttpClient, OctoPrintConfig, ReconnectDelay, WebSocketFactory } from '../src';
 
 interface MockWebSocket {
@@ -197,6 +197,33 @@ describe('OctoPrint', () => {
       adapter.disconnect();
       await expect(promise).rejects.toThrow('OctoPrint connection was closed before print completion');
     });
+
+    // A backoff still waiting is a timer still armed, and that alone keeps the process alive - so a
+    // shop told to stop mid-outage would sit out the delay before exiting.
+    it('tells a backoff that is already waiting to stop waiting', async () => {
+      await connectAdapter();
+      mockWs.onclose!(new Event('close'));
+
+      const [, cancelled] = mockReconnectDelay.mock.calls[0];
+      expect(cancelled.aborted).toBe(false);
+
+      adapter.disconnect();
+
+      expect(cancelled.aborted).toBe(true);
+    });
+
+    // Cancelling is permanent, so an adapter connected again has to wait out its backoffs afresh -
+    // otherwise every one of them settles at once and the reconnect becomes a hot loop.
+    it('waits out a backoff again once it has been reconnected', async () => {
+      await connectAdapter();
+      adapter.disconnect();
+
+      await connectAdapter();
+      mockWs.onclose!(new Event('close'));
+
+      const [, cancelled] = mockReconnectDelay.mock.calls[0];
+      expect(cancelled.aborted).toBe(false);
+    });
   });
 
   describe('submit()', () => {
@@ -365,8 +392,8 @@ describe('OctoPrint', () => {
       secondWs.onclose!(new Event('close'));
       await settle();
 
-      expect(mockReconnectDelay).toHaveBeenNthCalledWith(1, 1);
-      expect(mockReconnectDelay).toHaveBeenNthCalledWith(2, 2);
+      expect(mockReconnectDelay).toHaveBeenNthCalledWith(1, 1, expect.any(AbortSignal));
+      expect(mockReconnectDelay).toHaveBeenNthCalledWith(2, 2, expect.any(AbortSignal));
       expect(mockWsFactory).toHaveBeenCalledTimes(3);
     });
 
@@ -381,7 +408,24 @@ describe('OctoPrint', () => {
       secondWs.onclose!(new Event('close'));
       await settle();
 
-      expect(mockReconnectDelay).toHaveBeenNthCalledWith(2, 1);
+      expect(mockReconnectDelay).toHaveBeenNthCalledWith(2, 1, expect.any(AbortSignal));
+    });
+  });
+
+  describe('reconnectAfter()', () => {
+    const timersArmed = (): number => process.getActiveResourcesInfo().filter((resource) => resource === 'Timeout').length;
+
+    it('lets go of the timer it is waiting on when it is cancelled', async () => {
+      const stopWaiting = new AbortController();
+      const armed = timersArmed();
+
+      const waited = reconnectAfter(20, stopWaiting.signal);
+      expect(timersArmed()).toBe(armed + 1);
+
+      stopWaiting.abort();
+
+      await expect(waited).resolves.toBeUndefined();
+      expect(timersArmed()).toBe(armed);
     });
   });
 
@@ -444,7 +488,7 @@ describe('OctoPrint', () => {
       mockWs.onclose!(new Event('close'));
       await settle();
 
-      expect(mockReconnectDelay).toHaveBeenNthCalledWith(2, 2);
+      expect(mockReconnectDelay).toHaveBeenNthCalledWith(2, 2, expect.any(AbortSignal));
       expect(mockWsFactory).toHaveBeenCalledTimes(2);
     });
   });

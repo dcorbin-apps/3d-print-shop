@@ -7,7 +7,7 @@ export type { BuildVolume, Job, JobDetails, JobPhase, JobRecord, JobState, Print
 export { InvalidSubmission, generatedDisplayName, validateDetails } from './Job.js';
 export { JobStore, NoPrinterCanTakeIt, NoSuchJob, NoSuchPrinter, SpoolUnavailable, WrongState } from './JobStore.js';
 export type { HttpClient, OctoPrintConfig, ReconnectDelay, WebSocketFactory } from './OctoPrint.js';
-export { OctoPrint, reconnectDelayMs } from './OctoPrint.js';
+export { OctoPrint, reconnectAfter, reconnectDelayMs } from './OctoPrint.js';
 export type { Holding, PrinterApi, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
 export { canTake, fitsInside } from './Printer.js';
 export { judgeJob, listJobs } from './jobAdmin.js';

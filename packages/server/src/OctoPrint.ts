@@ -20,7 +20,11 @@ export type HttpClient = (url: string, init?: RequestInit) => Promise<Response>;
 // SockJS path format (/<3digits>/<sessionid>/websocket) for some deployments.
 export type WebSocketFactory = (url: string) => WebSocket;
 
-export type ReconnectDelay = (attempt: number) => Promise<void>;
+/**
+  * Waits out the backoff before attempt `n`. Settles early when `cancelled` fires, and must let go
+  * of whatever it is waiting on when it does - see `reconnectAfter`.
+  */
+export type ReconnectDelay = (attempt: number, cancelled: AbortSignal) => Promise<void>;
 
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const RECONNECT_BACKOFF_UNIT_MS = 500;
@@ -30,7 +34,23 @@ export function reconnectDelayMs(attempt: number): number {
   return Math.min(RECONNECT_BACKOFF_UNIT_MS * 2 ** (attempt - 1), MAX_RECONNECT_DELAY_MS);
 }
 
-const defaultReconnectDelay: ReconnectDelay = (attempt) => new Promise((resolve) => setTimeout(resolve, reconnectDelayMs(attempt)));
+// AIDEV-NOTE: an armed timer keeps the event loop open, so a backoff left running is a process that
+// will not exit until it fires - which is a shop ignoring SIGTERM for as long as a minute while a
+// supervisor waits to kill it. Clearing on cancel is the whole point; resolving without clearing
+// would settle the promise and leave the process alive anyway.
+export const reconnectAfter: ReconnectDelay = (attempt, cancelled) =>
+  new Promise((resolve) => {
+    const timer = setTimeout(resolve, reconnectDelayMs(attempt));
+
+    cancelled.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true }
+    );
+  });
 
 // AIDEV-NOTE: none of these is a verdict. `PrintDone` says the machine reached the end of the file,
 // which is not the same as the result being usable - the shop asks a person about that.
@@ -111,16 +131,21 @@ export class OctoPrint implements Printer {
   private lostContactAt: number | null = null;
   private reconcileOnNextStatus = false;
 
+  // Aborted by disconnect(), so a backoff that is already waiting stops waiting rather than holding
+  // the process open until it fires. Replaced on connect(), because an abort is permanent.
+  private stopWaiting = new AbortController();
+
   constructor(
     private readonly config: OctoPrintConfig,
     private readonly httpClient: HttpClient = globalThis.fetch.bind(globalThis),
     private readonly wsFactory: WebSocketFactory = (url) => new WebSocket(url),
-    private readonly reconnectDelay: ReconnectDelay = defaultReconnectDelay,
+    private readonly reconnectDelay: ReconnectDelay = reconnectAfter,
     private readonly now: () => number = Date.now
   ) {}
 
   connect(): Promise<void> {
     this.disconnectRequested = false;
+    this.stopWaiting = new AbortController();
     this.reconnectAttempt = 0;
     this.lostContactAt = null;
     this.reconcileOnNextStatus = false;
@@ -164,6 +189,7 @@ export class OctoPrint implements Printer {
 
   disconnect(): void {
     this.disconnectRequested = true;
+    this.stopWaiting.abort();
     this.connected = false;
     this.lostContactAt = null;
     this.reconcileOnNextStatus = false;
@@ -281,7 +307,7 @@ export class OctoPrint implements Printer {
     if (this.lostContactAt === null) this.lostContactAt = this.now();
 
     this.reconnectAttempt++;
-    void this.reconnectDelay(this.reconnectAttempt)
+    void this.reconnectDelay(this.reconnectAttempt, this.stopWaiting.signal)
       .then(async () => {
         if (this.disconnectRequested) return;
         this.failPendingWhenContactLostTooLong();
