@@ -110,3 +110,10 @@ The acceptance suites run the real thing: a shop in its own process over a real 
 (`theRunningShop`), the real client against the real API (`theShopAndItsClient`), and the real
 OctoPrint client against `@3d-print-shop/octoprint-sim` (`octoPrintMachines`, `reconnectRecovery`).
 No printer is needed for any of them.
+
+## License
+
+Copyright 2026 Dave Corbin. Licensed under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) -
+see [LICENSE](LICENSE). Use it, change it, and pass it on for any noncommercial purpose; commercial
+use needs a separate license.

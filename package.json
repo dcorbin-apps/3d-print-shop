@@ -17,7 +17,7 @@
   },
   "keywords": [],
   "author": "dcorbin",
-  "license": "ISC",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "description": "A service that takes print jobs and gets them onto a printer",
   "devDependencies": {
     "@jest/globals": "^29.4.5",

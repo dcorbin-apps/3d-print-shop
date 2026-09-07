@@ -16,7 +16,7 @@
     "test": "echo \"tests run from root\" && exit 0"
   },
   "author": "dcorbin",
-  "license": "ISC",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "devDependencies": {
     "typescript": "^5.9.3"
   }

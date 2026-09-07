@@ -17,7 +17,7 @@
   },
   "keywords": [],
   "author": "dcorbin",
-  "license": "ISC",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "devDependencies": {
     "@3d-print-shop/octoprint-sim": "workspace:*",
     "@types/busboy": "^1",
