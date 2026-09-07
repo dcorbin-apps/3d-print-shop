@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, jest } from '@jest/globals';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -444,6 +444,23 @@ describe('the shop over HTTP', () => {
     // A route nobody classified needs an admin, so forgetting one makes the shop stricter.
     it('needs an admin for a route it has never heard of', async () => {
       expect((await as(USER, 'POST', '/something-added-later')).status).toBe(403);
+    });
+  });
+
+  // A failure the shop did not mean is written by whatever broke, and node's filesystem errors name
+  // the path they failed on - so the message is the one thing that must not go back to a caller.
+  describe('when something breaks that the shop did not expect', () => {
+    it('says where to look rather than what broke', async () => {
+      // `jobs` as a FILE, so the mkdir every submission does fails with the spool path in its message.
+      await rm(path.join(spool, 'jobs'), { recursive: true, force: true });
+      await writeFile(path.join(spool, 'jobs'), 'not a directory');
+
+      const response = await submit(playerBox);
+      const said = await response.text();
+
+      expect(response.status).toBe(500);
+      expect(JSON.parse(said)).toEqual({ error: 'the shop could not do that, and why is in its log' });
+      expect(said).not.toContain(spool);
     });
   });
 
