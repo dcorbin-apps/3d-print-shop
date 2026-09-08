@@ -102,12 +102,15 @@ describe('the foreman', () => {
       expect(lines.join('\n')).toContain('ERROR could not send a job to the printer printer=mk4 job=1 why="octopi.local refused the connection"');
     });
 
+    // AIDEV-NOTE: waits for the LINE, not for the job's state. The outcome is written to the store
+    // before it is written down here, so waiting on the state wins the race by a tick and this
+    // failed about one run in three - a flake that says nothing about the code.
     it('says what the printer made of a print when it ended', async () => {
-      const id = await submit();
+      await submit();
       mockAwaitOutcome.mockResolvedValue('failed');
 
       await watched.considerStarting();
-      await until(jobIs(id, 'awaiting-approval'));
+      await until(async () => lines.some((line) => line.includes('print ended')));
 
       expect(lines.join('\n')).toContain('INFO  print ended printer=mk4 outcome=failed');
     });
