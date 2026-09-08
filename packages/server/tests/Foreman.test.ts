@@ -308,6 +308,24 @@ describe('the foreman', () => {
       expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
     });
 
+    // AIDEV-NOTE: the send is in flight when the shutdown arrives, and closing the shop is what
+    // breaks it. `startNextPrint` no longer stops the printer over a failed send for exactly this
+    // reason - it says it could not start, and the foreman, which knows the shop is closing, decides.
+    it('does not stop a printer whose upload failed on the way out', async () => {
+      await submit();
+      let uploadFailed: (failure: Error) => void = () => undefined;
+      mockSend.mockReturnValue(new Promise((_resolve, reject) => (uploadFailed = reject)));
+
+      const looking = foreman.considerStarting();
+      await until(async () => mockSend.mock.calls.length === 1);
+
+      foreman.stop();
+      uploadFailed(new Error('socket hang up'));
+      await looking;
+
+      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
+    });
+
     // Otherwise a shop would come back up with every printer stopped, for a fault nobody caused.
     it('does not stop a printer whose print it loses on the way out', async () => {
       await submit();
@@ -322,6 +340,36 @@ describe('the foreman', () => {
       await foreman.watchersSettled();
 
       expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
+    });
+  });
+
+  // AIDEV-NOTE: the machine answered, so it is reachable - it just would not take the file. The
+  // stopping is the foreman's: `startNextPrint` only reports, because a send that fails during a
+  // shutdown is not the printer's fault and only the loop's owner knows that is what happened.
+  describe('when a printer will not take a job', () => {
+    beforeEach(() => {
+      mockSend.mockRejectedValue(new Error('octopi.local refused the connection'));
+    });
+
+    it('stops the printer, naming the file and what went wrong', async () => {
+      await submit();
+
+      await foreman.considerStarting();
+
+      expect((await shop.printerNamed('mk4')).paused).toMatchObject({
+        reason: 'could not send 3d-print-shop/job-1.gcode to the printer: octopi.local refused the connection',
+      });
+    });
+
+    // Otherwise one fault against one machine produces one failed upload per job held.
+    it('does not try the next job on the same printer', async () => {
+      await submit();
+      await submit();
+
+      await foreman.considerStarting();
+      await foreman.considerStarting();
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -19,7 +19,7 @@ export interface Printer {
 export type PrintAttempt =
   | { did: 'nothing'; because: 'paused' | 'busy' | 'nothing-printable' }
   | { did: 'started'; job: Job }
-  | { did: 'could-not-start'; job: Job; failure: Error };
+  | { did: 'could-not-start'; job: Job; remotePath: string; failure: Error };
 
 // AIDEV-NOTE: a job that names no path is given one. Built from the id rather than the display
 // name: ids are unique and safe in a path, display names are neither.
@@ -40,8 +40,7 @@ export function remotePathFor(job: Job): string {
  */
 export async function startNextPrint(shop: JobStore, reach: () => Promise<Printer>, printerName: string): Promise<PrintAttempt> {
   // AIDEV-NOTE: looked up rather than passed in. A RegisteredPrinter is a snapshot, and both what a
-  // printer holds and whether it is stopped change while the shop runs - including inside this very
-  // function, which stops one when an upload fails.
+  // printer holds and whether it is stopped change while the shop runs.
   const onto = await shop.printerNamed(printerName);
 
   if (onto.paused) return { did: 'nothing', because: 'paused' };
@@ -64,13 +63,12 @@ export async function startNextPrint(shop: JobStore, reach: () => Promise<Printe
     await machine.send(remotePath, await shop.gcodeStream(job.id));
   } catch (failure) {
     // AIDEV-NOTE: nothing was printed, so the printer simply lets go and the job is queued again by
-    // not being held. THIS printer then stops: whatever stopped the upload will stop the next one,
-    // and a fault worth one message would otherwise produce one per job held. Only this one -
-    // another printer that is working has no reason to stand idle.
+    // not being held. Whether the printer then STOPS is the caller's to decide: a send that fails
+    // because the shop is closing the machines is not the printer's fault, and only the owner of
+    // the loop knows that is what happened.
     await shop.couldNotStart(printerName);
-    await shop.pause(printerName, `could not send ${remotePath} to the printer: ${(failure as Error).message}`);
 
-    return { did: 'could-not-start', job, failure: failure as Error };
+    return { did: 'could-not-start', job, remotePath, failure: failure as Error };
   }
 
   return { did: 'started', job: started };

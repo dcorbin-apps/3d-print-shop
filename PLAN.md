@@ -37,12 +37,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### What an operator can see
 
-- [ ] An UPLOAD that fails during a shutdown still stops its printer. The foreman now refuses to
-  pause on the way out, in both the places it decides to - but `startNextPrint` pauses on a failed
-  send itself, and it has no idea the shop is closing. Closing disconnects the machines, so a send
-  in flight fails BECAUSE of the shutdown and the printer is stopped for something nobody did to it.
-  The fix is not another flag: the loop's owner should decide, so `startNextPrint` would answer
-  `could-not-start` and leave the pausing to the foreman, which already knows
 - [ ] The push socket says as little as node's fetch used to. "OctoPrint WebSocket closed before
   connection was established" names no address and no reason, and it reaches an operator the same
   way - `ws` reports the cause on the error event, which `onerror` currently throws away

@@ -108,11 +108,20 @@ export class Foreman {
       }
 
       if (attempt.did === 'could-not-start') {
+        // On the way out the send failed BECAUSE the machines were disconnected, so there is
+        // nothing here an operator has to act on.
+        if (this.stopping) return;
+
         this.log.error('could not send a job to the printer', {
           printer: printer.name,
           job: attempt.job.id,
           why: attempt.failure.message,
         });
+
+        // AIDEV-NOTE: THIS printer stops - whatever stopped the upload will stop the next one, and
+        // a fault worth one message would otherwise produce one per job held. Only this one:
+        // another printer that is working has no reason to stand idle.
+        await this.shop.pause(printer.name, `could not send ${attempt.remotePath} to the printer: ${attempt.failure.message}`);
       }
     } catch (failure) {
       // AIDEV-NOTE: on the way out this is expected and must not stop anything - the same rule

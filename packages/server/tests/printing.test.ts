@@ -129,20 +129,20 @@ describe('printing the next job', () => {
     });
   });
 
-  // AIDEV-NOTE: the upload failed, so no filament was spent. The job goes back exactly as it was and
-  // the printer stops - whatever stopped this upload will stop the next, and one fault would
-  // otherwise produce one failure per job held.
+  // AIDEV-NOTE: the upload failed, so no filament was spent. The job goes back exactly as it was,
+  // and what to make of the failure is left to whoever owns the loop: the same send fails because
+  // the shop is closing the machines, and only the caller knows that is what happened.
   describe('when the printer will not take the job', () => {
     beforeEach(() => {
       mockSend.mockRejectedValue(new Error('connection refused'));
     });
 
-    it('says it could not start, and why', async () => {
-      await submit(['PLA-Red']);
+    it('says it could not start, where it was sending, and why', async () => {
+      const job = await submit(['PLA-Red']);
 
       const attempt = await printOn('mk4', ['PLA-Red']);
 
-      expect(attempt).toMatchObject({ did: 'could-not-start' });
+      expect(attempt).toMatchObject({ did: 'could-not-start', remotePath: remotePathFor(job) });
       expect((attempt as { failure: Error }).failure.message).toBe('connection refused');
     });
 
@@ -154,30 +154,12 @@ describe('printing the next job', () => {
       expect(await shop.find(job.id)).toMatchObject({ state: 'queued' });
     });
 
-    it('stops the printer, naming what went wrong', async () => {
+    it('leaves the printer running, having stopped nothing itself', async () => {
       await submit(['PLA-Red']);
 
       await printOn('mk4', ['PLA-Red']);
 
-      expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: expect.stringContaining('connection refused') });
-    });
-
-    it('does not try the same job again while stopped', async () => {
-      await submit(['PLA-Red']);
-      await printOn('mk4', ['PLA-Red']);
-      mockSend.mockResolvedValue(undefined);
-
-      expect(await printOn('mk4', ['PLA-Red'])).toEqual({ did: 'nothing', because: 'paused' });
-      expect(mockSend).toHaveBeenCalledTimes(1);
-    });
-
-    it('prints again once the operator says the trouble is over', async () => {
-      await submit(['PLA-Red']);
-      await printOn('mk4', ['PLA-Red']);
-      mockSend.mockResolvedValue(undefined);
-      await shop.resume('mk4');
-
-      expect(await printOn('mk4', ['PLA-Red'])).toMatchObject({ did: 'started' });
+      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
     });
   });
 
@@ -224,16 +206,6 @@ describe('printing the next job', () => {
   // AIDEV-NOTE: a broken machine must not idle a working one. This is why the pause is keyed on the
   // printer rather than being a property of the shop.
   describe('with more than one printer', () => {
-    it('stops only the printer that could not take the job', async () => {
-      await submit(['PLA-Red'], { printer: 'mk4' });
-      mockSend.mockRejectedValue(new Error('connection refused'));
-
-      await printOn('mk4', ['PLA-Red']);
-
-      expect((await shop.printerNamed('mk4')).paused).toBeDefined();
-      expect((await shop.printerNamed('mini')).paused).toBeUndefined();
-    });
-
     // AIDEV-NOTE: the pause consulted has to be THIS printer's. Checking the unnamed one instead
     // looks right whenever only unnamed printers are stopped, which is why both directions are here.
     it('will not print on a machine that was stopped', async () => {
