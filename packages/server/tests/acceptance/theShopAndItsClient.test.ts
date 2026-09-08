@@ -28,12 +28,17 @@ describe('the shop and its client', () => {
 
   const gcode = (): Blob => new Blob(['G1 X100.000 Y100.000\n']);
 
+  // The token is given to the client rather than read from the environment: what is under test is
+  // the client putting one on the wire, and a suite that took whatever token the machine happened
+  // to have would pass or fail on the machine rather than on the code.
+  const TOKEN = 'dave-token';
+
   beforeEach(async () => {
     spool = await mkdtemp(path.join(tmpdir(), 'print-shop-contract-'));
     store = new JobStore(spool);
 
-    server = await serve(store, 0);
-    shop = new HttpShop(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+    server = await serve(store, 0, { callers: new Map([[TOKEN, { id: 'dave', name: 'dave', role: 'admin' }]]) });
+    shop = new HttpShop(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, TOKEN);
   });
 
   afterEach(async () => {

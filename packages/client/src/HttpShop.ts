@@ -9,8 +9,8 @@ const GCODE_PART = 'gcode';
 /** The shop over its HTTP API, which is the only way in - it runs as its own process. */
 export class HttpShop implements Shop {
   // AIDEV-NOTE: the token is taken once, here, so every request carries it without a caller
-  // remembering to. Undefined is a caller that has none, which a shop with no callers configured
-  // answers anyway - so a first run needs no setting up, and a shop that HAS callers refuses it.
+  // remembering to. Undefined is a caller that has none to present, which every shop refuses - it
+  // is not a mode, it is the 401 a caller gets for not having been set up yet.
   constructor(
     private readonly url: string,
     private readonly token: string | undefined = defaultToken()

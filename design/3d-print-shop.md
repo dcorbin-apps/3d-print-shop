@@ -344,10 +344,10 @@ it, and it holds its printer until something is done about that.
 what came off it, so a shop with no way to give a verdict prints one thing per machine and then
 stops.
 
-**Loopback is the default because nothing is authenticated.** Every route the shop answers is open
-to whoever reaches the port, so until there is a token the interface it binds IS the access control -
-and the one that costs nothing is the one where there is no network to reach it over. `--listen` is
-how an operator takes that off, in one place, having been told what it is for.
+**Loopback is the default even though every route is authenticated.** A token travels in the clear
+over HTTP, so the interface the shop binds is still worth something: the one that costs nothing is
+the one with no network to read a token off. `--listen` is how an operator takes that off, in one
+place, having been told what it is for.
 
 `add` takes an address and no key, deliberately: see "What changes, and what does not".
 

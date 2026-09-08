@@ -30,6 +30,10 @@ yarn build
 yarn shop serve --spool /var/spool/3d-print-shop
 ```
 
+It will not start until `/etc/3d-print-shop/callers.json` names somebody who may call it: every
+route names its caller, and a shop nobody may call has nothing to answer - see **Who may call
+it** below.
+
 `yarn shop` runs the server straight from source; an installed shop is the `3d-print-shop` binary
 `@3d-print-shop/server` declares. Either way it is a plain long-running process, so `launchd` and
 `systemd` can both supervise it, and it stops on `SIGTERM`.
@@ -82,14 +86,14 @@ The shop's own credentials for reaching each printer are a separate file,
 first file to a client machine should not hand it every printer's key. Both are 0600, and the shop
 refuses to read either if anybody else can.
 
-**No `callers.json` means no authentication**, which is what lets a fresh install run: it answers
-whatever reaches it. That is safe on loopback and nowhere else, so `--listen` past loopback with
-nobody named refuses to start.
+**Every route names its caller**, so a shop with no `callers.json` does not start - there is no
+anonymous mode, not even on loopback. A fresh machine therefore needs its first admin written into
+that file before `serve` will run at all.
 
-**The shop listens on loopback.** Nothing it answers is authenticated, so whoever can reach the port
-can submit work, delete a printer, or stop the shop mid-print - and `127.0.0.1` keeps that to the
-machine it runs on. `serve --listen <address>` says otherwise, and `--listen 0.0.0.0` puts an
-unauthenticated shop on the network, which is a thing to decide rather than a thing to default to.
+**The shop listens on loopback**, because a token travels in the clear over HTTP and the interface
+nobody else can reach is the one nobody else can read it off. `serve --listen <address>` says
+otherwise, and putting the shop on the network is a thing to decide rather than a thing to
+default to.
 
 **It takes gcode up to 128MB**, and keeps that much room spare on the spool before accepting any
 job — the spool is how the shop survives a restart, so filling it would lose everything it holds,

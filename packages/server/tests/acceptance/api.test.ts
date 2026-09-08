@@ -25,12 +25,37 @@ describe('the shop over HTTP', () => {
 
   const playerBox: JobDetails = { filaments: ['PLA-SpaceGray'], displayName: 'Player Box' };
 
+  // Every route names its caller, so every request here carries a token - an admin's unless the
+  // test is about what a user may do.
+  const ADMIN = 'dave-token';
+  const USER = 'gamebox-token';
+  const CALLERS = new Map([
+    [ADMIN, { id: 'dave', name: 'dave', role: 'admin' as const }],
+    [USER, { id: 'gamebox', name: 'gamebox', role: 'user' as const }],
+  ]);
+  const AS_ADMIN = { authorization: `Bearer ${ADMIN}` };
+
+  function as(token: string | undefined, method: string, path: string, body?: unknown): Promise<Response> {
+    return fetch(`${shopUrl}${path}`, {
+      method,
+      headers: {
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  }
+
+  function submitting(url: string, body: FormData, token: string = ADMIN): Promise<Response> {
+    return fetch(`${url}/jobs`, { method: 'POST', body, headers: { authorization: `Bearer ${token}` } });
+  }
+
   async function submit(details: unknown, gcode = 'G1 X100.000 Y100.000\n'): Promise<Response> {
     const body = new FormData();
     body.append('job', JSON.stringify(details));
     body.append('gcode', new Blob([gcode]), 'print.gcode');
 
-    return fetch(`${shopUrl}/jobs`, { method: 'POST', body });
+    return submitting(shopUrl, body);
   }
 
   async function submitted(details: unknown): Promise<Job> {
@@ -38,15 +63,11 @@ describe('the shop over HTTP', () => {
   }
 
   async function ask(path: string): Promise<Response> {
-    return fetch(`${shopUrl}${path}`);
+    return as(ADMIN, 'GET', path);
   }
 
   async function send(method: string, path: string, body: unknown): Promise<Response> {
-    return fetch(`${shopUrl}${path}`, {
-      method,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    return as(ADMIN, method, path, body);
   }
 
   beforeEach(async () => {
@@ -56,7 +77,7 @@ describe('the shop over HTTP', () => {
 
     mockChanged = jest.fn<() => void>();
     mockShutDown = jest.fn<() => void>();
-    server = await serve(shop, 0, { changed: mockChanged, shutDown: mockShutDown });
+    server = await serve(shop, 0, { changed: mockChanged, shutDown: mockShutDown, callers: CALLERS });
     shopUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
 
@@ -95,7 +116,7 @@ describe('the shop over HTTP', () => {
       body.append('gcode', new Blob(['G1 X100.000\n']), 'print.gcode');
       body.append('job', JSON.stringify(playerBox));
 
-      const response = await fetch(`${shopUrl}/jobs`, { method: 'POST', body });
+      const response = await submitting(shopUrl, body);
 
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'the job part has to come before the gcode part, and did not' });
@@ -105,7 +126,7 @@ describe('the shop over HTTP', () => {
       const body = new FormData();
       body.append('job', JSON.stringify(playerBox));
 
-      const response = await fetch(`${shopUrl}/jobs`, { method: 'POST', body });
+      const response = await submitting(shopUrl, body);
 
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'a submission needs a gcode part' });
@@ -259,17 +280,13 @@ describe('the shop over HTTP', () => {
     beforeEach(async () => {
       const store = new JobStore(spool, { maxGcodeBytes: CAP });
       await store.addPrinter({ name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS });
-      small = await serve(store, 0);
+      small = await serve(store, 0, { callers: CALLERS });
       smallUrl = `http://127.0.0.1:${(small.address() as AddressInfo).port}`;
     });
 
     afterEach(async () => {
       await new Promise<void>((resolve) => small.close(() => resolve()));
     });
-
-    async function submitTo(url: string, body: FormData): Promise<Response> {
-      return fetch(`${url}/jobs`, { method: 'POST', body });
-    }
 
     function submission(gcode: string): FormData {
       const body = new FormData();
@@ -285,18 +302,18 @@ describe('the shop over HTTP', () => {
       body.append('job', JSON.stringify({ ...playerBox, metadata: { padding: 'x'.repeat(1024 * 1024) } }));
       body.append('gcode', new Blob(['G1\n']), 'print.gcode');
 
-      const response = await submitTo(smallUrl, body);
+      const response = await submitting(smallUrl, body);
 
       expect(response.status).toBe(413);
       expect(await response.json()).toEqual({ error: `the job part is longer than ${1024 * 1024} bytes` });
     });
 
     it('takes one exactly as big as the cap', async () => {
-      expect((await submitTo(smallUrl, submission('G'.repeat(CAP)))).status).toBe(201);
+      expect((await submitting(smallUrl, submission('G'.repeat(CAP)))).status).toBe(201);
     });
 
     it('refuses one a single byte over', async () => {
-      const response = await submitTo(smallUrl, submission('G'.repeat(CAP + 1)));
+      const response = await submitting(smallUrl, submission('G'.repeat(CAP + 1)));
 
       expect(response.status).toBe(413);
       expect(await response.json()).toEqual({ error: `gcode is longer than the ${CAP} bytes this shop takes` });
@@ -305,9 +322,9 @@ describe('the shop over HTTP', () => {
     // busboy truncates at the cap and ends the stream as though the file were whole, so the danger
     // is not a rejected job - it is an ACCEPTED one holding half a print.
     it('keeps nothing at all of one it refused', async () => {
-      await submitTo(smallUrl, submission('G'.repeat(CAP + 1)));
+      await submitting(smallUrl, submission('G'.repeat(CAP + 1)));
 
-      expect(await (await fetch(`${smallUrl}/jobs`)).json()).toEqual([]);
+      expect(await (await fetch(`${smallUrl}/jobs`, { headers: AS_ADMIN })).json()).toEqual([]);
       await expect(readdir(path.join(spool, 'jobs'))).resolves.toEqual([]);
     });
 
@@ -317,7 +334,7 @@ describe('the shop over HTTP', () => {
       const body = submission('G1\n');
       body.append('gcode', new Blob(['G2\n']), 'other.gcode');
 
-      const response = await submitTo(smallUrl, body);
+      const response = await submitting(smallUrl, body);
 
       expect(response.status).toBe(201);
       expect(await response.json()).toMatchObject({ id: 1, gcodeBytes: 3 });
@@ -329,7 +346,7 @@ describe('the shop over HTTP', () => {
   describe('when the spool has no room left', () => {
     it('takes nothing, and says to come back later', async () => {
       const full = new JobStore(spool, { maxGcodeBytes: 1024, freeBytes: () => Promise.resolve(512) });
-      const server = await serve(full, 0);
+      const server = await serve(full, 0, { callers: CALLERS });
 
       try {
         const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -337,7 +354,7 @@ describe('the shop over HTTP', () => {
         body.append('job', JSON.stringify(playerBox));
         body.append('gcode', new Blob(['G1\n']), 'print.gcode');
 
-        const response = await fetch(`${url}/jobs`, { method: 'POST', body });
+        const response = await submitting(url, body);
 
         expect(response.status).toBe(503);
         expect(await response.json()).toEqual({ error: `${spool} has 512 bytes free, and the shop keeps 1024 spare for a job` });
@@ -351,37 +368,6 @@ describe('the shop over HTTP', () => {
   // and every route is reached the way a caller reaches it. The permission table is the security
   // boundary, so what a `user` may NOT do is asserted route by route rather than in the general.
   describe('who is asking', () => {
-    let guarded: Server;
-    let guardedUrl: string;
-
-    const ADMIN = 'dave-token';
-    const USER = 'gamebox-token';
-
-    beforeEach(async () => {
-      guarded = await serve(shop, 0, {
-        callers: new Map([
-          [ADMIN, { id: 'dave', name: 'dave', role: 'admin' as const }],
-          [USER, { id: 'gamebox', name: 'gamebox', role: 'user' as const }],
-        ]),
-      });
-      guardedUrl = `http://127.0.0.1:${(guarded.address() as AddressInfo).port}`;
-    });
-
-    afterEach(async () => {
-      await new Promise<void>((resolve) => guarded.close(() => resolve()));
-    });
-
-    function as(token: string | undefined, method: string, path: string, body?: unknown): Promise<Response> {
-      return fetch(`${guardedUrl}${path}`, {
-        method,
-        headers: {
-          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-          ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-    }
-
     it('refuses a caller carrying no token at all', async () => {
       const response = await as(undefined, 'GET', '/jobs');
 
@@ -415,7 +401,7 @@ describe('the shop over HTTP', () => {
       body.append('job', JSON.stringify(playerBox));
       body.append('gcode', new Blob(['G1\n']), 'print.gcode');
 
-      const response = await fetch(`${guardedUrl}/jobs`, { method: 'POST', body, headers: { authorization: `Bearer ${USER}` } });
+      const response = await submitting(shopUrl, body, USER);
 
       expect(response.status).toBe(201);
     });
@@ -477,14 +463,14 @@ describe('the shop over HTTP', () => {
       ['PUT', '/printers/mk4/filament', 'loaded is the filaments on the machine'],
       ['PUT', '/printers/mk4/status', 'a printer status says stopped true or false'],
     ])('answers %s %s with what was missing', async (method, path, complaint) => {
-      const response = await fetch(`${shopUrl}${path}`, { method });
+      const response = await fetch(`${shopUrl}${path}`, { method, headers: AS_ADMIN });
 
       expect(response.status).toBe(400);
       expect(await response.json()).toMatchObject({ error: expect.stringContaining(complaint) as unknown });
     });
 
     it('says the same to a body that never claimed to be JSON', async () => {
-      const response = await fetch(`${shopUrl}/printers/mk4/filament`, { method: 'PUT', body: 'loaded=PLA' });
+      const response = await fetch(`${shopUrl}/printers/mk4/filament`, { method: 'PUT', body: 'loaded=PLA', headers: AS_ADMIN });
 
       expect(response.status).toBe(400);
     });
@@ -618,10 +604,10 @@ describe('the shop over HTTP', () => {
   describe('when the shop was never installed', () => {
     it('says so, and says a client may as well come back later', async () => {
       const missing = path.join(spool, 'never-made');
-      const unusable = await serve(new JobStore(missing), 0);
+      const unusable = await serve(new JobStore(missing), 0, { callers: CALLERS });
 
       try {
-        const response = await fetch(`http://127.0.0.1:${(unusable.address() as AddressInfo).port}/jobs`);
+        const response = await fetch(`http://127.0.0.1:${(unusable.address() as AddressInfo).port}/jobs`, { headers: AS_ADMIN });
 
         expect(response.status).toBe(503);
         expect(await response.json()).toEqual({ error: `${missing} is not there - it is created when the shop is installed` });
@@ -665,7 +651,7 @@ describe('the shop over HTTP', () => {
     it('refuses a body that is not JSON at all', async () => {
       const response = await fetch(`${shopUrl}/printers`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...AS_ADMIN },
         body: '{ name: mini',
       });
 
@@ -673,12 +659,12 @@ describe('the shop over HTTP', () => {
     });
 
     it('takes one out of the shop', async () => {
-      expect((await fetch(`${shopUrl}/printers/mk4`, { method: 'DELETE' })).status).toBe(204);
+      expect((await send('DELETE', '/printers/mk4', undefined)).status).toBe(204);
       expect(await (await ask('/printers')).json()).toEqual([]);
     });
 
     it('says there is no such printer when asked to remove one it does not have', async () => {
-      const response = await fetch(`${shopUrl}/printers/ender`, { method: 'DELETE' });
+      const response = await send('DELETE', '/printers/ender', undefined);
 
       expect(response.status).toBe(404);
       expect(await response.json()).toEqual({ error: 'no printer called ender - the operator adds one before it can print' });

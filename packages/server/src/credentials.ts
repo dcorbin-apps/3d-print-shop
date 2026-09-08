@@ -20,11 +20,11 @@ export function defaultEtc(): string {
 /** What a caller may do. Authority, not occupation - a script can be an admin and a person a user. */
 export type Role = 'admin' | 'user';
 
-// AIDEV-NOTE: a file that is not there and a file that is wrong are different answers, and the
-// difference is the whole safety of this. Not there means nobody has set credentials up, which a
-// shop on loopback runs without. Wrong - unreadable, malformed, two callers on one token, a mode
-// anybody can read - must STOP the shop: treating it as "nobody configured" would answer a typo in
-// the credentials file by opening the shop to everyone, which is the failure nobody would notice.
+// AIDEV-NOTE: what a file that is not there MEANS is the reader's to say, and the two readers below
+// say opposite things. No printer keys is a shop that has not been pointed at a machine yet, which
+// is a fresh install rather than a fault. No callers is a shop nobody may call, and since every
+// route names its caller that is a shop that cannot answer anybody - so it refuses to start rather
+// than starting open, which is the failure nobody would notice.
 const MISSING = Symbol('no such file');
 
 // AIDEV-NOTE: an id is what a job record will say it is OWNED by, and a record is written once and
@@ -49,11 +49,15 @@ export class UnusableCredentials extends Error {}
  *
  * Keyed by token because that is all a request carries; the id, name and role are what it buys.
  */
-export async function callersIn(etc: string = defaultEtc()): Promise<Map<string, Caller> | undefined> {
+export async function callersIn(etc: string = defaultEtc()): Promise<Map<string, Caller>> {
   const file = path.join(etc, CALLERS_FILE);
   const listed = await readOnlyByItsOwner(file);
 
-  if (listed === MISSING) return undefined;
+  if (listed === MISSING) {
+    throw new UnusableCredentials(
+      `${file} is not there, and every route names its caller - so this shop cannot run until it lists them, each with an id, a name, a role and a token`,
+    );
+  }
 
   if (!Array.isArray(listed)) {
     throw new UnusableCredentials(`${file} is a list of callers, each with an id, a name, a role and a token`);

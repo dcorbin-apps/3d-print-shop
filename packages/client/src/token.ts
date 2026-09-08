@@ -15,8 +15,8 @@ export function defaultTokenFile(): string {
 }
 
 /**
- * The token to present, or undefined when there is none to present - which is right for a shop that
- * has no callers configured, and is refused by one that has.
+ * The token to present, or undefined when there is none to present - which every shop refuses,
+ * because no route there answers a caller it cannot name.
  *
  * Read synchronously and once: every caller needs it before its first request, and a token that
  * changed part way through a run would be worse than one that did not.

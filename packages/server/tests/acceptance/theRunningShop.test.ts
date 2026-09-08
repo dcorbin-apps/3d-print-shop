@@ -25,16 +25,24 @@ describe('the shop, running as its own process', () => {
     stopped: Promise<void>;
   }
 
+  // No route answers a caller the shop cannot name, so every shop here is started with credentials
+  // and every request carries a token.
+  const ADMIN = 'dave-token';
+  const USER = 'gamebox-token';
+  const asAdmin = { authorization: `Bearer ${ADMIN}` };
+
   let spool: string;
+  let etc: string;
+  let madeEtc: string[];
   let started: RunningShop[];
 
   function startShop(): Promise<RunningShop> {
     return startShopOver(spool);
   }
 
-  function startShopOver(root: string, alsoSaying: string[] = []): Promise<RunningShop> {
+  function startShopOver(root: string, alsoSaying: string[] = [], credentials: string = etc): Promise<RunningShop> {
     return new Promise<RunningShop>((resolve, reject) => {
-      const shop = spawn('node', ['--import', 'tsx', SHOP, 'serve', '--spool', root, '--port', '0', ...alsoSaying]);
+      const shop = spawn('node', ['--import', 'tsx', SHOP, 'serve', '--spool', root, '--etc', credentials, '--port', '0', ...alsoSaying]);
       let said = '';
       let complaint = '';
 
@@ -81,7 +89,10 @@ describe('the shop, running as its own process', () => {
     return (await runCommandSaying(args)).code;
   }
 
-  function runCommandSaying(args: string[], carrying: Record<string, string> = {}): Promise<{ code: number; stdout: string }> {
+  function runCommandSaying(
+    args: string[],
+    carrying: Record<string, string> = { PRINT_SHOP_TOKEN: ADMIN }
+  ): Promise<{ code: number; stdout: string }> {
     return new Promise((resolve, reject) => {
       const command = spawn('node', ['--import', 'tsx', SHOP, ...args], { env: { ...process.env, ...carrying } });
       let stdout = '';
@@ -102,7 +113,7 @@ describe('the shop, running as its own process', () => {
   async function addMk4(shop: RunningShop): Promise<void> {
     await fetch(`${shop.url}/printers`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...asAdmin },
       body: JSON.stringify({ name: 'mk4', buildVolume: MK4, address: 'http://octopi.local' }),
     });
   }
@@ -113,10 +124,11 @@ describe('the shop, running as its own process', () => {
 
   // 0600, because the shop refuses to read credentials anybody else could.
   async function credentialsNaming(callers: { id: string; name: string; role: string; token: string }[]): Promise<string> {
-    const etc = await mkdtemp(path.join(tmpdir(), 'print-shop-etc-'));
-    await writeFile(path.join(etc, 'callers.json'), JSON.stringify(callers), { mode: 0o600 });
+    const written = await mkdtemp(path.join(tmpdir(), 'print-shop-etc-'));
+    await writeFile(path.join(written, 'callers.json'), JSON.stringify(callers), { mode: 0o600 });
+    madeEtc.push(written);
 
-    return etc;
+    return written;
   }
 
   async function submitGcode(shop: RunningShop, gcode: string): Promise<Response> {
@@ -124,17 +136,23 @@ describe('the shop, running as its own process', () => {
     body.append('job', JSON.stringify({ filaments: ['PLA-SpaceGray'], displayName: 'Player Box' }));
     body.append('gcode', new Blob([gcode]), 'print.gcode');
 
-    return fetch(`${shop.url}/jobs`, { method: 'POST', body });
+    return fetch(`${shop.url}/jobs`, { method: 'POST', body, headers: asAdmin });
+  }
+
+  function ask(shop: RunningShop, path: string): Promise<Response> {
+    return fetch(`${shop.url}${path}`, { headers: asAdmin });
   }
 
   beforeEach(async () => {
     spool = await mkdtemp(path.join(tmpdir(), 'print-shop-running-'));
     started = [];
+    madeEtc = [];
+    etc = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
   });
 
   afterEach(async () => {
     await Promise.all(started.map((shop) => shop.stop()));
-    await rm(spool, { recursive: true, force: true });
+    await Promise.all([spool, ...madeEtc].map((made) => rm(made, { recursive: true, force: true })));
   });
 
   it('keeps what it is given in the spool it was pointed at', async () => {
@@ -149,11 +167,11 @@ describe('the shop, running as its own process', () => {
   // files - so this goes the whole way through: argv, the API, the store, and back out of a GET.
   it('takes a printer the operator adds through the running shop', async () => {
     const shop = await shopIsRunning();
-    expect(await (await fetch(`${shop.url}/printers`)).json()).toEqual([]);
+    expect(await (await ask(shop, '/printers')).json()).toEqual([]);
 
     expect(await runCommand(['printer', '--shop-url', shop.url, 'add', 'mk4', '250x210x220', 'http://mk4'])).toBe(0);
 
-    expect(await (await fetch(`${shop.url}/printers`)).json()).toEqual([
+    expect(await (await ask(shop, '/printers')).json()).toEqual([
       { name: 'mk4', buildVolume: MK4, api: 'octoprint', address: 'http://mk4', loaded: [] },
     ]);
   }, 30_000);
@@ -204,7 +222,7 @@ describe('the shop, running as its own process', () => {
 
     const again = await shopIsRunning();
 
-    expect(await (await fetch(`${again.url}/jobs`)).json()).toMatchObject([{ id: 1, displayName: 'Player Box', state: 'queued' }]);
+    expect(await (await ask(again, '/jobs')).json()).toMatchObject([{ id: 1, displayName: 'Player Box', state: 'queued' }]);
   }, 30_000);
 
   // The cap belongs to the operator: a slicer that outgrows the default has to be able to say so,
@@ -227,15 +245,12 @@ describe('the shop, running as its own process', () => {
   // routes with fetch and a hand-written header, which proves nothing about the client that clients
   // actually use.
   describe('an operator carrying a token', () => {
-    const ADMIN = 'dave-token';
-    const USER = 'gamebox-token';
-
     async function guardedShop(): Promise<RunningShop> {
-      const etc = await credentialsNaming([
+      const bothOfThem = await credentialsNaming([
         { id: 'dave', name: 'dave', role: 'admin', token: ADMIN },
         { id: 'gamebox', name: 'gamebox', role: 'user', token: USER },
       ]);
-      const shop = await startShopOver(spool, ['--etc', etc]);
+      const shop = await startShopOver(spool, [], bothOfThem);
       started.push(shop);
 
       return shop;
@@ -249,10 +264,14 @@ describe('the shop, running as its own process', () => {
       expect(listing.code).toBe(0);
     }, 30_000);
 
+    // XDG_CONFIG_HOME at a directory with no token in it, so what this proves is the shop refusing
+    // a nameless caller rather than whatever token the machine running the test happens to hold.
     it('is refused when carrying no token at all', async () => {
       const shop = await guardedShop();
 
-      expect(await runCommand(['printer', '--shop-url', shop.url, 'list'])).toBe(1);
+      const listing = ['printer', '--shop-url', shop.url, 'list'];
+
+      expect((await runCommandSaying(listing, { PRINT_SHOP_TOKEN: '', XDG_CONFIG_HOME: spool })).code).toBe(1);
     }, 30_000);
 
     // The role travels with the token: the same command, the same shop, a different caller.
@@ -265,30 +284,30 @@ describe('the shop, running as its own process', () => {
     }, 30_000);
   });
 
-  // Loopback is the default because nothing else is authenticated by default - so the interface it
-  // binds is the access control, and going past it is the operator's decision rather than a default.
+  // A token travels in the clear over http, so loopback is the default even though every route is
+  // now authenticated - and going past it is the operator's decision rather than a default.
   describe('where it listens', () => {
-    it('is loopback, so a shop naming no callers is not on the network', async () => {
+    it('is loopback unless the operator asks for somewhere else', async () => {
       expect((await shopIsRunning()).address).toBe('127.0.0.1');
-    }, 30_000);
-
-    // The pair that matters: past loopback, a shop that named nobody would be one ANYBODY could
-    // submit to, delete a printer on, or shut down - so it does not start at all.
-    it('will not go past loopback when nobody is named who may call', async () => {
-      const refused = await runCommandSaying(['serve', '--spool', spool, '--port', '0', '--listen', '::1', '--etc', spool]);
-
-      expect(refused.code).toBe(1);
     }, 30_000);
 
     // `::1` rather than an address off this machine: it proves the option is carried through to the
     // listener without a test that opens a port to the network.
     it('is the address --listen names, and it answers there', async () => {
-      const etc = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: 'a-token' }]);
-      const shop = await startShopOver(spool, ['--listen', '::1', '--etc', etc]);
+      const shop = await startShopOver(spool, ['--listen', '::1']);
       started.push(shop);
 
       expect(shop.address).toBe('::1');
-      expect((await fetch(`${shop.url}/printers`, { headers: { authorization: 'Bearer a-token' } })).status).toBe(200);
+      expect((await ask(shop, '/printers')).status).toBe(200);
+    }, 30_000);
+  });
+
+  // AIDEV-NOTE: the whole point of removing the anonymous mode - a shop whose credentials are not
+  // there does not start, rather than starting as one anybody reaching the port may ask anything.
+  // A fresh machine gets its first admin from a bootstrap command instead; see PLAN.md.
+  describe('a shop nobody may call', () => {
+    it('will not start when no callers are named', async () => {
+      await expect(startShopOver(spool, [], path.join(spool, 'no-credentials-here'))).rejects.toThrow('every route names its caller');
     }, 30_000);
   });
 });

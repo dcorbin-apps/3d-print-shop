@@ -44,21 +44,10 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   THEIRS. The owner or an admin reads a job's details; the OWNER ALONE renders its verdict; every
   other caller learns only how many jobs the shop holds, as a bare total. Today any token reads
   every job, including another client's `displayName` and `metadata`, which is honest with one
-  client and wrong with two. Three things to settle while building it:
+  client and wrong with two. Two things to settle while building it:
   - `jobs()` answers `Job[]` and has no shape for "a total instead of a list"
   - a job whose owner is revoked can never be judged, so it holds its printer for good. An admin
     override is the obvious escape and was deliberately not taken; something has to be
-
-- [ ] No route answers an unidentified caller. Today `createApi` passes every request through when
-  `callers` is undefined, so a shop with no `callers.json` submits, deletes printers and shuts down
-  for anyone reaching the port - which is the whole of what makes a bare `serve` work on a fresh
-  machine. Decided: that mode goes. `callersIn` returning MISSING becomes a refusal to start,
-  `request.caller` becomes a `Caller` rather than a `Caller | undefined`, and ownership below loses
-  its unowned case entirely. Two things follow:
-  - the `--listen` guard in `cli.ts` and the "names no callers" line it prints are both about a
-    shop that can no longer exist
-  - a fresh machine needs a first admin before the shop will run at all, so the bootstrap command
-    stops being a convenience and becomes the only way in
 
 - [ ] `callers.json` is shaped for machine callers and nothing else, which is what a web UI exposes.
   The token is the map's KEY, so the credential is the identity: a caller holds exactly one token,

@@ -29,20 +29,20 @@ describe('the credentials a shop is given', () => {
 
       const callers = await callersIn(etc);
 
-      expect(callers?.get('dave-token')).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
-      expect(callers?.get('gamebox-token')).toEqual({ id: 'u-2', name: 'gamebox', role: 'user' });
+      expect(callers.get('dave-token')).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
+      expect(callers.get('gamebox-token')).toEqual({ id: 'u-2', name: 'gamebox', role: 'user' });
     });
 
     it('knows nobody by a token it was not given', async () => {
       await write(CALLERS_FILE, [dave]);
 
-      expect((await callersIn(etc))?.get('some-other-token')).toBeUndefined();
+      expect((await callersIn(etc)).get('some-other-token')).toBeUndefined();
     });
 
     it('takes a file naming nobody, which is a shop nobody may call', async () => {
       await write(CALLERS_FILE, []);
 
-      expect((await callersIn(etc))?.size).toBe(0);
+      expect((await callersIn(etc)).size).toBe(0);
     });
 
     // An id outlives the name beside it, so what one may look like is fixed before any job is
@@ -50,7 +50,7 @@ describe('the credentials a shop is given', () => {
     it.each([['dave'], ['gamebox-v3'], ['a.b_c-1'], ['7'], ['x'.repeat(64)]])('takes %j as an id', async (id) => {
       await write(CALLERS_FILE, [{ ...dave, id }]);
 
-      expect((await callersIn(etc))?.get('dave-token')?.id).toBe(id);
+      expect((await callersIn(etc)).get('dave-token')?.id).toBe(id);
     });
 
     it.each([[''], ['-leading'], ['.leading'], ['has space'], ['slash/es'], ['\u00fcber'], ['x'.repeat(65)]])(
@@ -97,11 +97,11 @@ describe('the credentials a shop is given', () => {
       await expect(callersIn(etc)).rejects.toThrow('is not JSON');
     });
 
-    // AIDEV-NOTE: absent and wrong are different answers on purpose. Absent is a machine nobody has
-    // set up, which runs on loopback with nothing refused; wrong must stop the shop, because reading
-    // a typo in the security file as "nobody configured" would answer it by removing the security.
-    it('is nobody at all when the file is not there, which a fresh machine is', async () => {
-      await expect(callersIn(etc)).resolves.toBeUndefined();
+    // AIDEV-NOTE: a fresh machine is where this matters. Every route names its caller, so reading a
+    // file that is not there as "nobody configured yet" would put a shop anybody may call on the
+    // first machine it was installed on - the one place nobody is watching for it.
+    it('is a refusal when the file is not there, rather than a shop anyone may call', async () => {
+      await expect(callersIn(etc)).rejects.toThrow('every route names its caller');
     });
 
     it.each([

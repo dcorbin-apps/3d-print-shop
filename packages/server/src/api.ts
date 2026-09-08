@@ -7,15 +7,14 @@ import type { BuildVolume, Job, JobDetails } from './Job.js';
 import { NoSuchJob, NoSuchPrinter, SpoolUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
 import type { Caller } from './credentials.js';
 import type { JobStore } from './JobStore.js';
-import { DEFAULT_PORT } from '@3d-print-shop/client';
 import type { PrinterRecord } from './Printer.js';
 
 /** The request was not one the shop could act on - as opposed to one it could and would not. */
 export class UnusableRequest extends Error {}
 
-// AIDEV-NOTE: nothing here is authenticated, so whoever can reach the port can submit work, delete a
-// printer, or stop the shop mid-print. Until there is a token, the interface it binds is the whole
-// of the access control - so it is loopback, and reaching further is something an operator asks for
+// AIDEV-NOTE: every route names its caller, so the interface is no longer the whole of the access
+// control - but a token travels in the clear over http, and the interface that cannot be listened
+// to is the one with no network to listen on. Reaching further is something an operator asks for
 // with `serve --listen`.
 export const LOOPBACK = '127.0.0.1';
 
@@ -104,32 +103,30 @@ export interface ShopHooks {
   changed?: () => void;
   /** Told to shut the shop down. Answered before it happens, because it cannot be answered after. */
   shutDown?: () => void;
-  /** Who may talk to this shop, by their token. Absent means anyone reaching the port may. */
-  callers?: ReadonlyMap<string, Caller>;
+  /** Who may talk to this shop, by their token. Every request names one of them, or is refused. */
+  callers: ReadonlyMap<string, Caller>;
 }
 
 declare module 'express-serve-static-core' {
   interface Request {
-    /** Who is asking, once a token has said so. Absent when the shop has no callers configured. */
-    caller?: Caller;
+    /** Who is asking. Set before any route is reached, because no route answers a caller without one. */
+    caller: Caller;
   }
 }
 
-export function createApi(shop: JobStore, hooks: ShopHooks = {}): Express {
+export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   const api = express();
   api.use(express.json());
 
   const changed = hooks.changed ?? ((): void => undefined);
   const callers = hooks.callers;
 
-  // AIDEV-NOTE: before everything, so no route has to remember. A shop given no callers at all is
-  // one nobody has set up credentials for - it answers on loopback and refuses nothing, which is
-  // what makes a bare `serve` work on a fresh machine; cli.ts is what refuses to open that to the
-  // network. Who asked is put on the request rather than used here: the log has nowhere to write it
-  // yet, and a name in an ANSWER would tell an unauthenticated caller which names exist.
+  // AIDEV-NOTE: before everything, so no route has to remember. There is no anonymous mode, not even
+  // on loopback: a shop that answered an unnamed request is one where a job has no submitter to
+  // belong to, so the case is removed rather than handled - `callersIn` refuses to read a shop into
+  // existence without callers. Who asked is put on the request rather than used here: the log has
+  // nowhere to write it yet, and a name in an ANSWER would tell a stranger which names exist.
   api.use((request, _response, next) => {
-    if (callers === undefined) return next();
-
     const caller = callers.get(tokenIn(request.header('authorization')) ?? '');
     if (caller === undefined) throw new NotAKnownCaller('this shop does not know that token');
     if (needsAdmin(request.method, request.path) && caller.role !== 'admin') {
@@ -274,7 +271,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks = {}): Express {
 // which cli.ts's `serve` gives to a Foreman - so a job submitted over HTTP is started as soon as
 // there is a free printer with its filament loaded, and sits queued only while there is not.
 // Nothing here reaches a machine itself, which is what keeps the store's one writer one writer.
-export function serve(shop: JobStore, port: number = DEFAULT_PORT, hooks?: ShopHooks, address: string = LOOPBACK): Promise<Server> {
+export function serve(shop: JobStore, port: number, hooks: ShopHooks, address: string = LOOPBACK): Promise<Server> {
   return new Promise((resolve, reject) => {
     const server = createApi(shop, hooks).listen(port, address, () => resolve(server));
     server.on('error', reject);

@@ -48,20 +48,14 @@ export function createCLI(): Command {
       const store = new JobStore(options.spool ?? defaultSpoolRoot(), { maxGcodeBytes: options.maxGcode });
       const etc = options.etc ?? defaultEtc();
 
-      // AIDEV-NOTE: credentials are optional, and that is what lets a bare `serve` work on a machine
-      // nobody has set up yet - it answers on loopback, where the only callers are already on the
-      // box. Opening it past loopback with nobody named is the one combination refused: a shop on
-      // the network with no callers is one anybody can submit to, delete a printer on, or shut down.
-      //
-      // Not caught: a credentials file that is THERE and wrong stops the shop. Reading a typo as
-      // "nobody configured" would answer a mistake in the security file by removing the security.
+      // AIDEV-NOTE: credentials come first, and a shop that has none does not start. Every route
+      // names its caller, so there is nothing for a shop with no callers to answer - and reading a
+      // missing file as "nobody configured yet" is how a fresh machine ends up serving anybody who
+      // reaches the port. A file that is THERE and wrong stops it for the same reason: answering a
+      // typo in the security file by removing the security is the failure nobody notices.
       const callers = await callersIn(etc);
       const printerKeys = await printerKeysIn(etc);
       const listenOn = options.listen ?? LOOPBACK;
-
-      if (listenOn !== LOOPBACK && (callers === undefined || callers.size === 0)) {
-        throw new Error(`--listen ${listenOn} reaches past this machine, and ${etc} names nobody who may call - so anyone could`);
-      }
 
       // Before anything else: a spool that is not there, or is already being served, is a shop that
       // must refuse to start rather than start and do damage.
@@ -109,10 +103,7 @@ export function createCLI(): Command {
       // because whether this shop can be reached from the network is the difference between the
       // default and `--listen`, and it is worth being able to see which one is running.
       const bound = shopServer.address() as AddressInfo;
-      say([
-        `3d-print-shop is listening on ${bound.address}:${bound.port}`,
-        callers === undefined ? `${etc} names no callers, so anyone reaching that address may ask anything` : `${callers.size} caller(s) may ask`,
-      ]);
+      say([`3d-print-shop is listening on ${bound.address}:${bound.port}`, `${callers.size} caller(s) may ask`]);
 
       // A restart does not stop a machine. Prints that were already running are picked up first,
       // then anything that could start now - nothing else will wake this up until a change arrives.
