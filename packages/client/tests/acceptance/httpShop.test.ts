@@ -44,7 +44,13 @@ describe('the shop over HTTP', () => {
     asked = [];
 
     server = createServer(answer);
-    await new Promise<void>((listening) => server.listen(0, listening));
+    // AIDEV-NOTE: 127.0.0.1, not the wildcard. `listen(0)` with no address binds 0.0.0.0, and on
+    // macOS that SUCCEEDS on a port a loopback listener already holds - so this stand-in could be
+    // handed a port belonging to a shop or a sim from another suite, and every request the test then
+    // made to 127.0.0.1 went to THAT server. It showed up as a 401 out of a suite whose stand-in
+    // answers no such thing, about one full-suite run in ten. Binding the same address the URL names
+    // makes the collision impossible rather than unlikely.
+    await new Promise<void>((listening) => server.listen(0, '127.0.0.1', listening));
     shop = new HttpShop(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
   });
 

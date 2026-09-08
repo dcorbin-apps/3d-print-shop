@@ -71,6 +71,10 @@ describe('recovering a print outcome across a dropped connection', () => {
     return job.id;
   }
 
+  // AIDEV-NOTE: 30s on every test here, where jest's default is 5. Nothing in this file WANTS more
+  // than a second - what it buys is room for the whole suite running in parallel, where a worker
+  // holding real sockets can stall on a loaded machine. At the default this file failed about one
+  // full-suite run in six while passing 15 of 15 on its own: a busy machine, not a slow shop.
   it('learns an outcome that was announced while the socket was down', async () => {
     // The completion event fires with no socket attached to hear it, exactly as OctoPrint would -
     // it pushes events forward and replays nothing to a client that reconnects later. No delay:
@@ -88,7 +92,7 @@ describe('recovering a print outcome across a dropped connection', () => {
     expect(attempt).toBe('finished');
     // Proves the outcome was recovered across a real reconnect rather than delivered live.
     expect(server.connectionsAccepted()).toBeGreaterThan(1);
-  });
+  }, 30_000);
 
   // AIDEV-NOTE: OctoPrint's history records a cancelled print as a failure, so a run reconciled
   // after the fact cannot be told from a genuine error. Only a live event reports 'cancelled'.
@@ -101,7 +105,7 @@ describe('recovering a print outcome across a dropped connection', () => {
     await submit();
 
     expect(await printThrough(connectedTo(server.port))).toBe('failed');
-  });
+  }, 30_000);
 
   // AIDEV-NOTE: the hazard this pins down. A rejected print is run again under the SAME remote path,
   // so the file's history holds the FIRST print's outcome while the second is still running. A
@@ -136,7 +140,7 @@ describe('recovering a print outcome across a dropped connection', () => {
 
     expect(await printThrough(printer)).toBe('finished');
     expect(secondPrintFinished).toBe(true);
-  });
+  }, 30_000);
 
   it('waits for the live event when the print is still running at reconnect', async () => {
     const handler: JobSubmittedHandler = (_job, complete) => {
@@ -148,5 +152,5 @@ describe('recovering a print outcome across a dropped connection', () => {
 
     // 'cancelled' can only have come from an event delivered live - the history cannot express it.
     expect(await printThrough(connectedTo(server.port))).toBe('cancelled');
-  });
+  }, 30_000);
 });
