@@ -52,6 +52,65 @@ export const reconnectAfter: ReconnectDelay = (attempt, cancelled) =>
     );
   });
 
+// AIDEV-NOTE: "fetch failed" is the whole of what node says when it cannot reach a machine at all,
+// and it names neither the address nor the reason. That message is not thrown away here: it ends up
+// in `printer.paused.reason` and in the log, which is all an operator gets when a printer goes
+// quiet - "could not start anything on mk4: fetch failed" tells them nothing they can act on.
+//
+// The reason is in the error's `cause`, as a libuv code. These are the ones a printer on a LAN
+// actually produces; anything else keeps its own message rather than being guessed at.
+const UNREACHABLE: Record<string, (where: string, host: string) => string> = {
+  ECONNREFUSED: (where) => `nothing is listening at ${where}`,
+  ENOTFOUND: (_where, host) => `the name ${host} does not resolve`,
+  EAI_AGAIN: (_where, host) => `the name ${host} could not be looked up`,
+  ETIMEDOUT: (where) => `${where} did not answer in time`,
+  UND_ERR_CONNECT_TIMEOUT: (where) => `${where} did not answer in time`,
+  UND_ERR_HEADERS_TIMEOUT: (where) => `${where} took too long to answer`,
+  ECONNRESET: (where) => `${where} closed the connection`,
+  EHOSTUNREACH: (_where, host) => `there is no route to ${host}`,
+  ENETUNREACH: (_where, host) => `there is no network route to ${host}`,
+  EPIPE: (where) => `${where} closed the connection part way through`,
+};
+
+// AIDEV-NOTE: node tries A and AAAA at once and reports both failures together, so a machine that is
+// simply not there arrives as an AggregateError whose own message is empty. The first error in it is
+// the one worth saying.
+// The error underneath, which is the one that knows anything. By shape rather than by `instanceof
+// AggregateError`: that is ES2021, and an error crossing a realm is not an instance of anything here.
+function underneath(failure: unknown): unknown {
+  const cause = (failure as { cause?: unknown })?.cause ?? failure;
+  const collected = (cause as { errors?: unknown })?.errors;
+
+  return Array.isArray(collected) ? (collected[0] as unknown) : cause;
+}
+
+function codeOf(failure: unknown): string | undefined {
+  return (underneath(failure) as { code?: unknown } | undefined)?.code as string | undefined;
+}
+
+function hostIn(where: string): string {
+  try {
+    return new URL(where).host;
+  } catch {
+    return where;
+  }
+}
+
+/** Why a machine could not be reached, in words an operator can act on, and the code to search for. */
+export function whyUnreachable(failure: unknown, where: string): string {
+  const code = codeOf(failure);
+  const inWords = code === undefined ? undefined : UNREACHABLE[code];
+
+  if (inWords) return `${inWords(where, hostIn(where))} (${code})`;
+  if (code !== undefined) return `${where} could not be reached (${code})`;
+
+  // The CAUSE's message, not the outer one: node's outer message is "fetch failed" for everything,
+  // where the cause says something like "bad port" - which is the half worth passing on.
+  const said = (underneath(failure) as Error | undefined)?.message || (failure as Error)?.message;
+
+  return `${where} could not be reached: ${said ?? String(failure)}`;
+}
+
 // AIDEV-NOTE: none of these is a verdict. `PrintDone` says the machine reached the end of the file,
 // which is not the same as the result being usable - the shop asks a person about that.
 const OUTCOME_BY_EVENT: Record<string, PrinterOutcome | undefined> = {
@@ -165,8 +224,18 @@ export class OctoPrint implements Printer {
   //
   // Done per connection rather than once, so a reconnect after a long gap does not reuse a session
   // the server has since expired.
+  // Every call the shop makes to a machine goes through here, so a machine that cannot be reached
+  // says so once, the same way, wherever the shop was in the middle of.
+  private async reach(url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await this.httpClient(url, init);
+    } catch (failure) {
+      throw new Error(whyUnreachable(failure, this.config.baseUrl));
+    }
+  }
+
   private async passiveLogin(): Promise<{ name: string; session: string }> {
-    const response = await this.httpClient(`${this.config.baseUrl}/api/login`, {
+    const response = await this.reach(`${this.config.baseUrl}/api/login`, {
       method: 'POST',
       headers: { 'X-Api-Key': this.config.apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ passive: true }),
@@ -219,7 +288,7 @@ export class OctoPrint implements Printer {
     form.append('path', folder === '.' ? '' : folder);
     form.append('print', 'true');
 
-    const response = await this.httpClient(`${this.config.baseUrl}/api/files/local`, {
+    const response = await this.reach(`${this.config.baseUrl}/api/files/local`, {
       method: 'POST',
       headers: { 'X-Api-Key': this.config.apiKey },
       body: form,
@@ -357,7 +426,7 @@ export class OctoPrint implements Printer {
 
   private async getJson<T>(path: string): Promise<T | null> {
     try {
-      const response = await this.httpClient(`${this.config.baseUrl}${path}`, {
+      const response = await this.reach(`${this.config.baseUrl}${path}`, {
         headers: { 'X-Api-Key': this.config.apiKey },
       });
       if (!response.ok) return null;
@@ -438,7 +507,7 @@ export class OctoPrint implements Printer {
   // than deleted because an operator will want it and this is proven against a real OctoPrint; see
   // PLAN. OctoPrint cancels whatever is running, so it takes no argument.
   async cancel(): Promise<void> {
-    const response = await this.httpClient(`${this.config.baseUrl}/api/job`, {
+    const response = await this.reach(`${this.config.baseUrl}/api/job`, {
       method: 'POST',
       headers: {
         'X-Api-Key': this.config.apiKey,

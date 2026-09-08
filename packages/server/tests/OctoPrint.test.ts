@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Readable } from 'node:stream';
-import { OctoPrint, reconnectAfter, reconnectDelayMs } from '../src';
+import { OctoPrint, reconnectAfter, reconnectDelayMs, whyUnreachable } from '../src';
 import type { HttpClient, OctoPrintConfig, ReconnectDelay, WebSocketFactory } from '../src';
 
 interface MockWebSocket {
@@ -11,6 +11,55 @@ interface MockWebSocket {
   send: jest.Mock<(data: string) => void>;
   close: jest.Mock<() => void>;
 }
+
+// AIDEV-NOTE: what node says when it cannot reach a machine at all is "fetch failed", and it names
+// neither the address nor the reason. That message is not thrown away: it reaches the log and
+// `printer.paused.reason`, which is the whole of what an operator gets when a printer goes quiet.
+describe('why a machine could not be reached', () => {
+  // How node reports it: a TypeError saying nothing, with the reason underneath in `cause`.
+  const fetchFailed = (code: string): Error =>
+    Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('...'), { code }) });
+
+  it.each([
+    ['ECONNREFUSED', 'nothing is listening at http://octopi.local (ECONNREFUSED)'],
+    ['ENOTFOUND', 'the name octopi.local does not resolve (ENOTFOUND)'],
+    ['ETIMEDOUT', 'http://octopi.local did not answer in time (ETIMEDOUT)'],
+    ['ECONNRESET', 'http://octopi.local closed the connection (ECONNRESET)'],
+    ['EHOSTUNREACH', 'there is no route to octopi.local (EHOSTUNREACH)'],
+  ])('says what %s means, and keeps the code to search for', (code, expected) => {
+    expect(whyUnreachable(fetchFailed(code), 'http://octopi.local')).toBe(expected);
+  });
+
+  // Node tries A and AAAA at once and reports both failures together, in an error whose own message
+  // is empty - which is what a machine that is simply not there looks like.
+  it('reads the reason out of a pair of failures reported together', () => {
+    const both = Object.assign(new TypeError('fetch failed'), {
+      cause: Object.assign(new Error(''), { errors: [Object.assign(new Error('...'), { code: 'ECONNREFUSED' })] }),
+    });
+
+    expect(whyUnreachable(both, 'http://octopi.local')).toBe('nothing is listening at http://octopi.local (ECONNREFUSED)');
+  });
+
+  // A code nobody anticipated is still worth more than "fetch failed": it says where, and it says
+  // enough to search for.
+  it('says the code even when it has no words for it', () => {
+    expect(whyUnreachable(fetchFailed('EPROTO'), 'http://octopi.local')).toBe('http://octopi.local could not be reached (EPROTO)');
+  });
+
+  // node's outer message is "fetch failed" whatever went wrong; the cause is what knows. A port
+  // undici refuses to dial at all arrives exactly this way.
+  it('says what the failure underneath said, not the "fetch failed" over the top of it', () => {
+    const badPort = Object.assign(new TypeError('fetch failed'), { cause: new Error('bad port') });
+
+    expect(whyUnreachable(badPort, 'http://octopi.local:9')).toBe('http://octopi.local:9 could not be reached: bad port');
+  });
+
+  it('falls back to what the failure said when there is no code at all', () => {
+    expect(whyUnreachable(new Error('something else entirely'), 'http://octopi.local')).toBe(
+      'http://octopi.local could not be reached: something else entirely'
+    );
+  });
+});
 
 describe('OctoPrint', () => {
   let mockHttpClient: jest.Mock<HttpClient>;
@@ -223,6 +272,15 @@ describe('OctoPrint', () => {
 
       const [, cancelled] = mockReconnectDelay.mock.calls[0];
       expect(cancelled.aborted).toBe(false);
+    });
+  });
+
+  // The whole point: this is the message that reaches the log and `printer.paused.reason`.
+  describe('a machine that cannot be reached at all', () => {
+    it('says so, and where, rather than "fetch failed"', async () => {
+      mockHttpClient.mockRejectedValue(Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }));
+
+      await expect(adapter.send(REMOTE_PATH, gcode())).rejects.toThrow('nothing is listening at http://octoprint.local (ECONNREFUSED)');
     });
   });
 

@@ -22,7 +22,7 @@ export { InvalidSubmission, generatedDisplayName, validateDetails } from './Job.
 export { JobStore, MAX_GCODE_ENV, defaultMaxGcodeBytes, NoPrinterCanTakeIt, NoSuchJob, NoSuchPrinter, SpoolUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
 export type { SpoolLimits } from './JobStore.js';
 export type { HttpClient, OctoPrintConfig, ReconnectDelay, WebSocketFactory } from './OctoPrint.js';
-export { OctoPrint, reconnectAfter, reconnectDelayMs } from './OctoPrint.js';
+export { OctoPrint, reconnectAfter, reconnectDelayMs, whyUnreachable } from './OctoPrint.js';
 export type { Holding, PrinterApi, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
 export { canTake, fitsInside } from './Printer.js';
 export { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';

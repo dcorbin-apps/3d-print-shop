@@ -37,10 +37,14 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### What an operator can see
 
-- [ ] "fetch failed" is what a printer that cannot be reached logs, and it is node's message rather
-  than an answer: it says nothing about the address, the port, or whether the name resolved. It
-  reaches both the log and `printer.paused.reason`, so it is what an operator is left with. The
-  error's `cause` carries the real reason (ECONNREFUSED, ENOTFOUND) and `OctoPrint` should say it
+- [ ] A printer is stopped by a start attempt that fails while the shop is SHUTTING DOWN. Seen for
+  real: `printer stopped ... does not resolve` written after `the shop has stopped`, because the
+  attempt was in flight when the shutdown arrived. `Foreman.watchToTheEnd` already refuses to pause
+  on the way out - "a shop that came back up with every machine stopped, for a fault nobody caused,
+  would be worse" - and `Foreman.start`'s catch is the same situation without the same guard
+- [ ] The push socket says as little as node's fetch used to. "OctoPrint WebSocket closed before
+  connection was established" names no address and no reason, and it reaches an operator the same
+  way - `ws` reports the cause on the error event, which `onerror` currently throws away
 
 - [ ] `job waiting` answers for the SHOP, not for a machine. A job that names another printer, or
   that no printer but the big one could take, is counted all the same - so an operator at the mini
