@@ -33,8 +33,11 @@ export interface Shop {
   /**
    * What the queued work is waiting for, busiest first - the operator's question rather than the
    * shop's. It counts every job the shop holds, so it is not a caller's own view of the queue.
+   *
+   * Named a printer, it counts only what that machine could take - which is what an operator
+   * standing at one of several wants to know.
    */
-  waitingOn(): Promise<FilamentDemand[]>;
+  waitingOn(printer?: string): Promise<FilamentDemand[]>;
 
   printers(): Promise<RegisteredPrinter[]>;
   addPrinter(record: PrinterRecord): Promise<PrinterAdded>;

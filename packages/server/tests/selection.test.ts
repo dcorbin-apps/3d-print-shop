@@ -162,5 +162,40 @@ describe('choosing what to print', () => {
     it('answers with nothing for an empty shop', () => {
       expect(waitingOn([])).toEqual([]);
     });
+
+    // AIDEV-NOTE: the question is asked AT a machine - "what do I load next" - and a job that
+    // machine could never take is not work it is waiting on. printableNow has always filtered on
+    // this and counting demand did not, so an operator at the mini could be sent for a filament
+    // only the XL had a use for.
+    describe('at one machine rather than for the shop', () => {
+      const held = [
+        job(1, ['red']),
+        job(2, ['blue'], { printer: 'xl' }),
+        job(3, ['green'], { requiredBuildVolume: { x: 400, y: 400, z: 400 } }),
+      ];
+
+      it('counts only what the named printer could take', () => {
+        expect(waitingOn(held, printer([]))).toEqual([{ filament: 'red', jobs: 1 }]);
+      });
+
+      // Two machines, because one would be satisfied by dropping every job with a condition on it.
+      it('counts a different set at a different machine', () => {
+        expect(waitingOn(held, printer([], { name: 'xl', buildVolume: { x: 400, y: 400, z: 400 } }))).toEqual([
+          { filament: 'blue', jobs: 1 },
+          { filament: 'green', jobs: 1 },
+          { filament: 'red', jobs: 1 },
+        ]);
+      });
+
+      it('counts the whole queue when no machine is named', () => {
+        expect(waitingOn(held).map((demand) => demand.filament)).toEqual(['blue', 'green', 'red']);
+      });
+
+      // What is loaded is the very thing being asked about, so it cannot be a reason to leave
+      // something out - the answer includes the filament already on the machine.
+      it('counts what the machine is already loaded with', () => {
+        expect(waitingOn([job(1, ['red'])], printer(['red']))).toEqual([{ filament: 'red', jobs: 1 }]);
+      });
+    });
   });
 });

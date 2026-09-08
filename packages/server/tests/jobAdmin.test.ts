@@ -93,6 +93,21 @@ describe('minding the work', () => {
 
       expect(await whatToLoadNext(shop)).toEqual(['nothing queued - nothing is waiting on any filament']);
     });
+
+    it('asks about one machine when the operator named one', async () => {
+      mockWaitingOn.mockResolvedValue([{ filament: 'PLA-Red', jobs: 1 }]);
+
+      expect(await whatToLoadNext(shop, 'mini')).toEqual(['PLA-Red  1 job waiting']);
+      expect(mockWaitingOn).toHaveBeenCalledWith('mini');
+    });
+
+    // A busy shop none of whose work fits the machine in front of you is not a shop with nothing
+    // to do, and reading it as one is how somebody walks away from a queue.
+    it('says which machine has nothing to do, rather than saying the shop has nothing', async () => {
+      mockWaitingOn.mockResolvedValue([]);
+
+      expect(await whatToLoadNext(shop, 'mini')).toEqual(['nothing queued that mini could take']);
+    });
   });
 
   describe('judging one', () => {

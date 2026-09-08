@@ -287,8 +287,11 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // Admin, by not being on the open list above: it is an aggregate over everybody's work, which is
   // more than the bare total a caller who owns none of it may learn - and the person who acts on it
   // is the one who loads the machine, which is already an admin's to do.
-  api.get('/filaments', async (_request, response) => {
-    response.json(waitingOn(await shop.all()));
+  api.get('/filaments', async (request, response) => {
+    const named = onePrinterName(request.query.printer);
+    const printer = named === undefined ? undefined : await shop.printerNamed(named);
+
+    response.json(waitingOn(await shop.all(), printer));
   });
 
   api.get('/printers', async (_request, response) => {
@@ -541,6 +544,19 @@ function explainRefusal(log: Log, error: unknown, _request: Request, response: R
   }
 
   response.status(status).json({ error: (error as Error).message });
+}
+
+// AIDEV-NOTE: express parses `?printer=a&printer=b` into an array and `?printer[x]=y` into an
+// object, so what arrives here is not a string because a caller wrote one. Answering for the shop
+// when a caller asked about a machine would be the wrong answer said confidently, so it is refused.
+function onePrinterName(asked: unknown): string | undefined {
+  if (asked === undefined) return undefined;
+
+  if (typeof asked !== 'string' || asked.trim() === '') {
+    throw new UnusableRequest('printer names one machine to answer for, and the whole shop answers when it is left out');
+  }
+
+  return asked;
 }
 
 function statusFor(error: unknown): number {

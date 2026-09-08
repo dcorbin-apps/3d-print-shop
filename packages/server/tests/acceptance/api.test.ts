@@ -586,6 +586,36 @@ describe('the shop over HTTP', () => {
     it('is an admin\'s to ask, because it counts work that is not the caller\'s', async () => {
       expect((await as(USER, 'GET', '/filaments')).status).toBe(403);
     });
+
+    // The operator asking is standing at a machine, and a job it could never take is not work it
+    // is waiting on.
+    it('answers for one machine when the request names one', async () => {
+      await send('POST', '/printers', { name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini.local' });
+      await submit({ filaments: ['PLA-Red'], printer: 'mk4' });
+      await submit({ filaments: ['PLA-White'] });
+
+      expect(await (await ask('/filaments?printer=mini')).json()).toEqual([{ filament: 'PLA-White', jobs: 1 }]);
+      expect(await (await ask('/filaments?printer=mk4')).json()).toEqual([
+        { filament: 'PLA-Red', jobs: 1 },
+        { filament: 'PLA-White', jobs: 1 },
+      ]);
+    });
+
+    it('refuses to answer for a machine this shop does not have', async () => {
+      const response = await ask('/filaments?printer=nowhere');
+
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining('no printer called nowhere') as unknown as string });
+    });
+
+    // express reads a repeated parameter as an array, and answering for the whole shop there would
+    // be the wrong answer given confidently.
+    it('refuses a request that names more than one machine', async () => {
+      const response = await ask('/filaments?printer=mk4&printer=mini');
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining('printer names one machine') as unknown as string });
+    });
   });
 
   describe('a request that brought no body', () => {

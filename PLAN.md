@@ -35,13 +35,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   say what the SLICER called the machine (`MK4IS`) in `metadata`, and whether OctoPrint names it the
   same way is unknown — that answer is needed before this can be anything but a guess
 
-### What an operator can see
-
-- [ ] `job waiting` answers for the SHOP, not for a machine. A job that names another printer, or
-  that no printer but the big one could take, is counted all the same - so an operator at the mini
-  can be told to load a filament nothing there could use. `printableNow` filters on `canTake` and
-  `waitingOn` does not. Harmless with one printer, and the first thing to fix when there are two
-
 ### Security
 
 - [ ] `callers.json` is shaped for machine callers and nothing else, which is what a web UI exposes.

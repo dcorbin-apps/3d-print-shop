@@ -159,7 +159,8 @@ export function createCLI(): Command {
   job
     .command('waiting')
     .description('What the queued work is waiting for, busiest first - what to load next')
-    .action(async () => say(await whatToLoadNext(shop(job.opts()))));
+    .argument('[printer]', 'only the work this printer could take, rather than the whole shop')
+    .action(async (printer: string | undefined) => say(await whatToLoadNext(shop(job.opts()), printer)));
 
   job
     .command('approve')

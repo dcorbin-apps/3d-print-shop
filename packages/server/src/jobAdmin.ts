@@ -21,13 +21,21 @@ export async function listJobs(shop: Shop): Promise<string[]> {
 // AIDEV-NOTE: the other half of `list`, and the more useful one at the machine - "what should I
 // load next" rather than "what is here". It counts every queued job the shop holds, which is why it
 // is an admin's to ask: a caller who owns none of that work may learn only how much there is.
-export async function whatToLoadNext(shop: Shop): Promise<string[]> {
-  const waiting = await shop.waitingOn();
-  if (waiting.length === 0) return ['nothing queued - nothing is waiting on any filament'];
+export async function whatToLoadNext(shop: Shop, printer?: string): Promise<string[]> {
+  const waiting = await shop.waitingOn(printer);
+  if (waiting.length === 0) return [nothingIsWaiting(printer)];
 
   const widest = Math.max(...waiting.map((demand) => demand.filament.length));
 
   return waiting.map((demand) => `${demand.filament.padEnd(widest)}  ${jobsWaiting(demand)}`);
+}
+
+// Which of the two questions was asked, because "nothing queued" at a machine that could take
+// none of a busy queue would read as a shop with nothing to do.
+function nothingIsWaiting(printer: string | undefined): string {
+  return printer === undefined
+    ? 'nothing queued - nothing is waiting on any filament'
+    : `nothing queued that ${printer} could take`;
 }
 
 function jobsWaiting({ jobs }: FilamentDemand): string {

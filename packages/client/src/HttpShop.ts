@@ -48,8 +48,10 @@ export class HttpShop implements Shop {
     return answer && asJob(answer);
   }
 
-  async waitingOn(): Promise<FilamentDemand[]> {
-    return (await this.answered('GET', '/filaments')) as FilamentDemand[];
+  async waitingOn(printer?: string): Promise<FilamentDemand[]> {
+    const forPrinter = printer === undefined ? '' : `?printer=${encodeURIComponent(printer)}`;
+
+    return (await this.answered('GET', `/filaments${forPrinter}`)) as FilamentDemand[];
   }
 
   async printers(): Promise<RegisteredPrinter[]> {

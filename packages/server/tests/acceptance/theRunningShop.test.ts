@@ -114,15 +114,27 @@ describe('the shop, running as its own process', () => {
   }
 
   async function addMk4(shop: RunningShop): Promise<void> {
+    await addPrinter(shop, { name: 'mk4', buildVolume: MK4, address: 'http://octopi.local' });
+  }
+
+  async function addPrinter(shop: RunningShop, record: { name: string; buildVolume: typeof MK4; address: string }): Promise<void> {
     await fetch(`${shop.url}/printers`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...asAdmin },
-      body: JSON.stringify({ name: 'mk4', buildVolume: MK4, address: 'http://octopi.local' }),
+      body: JSON.stringify(record),
     });
   }
 
   async function submitPlayerBox(shop: RunningShop): Promise<Response> {
     return submitGcode(shop, GCODE);
+  }
+
+  async function submitClaimedBy(shop: RunningShop, printer: string): Promise<Response> {
+    const body = new FormData();
+    body.append('job', JSON.stringify({ filaments: ['PLA-SpaceGray'], displayName: 'Player Box', printer }));
+    body.append('gcode', new Blob([GCODE]), 'print.gcode');
+
+    return fetch(`${shop.url}/jobs`, { method: 'POST', body, headers: asAdmin });
   }
 
   async function submitAs(shop: RunningShop, token: string, displayName: string): Promise<Response> {
@@ -222,6 +234,21 @@ describe('the shop, running as its own process', () => {
     const { stdout } = await runCommandSaying(['job', '--shop-url', shop.url, 'waiting']);
 
     expect(stdout.trim()).toBe('PLA-SpaceGray  1 job waiting');
+  }, 30_000);
+
+  // Naming a machine has to survive argv, the client and the query string; the shop's own suite
+  // proves what the answer should be, and this proves the name gets there at all - which is why the
+  // only job here is one the named machine could not take. An answer for the whole shop would count
+  // it.
+  it('tells the operator what to load at the machine they name', async () => {
+    const shop = await shopIsRunning();
+    await addMk4(shop);
+    await addPrinter(shop, { name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini.local' });
+    await submitClaimedBy(shop, 'mk4');
+
+    const { stdout } = await runCommandSaying(['job', '--shop-url', shop.url, 'waiting', 'mini']);
+
+    expect(stdout.trim()).toBe('nothing queued that mini could take');
   }, 30_000);
 
   // AIDEV-NOTE: two shops over one spool would both read `next-id` as 7 and both hand out 7, the

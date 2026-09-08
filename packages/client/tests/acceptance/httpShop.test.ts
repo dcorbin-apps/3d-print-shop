@@ -74,6 +74,16 @@ describe('the shop over HTTP', () => {
       expect(asked).toMatchObject([{ method: 'GET', url: '/filaments' }]);
     });
 
+    // A name goes in the query and not the path: /filaments is the resource, and a machine only
+    // narrows it. Encoded, because a printer may be named anything a directory can be called.
+    it('asks what one machine is waiting for', async () => {
+      answers = { status: 200, body: [{ filament: 'PLA-Red', jobs: 2 }] };
+
+      await shop.waitingOn('the big one');
+
+      expect(asked).toMatchObject([{ method: 'GET', url: '/filaments?printer=the%20big%20one' }]);
+    });
+
     it('asks for one by id', async () => {
       answers = { status: 200, body: { ...aJob, submittedAt: '2026-09-06T11:22:04.177Z' } };
 

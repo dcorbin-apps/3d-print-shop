@@ -58,7 +58,7 @@ same spool is refused and a crash leaves nothing to clean up.
 3d-print-shop printer stop mk4 "door is open"
 3d-print-shop printer start mk4
 3d-print-shop job list                                 what it holds, and where each has got to
-3d-print-shop job waiting                              what to load next, busiest filament first
+3d-print-shop job waiting [printer]                    what to load next, busiest filament first
 3d-print-shop job approve 7                            the print is good - the job leaves the shop
 3d-print-shop job reject 7                             not usable - print it again from the same gcode
 3d-print-shop job abandon 7                            give up on it - no reprint, and it is gone

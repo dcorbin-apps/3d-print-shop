@@ -40,11 +40,18 @@ export function nextToPrint(jobs: Job[], printer: RegisteredPrinter): Job | unde
  * Everything queued, grouped by the filament it waits for, busiest first. Answers "what should I
  * load next" - including for the filament already loaded, because the caller asking may be deciding
  * whether to swap at all.
+ *
+ * Named a printer, it answers for that machine rather than for the shop.
  */
-export function waitingOn(jobs: Job[]): FilamentDemand[] {
+export function waitingOn(jobs: Job[], printer?: RegisteredPrinter): FilamentDemand[] {
   const waiting = new Map<string, number>();
 
-  for (const job of jobs.filter((queued) => queued.state === 'queued')) {
+  // AIDEV-NOTE: `canTake` and NOT what is loaded, which is the difference between this and
+  // `printableNow`: what is loaded is the very thing being asked about. Without a printer this
+  // counts the whole shop's queue, which is right for the one machine an operator has and wrong the
+  // moment there are two - it would tell somebody at the mini to load a filament for a job only the
+  // XL could take.
+  for (const job of jobs.filter((queued) => queued.state === 'queued' && (printer === undefined || canTake(printer, queued)))) {
     waiting.set(startsWith(job), (waiting.get(startsWith(job)) ?? 0) + 1);
   }
 
