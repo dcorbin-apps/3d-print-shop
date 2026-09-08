@@ -62,12 +62,16 @@ same spool is refused and a crash leaves nothing to clean up.
 Every command but `serve` is a client of a running shop and takes `--shop-url` (or `PRINT_SHOP_URL`;
 `http://localhost:7373` by default). Only `serve` names a spool, because only `serve` holds one.
 
-**Who may call it** is `/etc/3d-print-shop/callers.json`, a list of names, roles and tokens:
+**Who may call it** is `/etc/3d-print-shop/callers.json`, a list of ids, names, roles and tokens:
 
 ```json
-[ { "name": "gamebox", "role": "user",  "token": "..." },
-  { "name": "dave",    "role": "admin", "token": "..." } ]
+[ { "id": "gamebox", "name": "gamebox", "role": "user",  "token": "..." },
+  { "id": "dave",    "name": "dave",    "role": "admin", "token": "..." } ]
 ```
+
+The `id` is what the shop records as owning a job, and a record is never rewritten - so an id is
+fixed for as long as that caller exists, while the `name` beside it is only what a log or a UI
+shows and may be changed whenever. Letters, digits, dot, dash and underscore, up to 64.
 
 A `user` submits jobs and reads what the shop holds. An `admin` does everything else - printers,
 verdicts, and shutting down. A caller presents its token as `Authorization: Bearer ...`, which

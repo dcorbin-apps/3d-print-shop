@@ -27,18 +27,27 @@ export type Role = 'admin' | 'user';
 // the credentials file by opening the shop to everyone, which is the failure nobody would notice.
 const MISSING = Symbol('no such file');
 
-/** Who is asking. The name is what a log will say; nothing is ever answered with it. */
+// AIDEV-NOTE: an id is what a job record will say it is OWNED by, and a record is written once and
+// never rewritten - so the id may never change, and the name is free to. An operator retyping
+// `name` renames a person; retyping `id` makes them a stranger to every job they submitted.
+/** Who is asking. The id is what outlives them; the name is what a log and a UI say. */
 export interface Caller {
+  id: string;
   name: string;
   role: Role;
 }
+
+// AIDEV-NOTE: narrow on purpose. An id reaches disk in a record nothing rewrites, so this rule can
+// be LOOSENED later and never tightened - whatever a query string, a log format or a path wants of
+// an id one day, the ids already written cannot be changed to suit.
+const AN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export class UnusableCredentials extends Error {}
 
 /**
  * Who may talk to this shop, by the token they present.
  *
- * Keyed by token because that is all a request carries; the name and role are what the token buys.
+ * Keyed by token because that is all a request carries; the id, name and role are what it buys.
  */
 export async function callersIn(etc: string = defaultEtc()): Promise<Map<string, Caller> | undefined> {
   const file = path.join(etc, CALLERS_FILE);
@@ -47,22 +56,36 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Map<string,
   if (listed === MISSING) return undefined;
 
   if (!Array.isArray(listed)) {
-    throw new UnusableCredentials(`${file} is a list of callers, each with a name, a role and a token`);
+    throw new UnusableCredentials(`${file} is a list of callers, each with an id, a name, a role and a token`);
   }
 
   const callers = new Map<string, Caller>();
+  const named = new Map<string, string>();
 
   for (const entry of listed as unknown[]) {
-    const { name, role, token } = (entry ?? {}) as { name?: unknown; role?: unknown; token?: unknown };
+    const { id, name, role, token } = (entry ?? {}) as { id?: unknown; name?: unknown; role?: unknown; token?: unknown };
 
+    if (typeof id !== 'string' || !AN_ID.test(id)) {
+      throw new UnusableCredentials(
+        `${file} gives a caller the id ${JSON.stringify(id)}, and an id is up to 64 of letters, digits, dot, dash and underscore`,
+      );
+    }
     if (typeof name !== 'string' || name.trim() === '') {
-      throw new UnusableCredentials(`${file} has a caller with no name, and a name is what says who did something`);
+      throw new UnusableCredentials(`${file} gives ${id} no name, and a name is what says who did something`);
     }
     if (role !== 'admin' && role !== 'user') {
       throw new UnusableCredentials(`${file} gives ${name} the role ${JSON.stringify(role)}, and a role is "admin" or "user"`);
     }
     if (typeof token !== 'string' || token.trim() === '') {
       throw new UnusableCredentials(`${file} gives ${name} no token`);
+    }
+
+    // AIDEV-NOTE: two callers on one id are one owner, and every job either submits belongs to both
+    // of them - which is not a thing the shop can later untangle, because it cannot rewrite a
+    // record to say which of them meant it.
+    const sharing = named.get(id);
+    if (sharing !== undefined) {
+      throw new UnusableCredentials(`${file} gives the id ${id} to both ${sharing} and ${name}, so a job could not say which of them owns it`);
     }
 
     // AIDEV-NOTE: a token shared by two callers would resolve to whichever was read last, so every
@@ -73,7 +96,8 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Map<string,
       throw new UnusableCredentials(`${file} gives ${name} and ${already.name} the same token, so neither could be told apart`);
     }
 
-    callers.set(token, { name, role });
+    named.set(id, name);
+    callers.set(token, { id, name, role });
   }
 
   return callers;

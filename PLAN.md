@@ -39,19 +39,46 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### Security
 
-- [ ] A role says what a caller MAY DO, not what is theirs. Any caller can read every job the shop
-  holds, including another client's `displayName` and `metadata`, because nothing records who
-  submitted one. Honest with a single client and wrong with two. It cannot be answered by a longer
-  permission table: a job would have to carry the caller who submitted it, and a job record is
-  written once and never rewritten - so the caller belongs on it at submission or nowhere
+- [ ] Ownership, decided and unbuilt. A job carries the STABLE ID of the caller who submitted it,
+  written with the record at submission and never rewritten - a role says what a caller MAY DO, and this is what is
+  THEIRS. The owner or an admin reads a job's details; the OWNER ALONE renders its verdict; every
+  other caller learns only how many jobs the shop holds, as a bare total. Today any token reads
+  every job, including another client's `displayName` and `metadata`, which is honest with one
+  client and wrong with two. Three things to settle while building it:
+  - `jobs()` answers `Job[]` and has no shape for "a total instead of a list"
+  - a job whose owner is revoked can never be judged, so it holds its printer for good. An admin
+    override is the obvious escape and was deliberately not taken; something has to be
 
-A shop that names no callers answers anything, which is why it binds loopback unless told otherwise
-and refuses `--listen` past loopback with nobody named. What is left is what a token does not cover.
+- [ ] No route answers an unidentified caller. Today `createApi` passes every request through when
+  `callers` is undefined, so a shop with no `callers.json` submits, deletes printers and shuts down
+  for anyone reaching the port - which is the whole of what makes a bare `serve` work on a fresh
+  machine. Decided: that mode goes. `callersIn` returning MISSING becomes a refusal to start,
+  `request.caller` becomes a `Caller` rather than a `Caller | undefined`, and ownership below loses
+  its unowned case entirely. Two things follow:
+  - the `--listen` guard in `cli.ts` and the "names no callers" line it prints are both about a
+    shop that can no longer exist
+  - a fresh machine needs a first admin before the shop will run at all, so the bootstrap command
+    stops being a convenience and becomes the only way in
+
+- [ ] `callers.json` is shaped for machine callers and nothing else, which is what a web UI exposes.
+  The token is the map's KEY, so the credential is the identity: a caller holds exactly one token,
+  and a person who wants a second for another machine or a browser has to become a second person.
+  A caller now has a stable id, which is what unblocked the ownership work above. Three faults left,
+  none of which blocks it:
+  - a credential wants to be a LIST on an identity, so one can be added or revoked without changing
+    who the person is
+  - the file mixes what an OPERATOR writes with what the SHOP would write. Sessions are what a
+    login produces, they are the shop's, they expire, and they cannot live in a file a person
+    hand-edits and the shop re-reads on SIGHUP
+  - tokens are stored in the clear. Tolerable for 32 random bytes in a 0600 file, wrong the moment
+    a human chooses one - and hashing breaks lookup-by-token, which is the first fault again
 
 - [ ] Rotating a token means editing `callers.json` and restarting; there is no way to add or revoke
   one while the shop runs. Re-reading the file on SIGHUP is the boring answer
-- [ ] Nothing generates a token. An operator invents one, and one invented by hand is one somebody
-  chose - `3d-print-shop token` printing 32 random bytes would cost nothing and remove that
+- [ ] Nothing generates a token, and with no anonymous access there is no way into a fresh shop
+  without one. `3d-print-shop init` writing `callers.json` 0600 with a single admin, whose token is
+  32 random bytes printed once, is the boring answer - it also gets the mode right, which
+  `credentials.ts` already refuses to get wrong
 - [ ] A name is checked and then dropped. `request.caller` is set and read by nobody, waiting for
   the logging below - which is the whole point of a name rather than a shared secret
 - [ ] Take the stored path from OctoPrint's answer instead of guessing it. `send()` throws the

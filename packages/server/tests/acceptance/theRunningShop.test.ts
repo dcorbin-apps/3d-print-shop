@@ -112,7 +112,7 @@ describe('the shop, running as its own process', () => {
   }
 
   // 0600, because the shop refuses to read credentials anybody else could.
-  async function credentialsNaming(callers: { name: string; role: string; token: string }[]): Promise<string> {
+  async function credentialsNaming(callers: { id: string; name: string; role: string; token: string }[]): Promise<string> {
     const etc = await mkdtemp(path.join(tmpdir(), 'print-shop-etc-'));
     await writeFile(path.join(etc, 'callers.json'), JSON.stringify(callers), { mode: 0o600 });
 
@@ -232,8 +232,8 @@ describe('the shop, running as its own process', () => {
 
     async function guardedShop(): Promise<RunningShop> {
       const etc = await credentialsNaming([
-        { name: 'dave', role: 'admin', token: ADMIN },
-        { name: 'gamebox', role: 'user', token: USER },
+        { id: 'dave', name: 'dave', role: 'admin', token: ADMIN },
+        { id: 'gamebox', name: 'gamebox', role: 'user', token: USER },
       ]);
       const shop = await startShopOver(spool, ['--etc', etc]);
       started.push(shop);
@@ -283,7 +283,7 @@ describe('the shop, running as its own process', () => {
     // `::1` rather than an address off this machine: it proves the option is carried through to the
     // listener without a test that opens a port to the network.
     it('is the address --listen names, and it answers there', async () => {
-      const etc = await credentialsNaming([{ name: 'dave', role: 'admin', token: 'a-token' }]);
+      const etc = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: 'a-token' }]);
       const shop = await startShopOver(spool, ['--listen', '::1', '--etc', etc]);
       started.push(shop);
 

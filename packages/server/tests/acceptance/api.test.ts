@@ -360,8 +360,8 @@ describe('the shop over HTTP', () => {
     beforeEach(async () => {
       guarded = await serve(shop, 0, {
         callers: new Map([
-          [ADMIN, { name: 'dave', role: 'admin' as const }],
-          [USER, { name: 'gamebox', role: 'user' as const }],
+          [ADMIN, { id: 'dave', name: 'dave', role: 'admin' as const }],
+          [USER, { id: 'gamebox', name: 'gamebox', role: 'user' as const }],
         ]),
       });
       guardedUrl = `http://127.0.0.1:${(guarded.address() as AddressInfo).port}`;

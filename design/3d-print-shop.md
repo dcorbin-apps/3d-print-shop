@@ -294,6 +294,35 @@ because `FormData` wants a `Blob` and a `Blob` wants its bytes. A client submitt
 way out that the shop does not: its gcode is a file, and `openAsBlob` answers with a `Blob` backed
 by that file, which `fetch` streams.
 
+## Who may ask, and what is theirs
+
+**Every route names its caller.** There is no anonymous mode, not even on loopback. A shop that
+answers an unnamed request is one where a job has no submitter to belong to, and ownership below
+would need a case for it - so the case is removed rather than handled. A shop with no callers
+configured refuses to start, and a fresh machine gets its first admin from a bootstrap command
+rather than from a gap in the checking.
+
+A token buys a name and a role, and the role is AUTHORITY rather than occupation: a script can be an
+admin and a person a user. Authority alone was never enough, though, because it says what a caller
+may DO and never what is THEIRS.
+
+**A job belongs to the caller who submitted it.** The owner is written with the record, at
+submission, and like the rest of the record is never rewritten - so what is written is the caller's
+STABLE ID, never their name. A name is what an operator typed and may one day retype, and a record
+that cannot be rewritten cannot follow it: every job that person owned would quietly stop being
+theirs. An identity therefore has an id that is neither its display name nor any credential it
+holds. From it:
+
+- the owner, or any admin, reads a job's details
+- the OWNER ALONE renders its verdict. Judging a plate is saying whether the thing you asked for
+  came out the way you wanted, which is a question only the person who asked it can answer - an
+  admin can see the job and still have no idea whether that warp matters
+- every other caller learns only how many jobs the shop holds, as a bare total. Enough to see that
+  the queue is busy, and nothing about whose work it is
+
+The cost is deliberate and worth writing down: a job whose owner is gone has nobody who may judge
+it, and it holds its printer until something is done about that.
+
 ## The operator's commands
 
 ```

@@ -7,8 +7,9 @@ import { CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersI
 describe('the credentials a shop is given', () => {
   let etc: string;
 
-  const dave = { name: 'dave', role: 'admin', token: 'dave-token' };
-  const gamebox = { name: 'gamebox', role: 'user', token: 'gamebox-token' };
+  // The id is deliberately not the name: nothing may pass by treating the two as one field.
+  const dave = { id: 'u-1', name: 'dave', role: 'admin', token: 'dave-token' };
+  const gamebox = { id: 'u-2', name: 'gamebox', role: 'user', token: 'gamebox-token' };
 
   async function write(file: string, contents: unknown, mode = 0o600): Promise<void> {
     await writeFile(path.join(etc, file), typeof contents === 'string' ? contents : JSON.stringify(contents), { mode });
@@ -28,8 +29,8 @@ describe('the credentials a shop is given', () => {
 
       const callers = await callersIn(etc);
 
-      expect(callers?.get('dave-token')).toEqual({ name: 'dave', role: 'admin' });
-      expect(callers?.get('gamebox-token')).toEqual({ name: 'gamebox', role: 'user' });
+      expect(callers?.get('dave-token')).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
+      expect(callers?.get('gamebox-token')).toEqual({ id: 'u-2', name: 'gamebox', role: 'user' });
     });
 
     it('knows nobody by a token it was not given', async () => {
@@ -44,6 +45,31 @@ describe('the credentials a shop is given', () => {
       expect((await callersIn(etc))?.size).toBe(0);
     });
 
+    // An id outlives the name beside it, so what one may look like is fixed before any job is
+    // written with one - a rule this narrow can be relaxed later, and never the other way.
+    it.each([['dave'], ['gamebox-v3'], ['a.b_c-1'], ['7'], ['x'.repeat(64)]])('takes %j as an id', async (id) => {
+      await write(CALLERS_FILE, [{ ...dave, id }]);
+
+      expect((await callersIn(etc))?.get('dave-token')?.id).toBe(id);
+    });
+
+    it.each([[''], ['-leading'], ['.leading'], ['has space'], ['slash/es'], ['\u00fcber'], ['x'.repeat(65)]])(
+      'refuses %j as an id',
+      async (id) => {
+        await write(CALLERS_FILE, [{ ...dave, id }]);
+
+        await expect(callersIn(etc)).rejects.toThrow('an id is up to 64');
+      },
+    );
+
+    // Two callers on one id are one owner, and no later reading of the records could say which of
+    // them meant any given job - the shop cannot rewrite one to find out.
+    it('refuses two callers sharing an id, saying a job could not say which owns it', async () => {
+      await write(CALLERS_FILE, [dave, { ...gamebox, id: 'u-1' }]);
+
+      await expect(callersIn(etc)).rejects.toThrow('gives the id u-1 to both dave and gamebox');
+    });
+
     // The audit trail is the point of a name, and two callers on one token would put one caller's
     // actions under the other's name - which is worse than having no name at all.
     it('refuses two callers sharing a token, saying it could not tell them apart', async () => {
@@ -53,10 +79,11 @@ describe('the credentials a shop is given', () => {
     });
 
     it.each([
-      [[{ role: 'admin', token: 't' }], 'a caller with no name'],
-      [[{ name: 'dave', token: 't' }], 'a role is "admin" or "user"'],
-      [[{ name: 'dave', role: 'wheel', token: 't' }], 'a role is "admin" or "user"'],
-      [[{ name: 'dave', role: 'admin' }], 'gives dave no token'],
+      [[{ name: 'dave', role: 'admin', token: 't' }], 'the id undefined'],
+      [[{ id: 'u-1', role: 'admin', token: 't' }], 'gives u-1 no name'],
+      [[{ id: 'u-1', name: 'dave', token: 't' }], 'a role is "admin" or "user"'],
+      [[{ id: 'u-1', name: 'dave', role: 'wheel', token: 't' }], 'a role is "admin" or "user"'],
+      [[{ id: 'u-1', name: 'dave', role: 'admin' }], 'gives dave no token'],
       [{ dave: 'token' }, 'a list of callers'],
     ])('refuses %j', async (written, complaint) => {
       await write(CALLERS_FILE, written);
