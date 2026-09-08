@@ -68,8 +68,6 @@ and refuses `--listen` past loopback with nobody named. What is left is what a t
   installer makes the root, so either it sets the mode or `ready()` refuses a wide one
 - [ ] Anything already in a spool keeps the mode it was written with - a record is written once and
   never rewritten, so an existing install stays as it was until every job has left
-- [ ] One name guard shared by the four `/printers/:name` routes. Only `add` checks for a separator;
-  the others are safe because a record must be found first, which is true today by accident
 
 ### Logging
 

@@ -447,6 +447,65 @@ describe('the shop over HTTP', () => {
     });
   });
 
+  // AIDEV-NOTE: a name reaches the spool as a directory, and DELETE removes that directory
+  // recursively - so what a client may call a printer is a boundary, not a nicety. Driven over real
+  // HTTP with the encoding a client would actually send: express decodes %2F before a handler sees
+  // it, so a guard reading the raw URL would miss every one of these.
+  describe('what a client may call a printer', () => {
+    const REFUSED = ['..%2F..%2Fetc', '..%2f..%2fescape', 'mk4%2Fnested', 'back%5Cslash', 'a%00b', '%20'];
+
+    it.each(REFUSED)('will not delete %s', async (name) => {
+      const response = await send('DELETE', `/printers/${name}`, undefined);
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
+    });
+
+    it.each(REFUSED)('will not load filament onto %s', async (name) => {
+      expect((await send('PUT', `/printers/${name}/filament`, { loaded: ['PLA'] })).status).toBe(400);
+    });
+
+    it.each(REFUSED)('will not stop %s', async (name) => {
+      expect((await send('PUT', `/printers/${name}/status`, { stopped: true, reason: 'door' })).status).toBe(400);
+    });
+
+    it.each(REFUSED)('will not add one called %s', async (name) => {
+      const response = await send('POST', '/printers', { name: decodeURIComponent(name), buildVolume: MK4, address: 'http://x' });
+
+      expect(response.status).toBe(400);
+    });
+
+    // `.` and `..` cannot arrive in a URL - express normalises them away before routing - but they
+    // arrive in a BODY perfectly well, and `printers/..` is the printers directory itself.
+    it.each([['.'], ['..']])('will not add one called %p, which names a directory that already exists', async (name) => {
+      const response = await send('POST', '/printers', { name, buildVolume: MK4, address: 'http://x' });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
+    });
+
+    // The refusal is about the NAME, so it comes before the shop looks anything up - a 400 rather
+    // than the 404 an unknown printer gets, and the same answer whether or not one exists.
+    it('refuses the name rather than reporting it missing', async () => {
+      const response = await send('DELETE', '/printers/..%2F..%2Fetc', undefined);
+
+      expect(response.status).toBe(400);
+      expect(response.status).not.toBe(404);
+    });
+
+    it('still takes an ordinary name', async () => {
+      expect((await send('PUT', '/printers/mk4/filament', { loaded: ['PLA'] })).status).toBe(200);
+    });
+
+    // A name with a space or a '#' in it is legal and reaches the shop encoded; refusing those
+    // would be the guard overreaching.
+    it.each([['Prusa%20MK4'], ['mk4%23two']])('takes %s, which is only a name that needed encoding', async (name) => {
+      await send('POST', '/printers', { name: decodeURIComponent(name), buildVolume: MK4, address: 'http://x' });
+
+      expect((await send('PUT', `/printers/${name}/filament`, { loaded: ['PLA'] })).status).toBe(200);
+    });
+  });
+
   // A failure the shop did not mean is written by whatever broke, and node's filesystem errors name
   // the path they failed on - so the message is the one thing that must not go back to a caller.
   describe('when something breaks that the shop did not expect', () => {

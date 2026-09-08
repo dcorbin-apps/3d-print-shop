@@ -1,4 +1,4 @@
-export { DEFAULT_PORT, LOOPBACK, NotAKnownCaller, NotTheirs, UnusableRequest, createApi, serve } from './api.js';
+export { DEFAULT_PORT, LOOPBACK, NotAKnownCaller, NotTheirs, UnusableRequest, createApi, requireUsablePrinterName, serve } from './api.js';
 export type { ShopHooks } from './api.js';
 export { CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersIn, defaultEtc, printerKeysIn } from './credentials.js';
 export type { Caller, Role } from './credentials.js';

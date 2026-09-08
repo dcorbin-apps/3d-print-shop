@@ -189,6 +189,15 @@ export function createApi(shop: JobStore, hooks: ShopHooks = {}): Express {
     response.status(204).end();
   });
 
+  // Once, where a name ARRIVES, rather than at each route that takes one - the same reasoning as the
+  // `changed` hook above. A per-route list is a list somebody forgets to add to, and what would be
+  // forgotten here is a recursive delete outside the spool. Mounted on the path, so `POST /printers`
+  // (which names a printer in its body, and is checked there) is not caught by it.
+  api.use('/printers/:name', (request, _response, next) => {
+    requireUsablePrinterName(request.params.name);
+    next();
+  });
+
   api.get('/printers', async (_request, response) => {
     response.json(await shop.printers());
   });
@@ -325,6 +334,31 @@ function jobId(raw: string): number {
   return id;
 }
 
+// AIDEV-NOTE: a printer's name becomes a DIRECTORY under the spool, and removePrinter() deletes that
+// directory recursively - so a name from a request is a path fragment a client chose. Express hands
+// over what the URL decoded to, and `..%2F..%2Fetc` arrives as `../../etc` (measured, not assumed),
+// as does a name carrying a NUL.
+//
+// Refused rather than mangled: the operator chose the name and can choose another. Until this, only
+// `add` checked, and the routes taking `:name` were safe only because no printer.json happened to
+// exist up the path they built - a property of the filesystem rather than of this code.
+export function requireUsablePrinterName(name: string): void {
+  const unusable =
+    name.trim() === '' ||
+    name === '.' ||
+    name === '..' ||
+    /[/\\]/.test(name) ||
+    [...name].some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+
+      return code < 0x20 || code === 0x7f;
+    });
+
+  if (unusable) {
+    throw new UnusableRequest(`${JSON.stringify(name)} is not a name a printer can have - it becomes a directory`);
+  }
+}
+
 function printerIn(body: unknown): PrinterRecord {
   const { name, buildVolume, address, api } = (body ?? {}) as {
     name?: unknown;
@@ -333,12 +367,7 @@ function printerIn(body: unknown): PrinterRecord {
     api?: unknown;
   };
   if (typeof name !== 'string' || name.trim() === '') throw new UnusableRequest('a printer needs a name');
-  // AIDEV-NOTE: a name becomes a DIRECTORY under the spool, so one carrying a separator would put a
-  // printer somewhere the scan does not look and lose it silently. Refused rather than mangled: the
-  // operator chose the name and can choose another.
-  if (/[/\\]/.test(name) || name === '.' || name === '..') {
-    throw new UnusableRequest(`${JSON.stringify(name)} is not a name a printer can have - it becomes a directory`);
-  }
+  requireUsablePrinterName(name);
   if (typeof address !== 'string' || address.trim() === '') throw new UnusableRequest('a printer needs an address to be reached at');
   if (api !== undefined && api !== 'octoprint') throw new UnusableRequest(`${JSON.stringify(api)} is not a protocol this shop speaks`);
 
