@@ -355,10 +355,15 @@ The shop runs unattended for hours. Until it had this, the only durable evidence
 sentence in `printer.paused.reason` - which says nothing about the prints that went well, nothing
 about the order things happened in, and nothing at all once a job has left.
 
-**One JSON object per line, to stdout.** `launchd` and `systemd` both capture stdout, so that is a
-log the shop does not have to open, rotate, or lose; a file it managed itself would be a second thing
-to get right on every machine. One line per event rather than prose, because prose has to be parsed
-back out the day anybody wants to count anything.
+**One line of text per event, to stdout:** `<when> <level> <message>`, then whatever the line was
+about as `key=value` pairs. `launchd` and `systemd` both capture stdout, so that is a log the shop
+does not have to open, rotate, or lose; a file it managed itself would be a second thing to get right
+on every machine.
+
+Text rather than JSON, because the first reader of this is a person with a terminal and a wall of
+objects is not a log anybody skims. The date leads so a run sorts and greps by time, the two levels
+are the same width so it reads down the page as columns, and only a value that would run into the
+next one is quoted.
 
 **Two levels, not five.** `note` is what an operator needs to know happened; `fault` is why something
 did not work. Eight hours of a running shop has to be readable in one pass, and every level past

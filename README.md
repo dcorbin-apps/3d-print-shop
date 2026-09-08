@@ -118,9 +118,16 @@ raises it. OctoPrint's own default is 1GB, so the shop is the binding limit unti
 **A verdict is not a formality.** A printer holds its bed until a person has judged what came off it,
 so a shop nobody gives verdicts to prints one thing per machine and then stops.
 
-**It writes down what it did**, one JSON object per line, to stdout - what was submitted, what
-started on which printer, how each print ended, every verdict and who gave it, and every reason a
-printer was stopped. `launchd` and `systemd` both capture stdout, so there is no file for the shop to
+**It writes down what it did**, one line of text per event, to stdout - `<when> <level> <message>`
+and then `key=value` for the rest:
+
+```
+2026-09-08T14:27:59.056Z note  job submitted job=1 displayName="Player Box" filaments=["PLA-Red"] owner=dave
+2026-09-08T14:27:59.067Z fault printer stopped printer=mk4 why="could not start anything on mk4: fetch failed"
+```
+
+What was submitted, what started on which printer, how each print ended, every verdict and who gave
+it, and every reason a printer was stopped. `launchd` and `systemd` both capture stdout, so there is no file for the shop to
 rotate. Two levels: `note` for what happened, `fault` for why something did not. A printer's key and
 a caller's token are never written, whatever a failure was carrying when it arrived.
 

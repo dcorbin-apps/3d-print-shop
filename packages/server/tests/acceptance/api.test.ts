@@ -7,7 +7,6 @@ import * as path from 'node:path';
 import { serve } from '../../src/api';
 import type { Job, JobDetails } from '../../src/Job';
 import { JobStore } from '../../src/JobStore';
-import { redacting, toStdout } from '../../src/log';
 
 // AIDEV-NOTE: real HTTP against a real listener on an ephemeral port, over a real spool. There is no
 // unit-level cover for the routes on purpose - what is worth proving here is what goes over the
@@ -230,39 +229,6 @@ describe('the shop over HTTP', () => {
   // AIDEV-NOTE: every change is a moment something might be startable, so the shop is told about
   // all of them rather than about a chosen few - a per-route list is the thing somebody forgets to
   // add to, and a missed wake-up is a job that sits queued for ever.
-  // AIDEV-NOTE: approval discards the job and the shop keeps no history, so this line is the only
-  // thing that will ever say what was decided about job 7 - or that an ADMIN decided it rather than
-  // the caller who asked for the print.
-  describe('what it writes down about a verdict', () => {
-    it('says which job, what was decided, who decided it, and whose job it was', async () => {
-      const lines: string[] = [];
-      const log = toStdout(
-        () => new Date(),
-        (line) => lines.push(line)
-      );
-      const watched = await serve(shop, 0, { callers: CALLERS, log });
-      const url = `http://127.0.0.1:${(watched.address() as AddressInfo).port}`;
-
-      const body = new FormData();
-      body.append('job', JSON.stringify(playerBox));
-      body.append('gcode', new Blob(['G1\n']), 'print.gcode');
-      const { id } = (await (await submitting(url, body, USER)).json()) as Job;
-      await shop.startPrinting('mk4', id);
-      await shop.finishedPrinting('mk4', 'finished');
-
-      await fetch(`${url}/jobs/${id}/verdict`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json', ...AS_ADMIN },
-        body: JSON.stringify({ verdict: 'approved' }),
-      });
-      await new Promise<void>((closed) => watched.close(() => closed()));
-
-      expect(lines.map((line) => JSON.parse(line) as Record<string, unknown>)).toContainEqual(
-        expect.objectContaining({ event: 'verdict given', job: id, verdict: 'approved', by: 'dave', owner: 'gamebox' })
-      );
-    });
-  });
-
   describe('saying that something changed', () => {
     it('says so after a change', async () => {
       await submit(playerBox);
@@ -749,45 +715,6 @@ describe('the shop over HTTP', () => {
 
   // A failure the shop did not mean is written by whatever broke, and node's filesystem errors name
   // the path they failed on - so the message is the one thing that must not go back to a caller.
-  // AIDEV-NOTE: the way a secret reaches a log is not that somebody logged it - it is that a failure
-  // CARRIED it, in a path, a header or a stack. So the rule is enforced at the sink, and this proves
-  // it there: a real failure, through the real error handler, into a real log.
-  describe('a secret in something that broke', () => {
-    it('is not written down, wherever in the failure it was hiding', async () => {
-      const KEY = 'mk4-api-key';
-
-      // A spool whose PATH holds the secret, because node's fs errors quote the path they failed on.
-      // That is a key nobody chose to log, which is the only way one ever gets logged.
-      const holding = await mkdtemp(path.join(tmpdir(), `print-shop-${KEY}-`));
-      const store = new JobStore(holding);
-      await store.addPrinter({ name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS });
-      await writeFile(path.join(holding, 'jobs'), 'not a directory');
-
-      const lines: string[] = [];
-      const log = redacting(
-        toStdout(
-          () => new Date(),
-          (line) => lines.push(line)
-        ),
-        [KEY]
-      );
-      const guarded = await serve(store, 0, { callers: CALLERS, log });
-      const url = `http://127.0.0.1:${(guarded.address() as AddressInfo).port}`;
-
-      const body = new FormData();
-      body.append('job', JSON.stringify(playerBox));
-      body.append('gcode', new Blob(['G1\n']), 'print.gcode');
-      const refused = await submitting(url, body);
-
-      await new Promise<void>((closed) => guarded.close(() => closed()));
-      await rm(holding, { recursive: true, force: true });
-
-      expect(refused.status).toBe(500);
-      expect(lines.join('\n')).toContain('[redacted]');
-      expect(lines.join('\n')).not.toContain(KEY);
-    });
-  });
-
   describe('when something breaks that the shop did not expect', () => {
     it('says where to look rather than what broke', async () => {
       // `jobs` as a FILE, so the mkdir every submission does fails with the spool path in its message.

@@ -77,19 +77,12 @@ describe('the foreman', () => {
   // these lines the only durable trace of anything is the sentence in `printer.paused.reason` -
   // which says nothing about the prints that went well, or about what happened in what order.
   describe('what it writes down', () => {
-    let lines: Record<string, unknown>[];
+    let lines: string[];
     let watched: Foreman;
 
     beforeEach(() => {
       lines = [];
-      watched = new Foreman(
-        shop,
-        mockReach,
-        toStdout(
-          () => new Date(),
-          (line) => lines.push(JSON.parse(line) as Record<string, unknown>)
-        )
-      );
+      watched = new Foreman(shop, mockReach, toStdout(() => new Date(), (line) => lines.push(line)));
     });
 
     it('says what it started, on which printer, and how much gcode went over', async () => {
@@ -97,9 +90,7 @@ describe('the foreman', () => {
 
       await watched.considerStarting();
 
-      expect(lines).toContainEqual(
-        expect.objectContaining({ event: 'started printing', level: 'note', printer: 'mk4', job: id, gcodeBytes: 9 })
-      );
+      expect(lines.join('\n')).toContain(`note  started printing printer=mk4 job=${id} displayName="Job 1" gcodeBytes=9`);
     });
 
     it('says why it could not send one, which is the reason an operator has to act on', async () => {
@@ -108,14 +99,7 @@ describe('the foreman', () => {
 
       await watched.considerStarting();
 
-      expect(lines).toContainEqual(
-        expect.objectContaining({
-          event: 'could not send a job to the printer',
-          level: 'fault',
-          printer: 'mk4',
-          why: 'octopi.local refused the connection',
-        })
-      );
+      expect(lines.join('\n')).toContain('fault could not send a job to the printer printer=mk4 job=1 why="octopi.local refused the connection"');
     });
 
     it('says what the printer made of a print when it ended', async () => {
@@ -125,7 +109,7 @@ describe('the foreman', () => {
       await watched.considerStarting();
       await until(jobIs(id, 'awaiting-approval'));
 
-      expect(lines).toContainEqual(expect.objectContaining({ event: 'print ended', printer: 'mk4', outcome: 'failed' }));
+      expect(lines.join('\n')).toContain('note  print ended printer=mk4 outcome=failed');
     });
   });
 
