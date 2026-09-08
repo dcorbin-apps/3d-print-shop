@@ -58,6 +58,13 @@ export class NotAKnownCaller extends Error {}
 /** A caller this shop knows, asking for something their role does not cover. */
 export class NotTheirs extends Error {}
 
+// AIDEV-NOTE: a role is AUTHORITY, not ownership. Every caller with a token can read every job in
+// the shop, another client's displayName and metadata included - there is no notion of whose job a
+// job is, and `heldBy` names a printer rather than a caller. That is honest while gamebox is the
+// only client and wrong the moment there are two who should not read each other's work. Fixing it
+// is not a bigger list here: it needs a job to record who submitted it, which is a change to a
+// record written once and never rewritten. See PLAN.md.
+//
 // AIDEV-NOTE: the USER-permitted routes are the list, not the admin ones - so a route nobody
 // classified needs admin, and forgetting makes the shop stricter rather than looser. The same
 // worry as the `changed` hook below (a list somebody forgets to add to), answered the other way:
@@ -69,8 +76,18 @@ const OPEN_TO_EVERY_CALLER: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: 'GET', path: /^\/printers$/ },
 ];
 
+// AIDEV-NOTE: matched against the request the way EXPRESS routed it, not the way it was typed.
+// Express has non-strict, case-insensitive routing and serves HEAD from a GET route, so `/jobs/`,
+// `/JOBS` and a HEAD all reach the same handler - and comparing the raw path meant a user was
+// refused a read they were entitled to while an admin sailed through. It failed closed, which is
+// why it was invisible: the bug only appeared for the LESS privileged caller.
 function needsAdmin(method: string, urlPath: string): boolean {
-  return !OPEN_TO_EVERY_CALLER.some((open) => open.method === method && open.path.test(urlPath));
+  const asRouted = method === 'HEAD' ? 'GET' : method;
+  const withoutTrailingSlash = urlPath.replace(/\/+$/, '') || '/';
+
+  return !OPEN_TO_EVERY_CALLER.some(
+    (open) => open.method === asRouted && new RegExp(open.path.source, 'i').test(withoutTrailingSlash)
+  );
 }
 
 // AIDEV-NOTE: `Bearer` because it is what every HTTP client already knows how to send, and because
@@ -167,7 +184,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks = {}): Express {
   // one is a value on the same route, and a verdict on a job that has not finished printing is a 409
   // on the thing being set. Only rejecting answers with a job - the other two leave nothing to say.
   api.put('/jobs/:id/verdict', async (request, response) => {
-    const { verdict } = request.body as { verdict?: unknown };
+    const { verdict } = bodyOf(request);
 
     if (verdict !== 'approved' && verdict !== 'rejected' && verdict !== 'abandoned') {
       throw new UnusableRequest(`a verdict is approved, rejected or abandoned, not ${JSON.stringify(verdict)}`);
@@ -223,7 +240,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks = {}): Express {
   // AIDEV-NOTE: the operator's word for what is on the machine, because no printer here reports its
   // own filament. It is also a wake-up: what a shop can print changes the instant this does.
   api.put('/printers/:name/filament', async (request, response) => {
-    const { loaded } = request.body as { loaded?: unknown };
+    const { loaded } = bodyOf(request);
     if (!Array.isArray(loaded) || loaded.some((filament) => typeof filament !== 'string' || filament.trim() === '')) {
       throw new UnusableRequest('loaded is the filaments on the machine, in order, and an empty list means none');
     }
@@ -232,7 +249,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks = {}): Express {
   });
 
   api.put('/printers/:name/status', async (request, response) => {
-    const { stopped, reason } = request.body as { stopped?: unknown; reason?: unknown };
+    const { stopped, reason } = bodyOf(request);
 
     if (stopped === true) {
       if (typeof reason !== 'string' || reason.trim() === '') {
@@ -389,6 +406,15 @@ function addressIn(address: string): string {
 
   // Every request appends its own path, so a trailing slash here would double the separator.
   return address.replace(/\/+$/, '');
+}
+
+// AIDEV-NOTE: express.json() leaves `body` undefined when there was none, or when it did not say it
+// was JSON - and destructuring that throws a TypeError, which reaches the client as a 500. A request
+// with no body is the CLIENT's mistake, and the route's own check is what should name it.
+function bodyOf(request: Request): Record<string, unknown> {
+  const body = request.body as unknown;
+
+  return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
 }
 
 function printerIn(body: unknown): PrinterRecord {

@@ -39,6 +39,12 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### Security
 
+- [ ] A role says what a caller MAY DO, not what is theirs. Any caller can read every job the shop
+  holds, including another client's `displayName` and `metadata`, because nothing records who
+  submitted one. Honest with a single client and wrong with two. It cannot be answered by a longer
+  permission table: a job would have to carry the caller who submitted it, and a job record is
+  written once and never rewritten - so the caller belongs on it at submission or nowhere
+
 A shop that names no callers answers anything, which is why it binds loopback unless told otherwise
 and refuses `--listen` past loopback with nobody named. What is left is what a token does not cover.
 

@@ -445,6 +445,49 @@ describe('the shop over HTTP', () => {
     it('needs an admin for a route it has never heard of', async () => {
       expect((await as(USER, 'POST', '/something-added-later')).status).toBe(403);
     });
+
+    // AIDEV-NOTE: express routes non-strictly, case-insensitively, and serves HEAD from a GET route
+    // - so all of these reach a route a user is entitled to. Comparing the raw path refused them,
+    // which failed CLOSED and so only ever broke the less privileged caller: a client using a
+    // trailing slash worked on an admin token and 403'd on a user one.
+    it.each([
+      ['GET', '/jobs/'],
+      ['GET', '/JOBS'],
+      ['GET', '/printers/'],
+      ['HEAD', '/jobs'],
+    ])('lets a user %s %s, which express routes to one they may have', async (method, path) => {
+      expect((await as(USER, method, path)).status).not.toBe(403);
+    });
+
+    // The normalising must not open anything: a trailing slash or a shout is still an admin route.
+    it.each([
+      ['POST', '/shutdown/'],
+      ['DELETE', '/PRINTERS/mk4'],
+      ['PUT', '/jobs/1/verdict/'],
+    ])('still needs an admin for %s %s', async (method, path) => {
+      expect((await as(USER, method, path)).status).toBe(403);
+    });
+  });
+
+  // express.json() leaves the body undefined when there was none, and destructuring that threw a
+  // TypeError the client saw as a 500 - a client's mistake reported as the shop's fault.
+  describe('a request that brought no body', () => {
+    it.each([
+      ['PUT', '/jobs/1/verdict', 'a verdict is approved, rejected or abandoned'],
+      ['PUT', '/printers/mk4/filament', 'loaded is the filaments on the machine'],
+      ['PUT', '/printers/mk4/status', 'a printer status says stopped true or false'],
+    ])('answers %s %s with what was missing', async (method, path, complaint) => {
+      const response = await fetch(`${shopUrl}${path}`, { method });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining(complaint) as unknown });
+    });
+
+    it('says the same to a body that never claimed to be JSON', async () => {
+      const response = await fetch(`${shopUrl}/printers/mk4/filament`, { method: 'PUT', body: 'loaded=PLA' });
+
+      expect(response.status).toBe(400);
+    });
   });
 
   // AIDEV-NOTE: the shop uploads to this address with that printer's key attached, so an address it
