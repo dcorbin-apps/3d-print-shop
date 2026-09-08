@@ -127,8 +127,15 @@ a history of finished prints, which is a different feature from a queue of outst
 
 **The API key is not in either file.** A key an operator types when adding a printer is a key in
 shell history and in `ps`, and the spool is a working directory rather than a credential store - so
-it is named after the printer and read from the environment: `PRINT_SHOP_KEY_MK4`, the way
-`PRINT_SHOP_SPOOL` names the spool. A printer whose key is missing stops, with that as its reason.
+it is kept apart, in `/etc/3d-print-shop/printer-keys.json`, keyed by the printer's own name. A
+printer whose key is missing stops, with that as its reason.
+
+It was an environment variable, `PRINT_SHOP_KEY_MK4`, until it had to go into a `launchd` plist -
+which anybody can read, so the protection was gone while everything still worked. A file is the
+boring answer because a file has a mode: the shop refuses to read this one, or `callers.json`,
+unless nobody but its owner can. And it is a SECOND file rather than more of the first deliberately,
+because those tokens let somebody into the SHOP while these keys let somebody into the PRINTERS,
+bypassing it - so copying what a client machine needs must not hand over what it does not.
 
 **Ids are a persisted counter, never reused.** `7` is what an operator types and what a GUI shows,
 and the same counter supplies the `Job N` display name for a client that offered none. An id is
