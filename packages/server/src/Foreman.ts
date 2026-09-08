@@ -115,6 +115,13 @@ export class Foreman {
         });
       }
     } catch (failure) {
+      // AIDEV-NOTE: on the way out this is expected and must not stop anything - the same rule
+      // `watchToTheEnd` follows, and for the same reason: a shop that came back up with every
+      // machine stopped, for a fault nobody caused, is worse than one that simply tries again.
+      // An attempt already in flight when the shutdown arrives fails BECAUSE of the shutdown -
+      // seen for real, as `printer stopped` written after `the shop has stopped`.
+      if (this.stopping) return;
+
       // AIDEV-NOTE: a machine that cannot even be built - no key, an address nothing answers at -
       // would otherwise be tried again on every single change, one failure per change. It stops for
       // the same reason a failed upload stops it: the next attempt will fail the same way.

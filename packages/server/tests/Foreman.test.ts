@@ -286,6 +286,25 @@ describe('the foreman', () => {
       expect(quiet).toBe(true);
     });
 
+    // AIDEV-NOTE: seen for real before it was guarded against - `printer stopped ... does not
+    // resolve` written AFTER `the shop has stopped`, because reaching the machine was still in
+    // flight when the shutdown arrived. The attempt fails because of the shutdown, so stopping the
+    // printer over it would be blaming a machine for something nobody did to it.
+    it('does not stop a printer it could not reach on the way out', async () => {
+      await submit();
+      let unreachable: (failure: Error) => void = () => undefined;
+      mockReach.mockReturnValue(new Promise((_resolve, reject) => (unreachable = reject)));
+
+      const looking = foreman.considerStarting();
+      await until(async () => mockReach.mock.calls.length === 1);
+
+      foreman.stop();
+      unreachable(new Error('nothing is listening at http://mk4 (ECONNREFUSED)'));
+      await looking;
+
+      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
+    });
+
     // Otherwise a shop would come back up with every printer stopped, for a fault nobody caused.
     it('does not stop a printer whose print it loses on the way out', async () => {
       await submit();
