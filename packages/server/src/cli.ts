@@ -9,6 +9,7 @@ import type { PrinterApi } from './Printer.js';
 import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
 import { ETC_ENV, callersIn, defaultEtc, printerKeysIn } from './credentials.js';
 import { judgeJob, listJobs } from './jobAdmin.js';
+import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { claimSpool } from './spoolLock.js';
 import { SPOOL_ROOT_ENV, defaultSpoolRoot } from './spoolRoot.js';
@@ -110,6 +111,13 @@ export function createCLI(): Command {
       await foreman.resumeWatching();
       lookForWork();
     });
+
+  program
+    .command('init')
+    .description('Set a fresh machine up with one admin, so there is somebody this shop may answer')
+    .argument('[name]', 'what to call them, and the id every job of theirs is owned by', 'admin')
+    .option('--etc <path>', `where its credentials are kept (or ${ETC_ENV}; defaults to ${defaultEtc()})`)
+    .action(async (name: string, options: { etc?: string }) => say(await initialiseShop(options.etc ?? defaultEtc(), name)));
 
   const reachingTheShop = (command: Command): Command =>
     command.option('--shop-url <url>', `where the shop answers (or ${SHOP_URL_ENV}; defaults to ${defaultShopUrl()})`);

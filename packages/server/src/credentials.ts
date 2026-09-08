@@ -1,4 +1,5 @@
-import { readFile, stat } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 
 // AIDEV-NOTE: two files, not one, and deliberately. `callers` lets somebody into the SHOP; `printer
@@ -43,6 +44,54 @@ export interface Caller {
 const AN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export class UnusableCredentials extends Error {}
+
+/** A shop that already has callers. Writing over them would revoke every one of them at once. */
+export class AlreadyHasCallers extends Error {}
+
+// 32 random bytes, which is the whole of what a token is: unguessable, and nothing about it meant
+// to be read or remembered. Hex rather than base64url so that a token copied out of a terminal
+// cannot pick up a character whose case or punctuation matters on the way.
+const TOKEN_BYTES = 32;
+
+const FILE_MODE = 0o600;
+const DIRECTORY_MODE = 0o700;
+
+/**
+ * Give a shop its first admin, and answer with their token.
+ *
+ * The token is answered rather than kept: this is the only moment it exists anywhere but the file,
+ * and nothing here can read it back out of one, so whoever asked says it once or not at all.
+ */
+export async function writeFirstCaller(etc: string, id: string, name: string): Promise<string> {
+  if (!AN_ID.test(id)) {
+    throw new UnusableCredentials(
+      `${JSON.stringify(id)} is not an id - an id is up to 64 of letters, digits, dot, dash and underscore, beginning with a letter or a digit`,
+    );
+  }
+  if (name.trim() === '') {
+    throw new UnusableCredentials('a caller needs a name, which is what a log and a UI say');
+  }
+
+  const file = path.join(etc, CALLERS_FILE);
+  const token = randomBytes(TOKEN_BYTES).toString('hex');
+
+  // The credentials directory is this command's to make - it is what setting a machine up MEANS,
+  // where the spool is the installer's because work put somewhere nobody is looking is work lost.
+  await mkdir(etc, { recursive: true, mode: DIRECTORY_MODE });
+
+  try {
+    // AIDEV-NOTE: 'wx' rather than a look and then a write. This file holds every token the shop
+    // knows, so writing over one would revoke every caller at once and orphan every job their ids
+    // own - and asking first leaves a window in which two of these both find nothing.
+    await writeFile(file, `${JSON.stringify([{ id, name, role: 'admin', token }], null, 2)}\n`, { mode: FILE_MODE, flag: 'wx' });
+  } catch (failure) {
+    if ((failure as NodeJS.ErrnoException).code !== 'EEXIST') throw failure;
+
+    throw new AlreadyHasCallers(`${file} is already there, and it holds every token this shop knows - so this will not write over it`);
+  }
+
+  return token;
+}
 
 /**
  * Who may talk to this shop, by the token they present.

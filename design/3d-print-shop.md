@@ -299,8 +299,9 @@ by that file, which `fetch` streams.
 **Every route names its caller.** There is no anonymous mode, not even on loopback. A shop that
 answers an unnamed request is one where a job has no submitter to belong to, and ownership below
 would need a case for it - so the case is removed rather than handled. A shop with no callers
-configured refuses to start, and a fresh machine gets its first admin from a bootstrap command
-rather than from a gap in the checking.
+configured refuses to start, and a fresh machine gets its first admin from `init` - which writes the
+file 0600 with one admin in it, says their token once, and refuses to write over callers already
+there - rather than from a gap in the checking.
 
 A token buys a name and a role, and the role is AUTHORITY rather than occupation: a script can be an
 admin and a person a user. Authority alone was never enough, though, because it says what a caller
@@ -326,6 +327,7 @@ it, and it holds its printer until something is done about that.
 ## The operator's commands
 
 ```
+3d-print-shop init dave                                  the first admin, on a machine with none
 3d-print-shop serve --spool /var/spool/3d-print-shop     run the shop, so clients can reach it
 3d-print-shop serve --listen 0.0.0.0                     ... from off this machine, which is a decision
 3d-print-shop printer add mk4 250x210x220 http://octopi.local

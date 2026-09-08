@@ -31,8 +31,8 @@ yarn shop serve --spool /var/spool/3d-print-shop
 ```
 
 It will not start until `/etc/3d-print-shop/callers.json` names somebody who may call it: every
-route names its caller, and a shop nobody may call has nothing to answer - see **Who may call
-it** below.
+route names its caller, and a shop nobody may call has nothing to answer. `3d-print-shop init dave`
+writes that file with one admin in it - see **Who may call it** below.
 
 `yarn shop` runs the server straight from source; an installed shop is the `3d-print-shop` binary
 `@3d-print-shop/server` declares. Either way it is a plain long-running process, so `launchd` and
@@ -49,6 +49,7 @@ same spool is refused and a crash leaves nothing to clean up.
 ## The operator's commands
 
 ```
+3d-print-shop init dave                                the first admin, on a machine with none
 3d-print-shop serve --spool /var/spool/3d-print-shop   run the shop, so clients can reach it
 3d-print-shop printer add mk4 250x210x220 http://octopi.local
 3d-print-shop printer list                             what it has, and what each is doing
@@ -63,8 +64,9 @@ same spool is refused and a crash leaves nothing to clean up.
 3d-print-shop shutdown                                 ask it to stop
 ```
 
-Every command but `serve` is a client of a running shop and takes `--shop-url` (or `PRINT_SHOP_URL`;
-`http://localhost:7373` by default). Only `serve` names a spool, because only `serve` holds one.
+Every command but `serve` and `init` is a client of a running shop and takes `--shop-url` (or
+`PRINT_SHOP_URL`; `http://localhost:7373` by default). Only `serve` names a spool, because only
+`serve` holds one; `init` writes credentials on the machine and is what there is before a shop runs.
 
 **Who may call it** is `/etc/3d-print-shop/callers.json`, a list of ids, names, roles and tokens:
 
@@ -87,8 +89,10 @@ first file to a client machine should not hand it every printer's key. Both are 
 refuses to read either if anybody else can.
 
 **Every route names its caller**, so a shop with no `callers.json` does not start - there is no
-anonymous mode, not even on loopback. A fresh machine therefore needs its first admin written into
-that file before `serve` will run at all.
+anonymous mode, not even on loopback. A fresh machine therefore needs its first admin before `serve`
+will run at all, and `3d-print-shop init <name>` is what writes one: it makes the file 0600 with a
+single admin in it, whose token is 32 random bytes said once and stored nowhere else. It will not
+write over callers that are already there, because that file holds every token the shop knows.
 
 **The shop listens on loopback**, because a token travels in the clear over HTTP and the interface
 nobody else can reach is the one nobody else can read it off. `serve --listen <address>` says
@@ -104,8 +108,8 @@ raises it. OctoPrint's own default is 1GB, so the shop is the binding limit unti
 so a shop nobody gives verdicts to prints one thing per machine and then stops.
 
 **A printer's API key never reaches the command line**, where it would be in shell history and in
-`ps`. The shop reads it from the environment, one variable per printer:
-`PRINT_SHOP_KEY_MK4` for a printer called `mk4`.
+`ps`. The shop reads it from `printer-keys.json`, keyed by the printer's own name. Not from the
+environment, which it was until that had to be written into a `launchd` plist anybody can read.
 
 ## Submitting a job
 

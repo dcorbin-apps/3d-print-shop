@@ -64,10 +64,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 - [ ] Rotating a token means editing `callers.json` and restarting; there is no way to add or revoke
   one while the shop runs. Re-reading the file on SIGHUP is the boring answer
-- [ ] Nothing generates a token, and with no anonymous access there is no way into a fresh shop
-  without one. `3d-print-shop init` writing `callers.json` 0600 with a single admin, whose token is
-  32 random bytes printed once, is the boring answer - it also gets the mode right, which
-  `credentials.ts` already refuses to get wrong
 - [ ] A name is checked and then dropped. `request.caller` is set and read by nobody, waiting for
   the logging below - which is the whole point of a name rather than a shared secret
 - [ ] Take the stored path from OctoPrint's answer instead of guessing it. `send()` throws the

@@ -304,10 +304,29 @@ describe('the shop, running as its own process', () => {
 
   // AIDEV-NOTE: the whole point of removing the anonymous mode - a shop whose credentials are not
   // there does not start, rather than starting as one anybody reaching the port may ask anything.
-  // A fresh machine gets its first admin from a bootstrap command instead; see PLAN.md.
-  describe('a shop nobody may call', () => {
+  // `init` is the way out of that, and the only operator command that is not a client of a running
+  // shop: until it has run there is nobody a shop would answer.
+  describe('a machine nobody has set up yet', () => {
     it('will not start when no callers are named', async () => {
       await expect(startShopOver(spool, [], path.join(spool, 'no-credentials-here'))).rejects.toThrow('every route names its caller');
+    }, 30_000);
+
+    // What proves `init` worked is not the file it wrote but a shop started over it answering the
+    // token it printed. The mode, the shape and the token are each something a file can get wrong
+    // while still looking right, and each of them is a shop that will not start or will not answer.
+    it('is set up by init, and then answers the token init printed', async () => {
+      const machine = await mkdtemp(path.join(tmpdir(), 'print-shop-fresh-'));
+      madeEtc.push(machine);
+      const fresh = path.join(machine, 'etc');
+
+      const { stdout } = await runCommandSaying(['init', 'dave', '--etc', fresh], {});
+      const token = /\b[0-9a-f]{64}\b/.exec(stdout)?.[0];
+
+      const shop = await startShopOver(spool, [], fresh);
+      started.push(shop);
+
+      expect(token).toBeDefined();
+      expect((await fetch(`${shop.url}/jobs`, { headers: { authorization: `Bearer ${token as string}` } })).status).toBe(200);
     }, 30_000);
   });
 });

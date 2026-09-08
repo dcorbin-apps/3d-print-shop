@@ -1,8 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersIn, defaultEtc, printerKeysIn } from '../src/credentials';
+import {
+  AlreadyHasCallers,
+  CALLERS_FILE,
+  ETC_ENV,
+  PRINTER_KEYS_FILE,
+  UnusableCredentials,
+  callersIn,
+  defaultEtc,
+  printerKeysIn,
+  writeFirstCaller,
+} from '../src/credentials';
 
 describe('the credentials a shop is given', () => {
   let etc: string;
@@ -112,6 +122,63 @@ describe('the credentials a shop is given', () => {
       await write(CALLERS_FILE, contents, mode);
 
       await expect(callersIn(etc)).rejects.toBeInstanceOf(UnusableCredentials);
+    });
+  });
+
+  // AIDEV-NOTE: the way into a fresh machine. There is no anonymous mode, so a shop with no callers
+  // answers nobody and refuses to start - which leaves writing the first one as the one thing that
+  // cannot be done by asking the shop.
+  describe('the first caller a machine is given', () => {
+    it('writes an admin the shop then knows by the token it answered with', async () => {
+      const token = await writeFirstCaller(etc, 'u-1', 'dave');
+
+      expect((await callersIn(etc)).get(token)).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
+    });
+
+    // Nothing reads it back out of the file, so the value answered here is the only copy there will
+    // ever be - and it has to be unguessable, because it is the whole of what a caller presents.
+    it('answers 32 random bytes, and different ones every time', async () => {
+      const mine = await writeFirstCaller(etc, 'u-1', 'dave');
+      const theirs = await writeFirstCaller(await mkdtemp(path.join(tmpdir(), 'print-shop-etc-')), 'u-1', 'dave');
+
+      expect(mine).toMatch(/^[0-9a-f]{64}$/);
+      expect(theirs).not.toBe(mine);
+    });
+
+    it('writes it 0600, which is the mode the shop refuses to read one without', async () => {
+      await writeFirstCaller(etc, 'u-1', 'dave');
+
+      expect((await stat(path.join(etc, CALLERS_FILE))).mode & 0o777).toBe(0o600);
+    });
+
+    // The credentials directory is what setting a machine up MEANS, so this makes it - unlike the
+    // spool, which is the installer's because work put where nobody is looking is work lost.
+    it('makes the directory when the machine has none', async () => {
+      const never = path.join(etc, 'not-yet');
+
+      const token = await writeFirstCaller(never, 'u-1', 'dave');
+
+      expect((await callersIn(never)).get(token)?.name).toBe('dave');
+    });
+
+    // This file holds every token the shop knows, so writing over one revokes every caller at once
+    // and orphans every job their ids own.
+    it('refuses to write over callers already there, and leaves them exactly as they were', async () => {
+      await write(CALLERS_FILE, [dave, gamebox]);
+
+      await expect(writeFirstCaller(etc, 'u-3', 'someone')).rejects.toBeInstanceOf(AlreadyHasCallers);
+      expect(JSON.parse(await readFile(path.join(etc, CALLERS_FILE), 'utf-8'))).toEqual([dave, gamebox]);
+    });
+
+    // Refused here rather than written and refused at the next start, when whoever typed it has
+    // gone - and an id in particular can never be corrected once a job records it.
+    it.each([
+      ['has space', 'dave', 'is not an id'],
+      ['-leading', 'dave', 'is not an id'],
+      ['x'.repeat(65), 'dave', 'is not an id'],
+      ['u-1', '  ', 'needs a name'],
+    ])('refuses %j as an id and %j as a name', async (id, name, complaint) => {
+      await expect(writeFirstCaller(etc, id, name)).rejects.toThrow(complaint);
     });
   });
 

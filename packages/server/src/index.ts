@@ -1,6 +1,16 @@
 export { DEFAULT_PORT, LOOPBACK, NotAKnownCaller, NotTheirs, UnusableRequest, createApi, requireUsablePrinterName, serve } from './api.js';
 export type { ShopHooks } from './api.js';
-export { CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersIn, defaultEtc, printerKeysIn } from './credentials.js';
+export {
+  AlreadyHasCallers,
+  CALLERS_FILE,
+  ETC_ENV,
+  PRINTER_KEYS_FILE,
+  UnusableCredentials,
+  callersIn,
+  defaultEtc,
+  printerKeysIn,
+  writeFirstCaller,
+} from './credentials.js';
 export type { Caller, Role } from './credentials.js';
 export { Foreman } from './Foreman.js';
 export { OctoPrintMachines } from './OctoPrintMachines.js';
@@ -14,6 +24,7 @@ export { OctoPrint, reconnectAfter, reconnectDelayMs } from './OctoPrint.js';
 export type { Holding, PrinterApi, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
 export { canTake, fitsInside } from './Printer.js';
 export { judgeJob, listJobs } from './jobAdmin.js';
+export { initialiseShop } from './shopAdmin.js';
 export {
   UnreadableVolume,
   addPrinter,
