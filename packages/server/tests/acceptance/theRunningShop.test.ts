@@ -34,7 +34,12 @@ describe('the shop, running as its own process', () => {
   let spool: string;
   let etc: string;
   let madeEtc: string[];
-  let started: RunningShop[];
+  // AIDEV-NOTE: every process this suite spawns, tracked from the spawn itself rather than from the
+  // promise resolving. A shop started by a test that EXPECTS a refusal was tracked by nothing: if it
+  // ever came up anyway - which is what a failure of that test looks like - nothing would stop it,
+  // and the suite would report green while leaving a shop listening for as long as the machine was
+  // up. Two were found doing exactly that, one of them 14 hours old.
+  let spawned: ChildProcess[];
 
   function startShop(): Promise<RunningShop> {
     return startShopOver(spool);
@@ -43,6 +48,7 @@ describe('the shop, running as its own process', () => {
   function startShopOver(root: string, alsoSaying: string[] = [], credentials: string = etc): Promise<RunningShop> {
     return new Promise<RunningShop>((resolve, reject) => {
       const shop = spawn('node', ['--import', 'tsx', SHOP, 'serve', '--spool', root, '--etc', credentials, '--port', '0', ...alsoSaying]);
+      spawned.push(shop);
       let said = '';
       let complaint = '';
 
@@ -104,10 +110,7 @@ describe('the shop, running as its own process', () => {
   }
 
   async function shopIsRunning(): Promise<RunningShop> {
-    const shop = await startShop();
-    started.push(shop);
-
-    return shop;
+    return startShop();
   }
 
   async function addMk4(shop: RunningShop): Promise<void> {
@@ -153,13 +156,18 @@ describe('the shop, running as its own process', () => {
 
   beforeEach(async () => {
     spool = await mkdtemp(path.join(tmpdir(), 'print-shop-running-'));
-    started = [];
+    spawned = [];
     madeEtc = [];
     etc = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
   });
 
   afterEach(async () => {
-    await Promise.all(started.map((shop) => shop.stop()));
+    await Promise.all(spawned.map((shop) => stopShop(shop)));
+
+    // AIDEV-NOTE: the suite saying it cleaned up after itself. Nothing else would notice a shop left
+    // listening - every test here reports green either way - and a leaked one holds its port, and
+    // its spool's lock socket, for as long as the machine is up.
+    expect(spawned.filter((shop) => shop.exitCode === null && shop.signalCode === null)).toEqual([]);
     await Promise.all([spool, ...madeEtc].map((made) => rm(made, { recursive: true, force: true })));
   });
 
@@ -248,7 +256,6 @@ describe('the shop, running as its own process', () => {
   // and the shop keeps that much room spare on the spool for every job it accepts.
   it('takes gcode up to the size --max-gcode names, and no more', async () => {
     const shop = await startShopOver(spool, ['--max-gcode', '1']);
-    started.push(shop);
     await addMk4(shop);
 
     const oneMegabyte = 1024 * 1024;
@@ -270,7 +277,6 @@ describe('the shop, running as its own process', () => {
         { id: 'gamebox', name: 'gamebox', role: 'user', token: USER },
       ]);
       const shop = await startShopOver(spool, [], bothOfThem);
-      started.push(shop);
 
       return shop;
     }
@@ -331,7 +337,6 @@ describe('the shop, running as its own process', () => {
     // listener without a test that opens a port to the network.
     it('is the address --listen names, and it answers there', async () => {
       const shop = await startShopOver(spool, ['--listen', '::1']);
-      started.push(shop);
 
       expect(shop.address).toBe('::1');
       expect((await ask(shop, '/printers')).status).toBe(200);
@@ -359,7 +364,6 @@ describe('the shop, running as its own process', () => {
       const token = /\b[0-9a-f]{64}\b/.exec(stdout)?.[0];
 
       const shop = await startShopOver(spool, [], fresh);
-      started.push(shop);
 
       expect(token).toBeDefined();
       expect((await fetch(`${shop.url}/jobs`, { headers: { authorization: `Bearer ${token as string}` } })).status).toBe(200);

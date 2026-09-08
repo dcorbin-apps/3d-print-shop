@@ -10,12 +10,16 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The service
 
-- [ ] Five orphaned shops from an OLD checkout ignored SIGTERM and needed killing, and why is still
-  unknown. It does not reproduce here: a shop with no client, one with a client connected, and one
-  whose printer refuses every connection all exit in under 10ms. The pending-backoff timer was the
-  first guess and it was wrong - that path is now cancelled, and it could only ever have delayed an
-  exit by the 60s cap anyway. Worth another look if a shop is ever seen to hang again, with what was
-  holding the event loop open captured at the time
+- [ ] Orphaned shops: mostly answered, one thing left. Two were found listening, one of them 14 hours
+  old, while every test reported green. Both exited on SIGTERM the instant one was sent - so "they
+  ignore SIGTERM" was the wrong theory, and nothing had ever sent them one. The leak was in
+  `theRunningShop`: a shop spawned by a test that expects a REFUSAL was tracked by nothing, so one
+  that came up anyway was never stopped by teardown. It now tracks every process from the spawn
+  itself and asserts in teardown that none is still alive. Taking that tracking away again leaks a
+  shop per test AND hangs jest on exit, which is what "needed killing" looked like from outside.
+  What is still unexplained is the newer of the two: its argv named an `--etc` that never existed,
+  so it should have refused to start, yet it held the spool lock and answered 401 - it had read
+  callers from somewhere. Not reproducible on demand; the capture is in this session's notes
 - [ ] Resume a stopped printer from its own status rather than only on an operator's word
 - [ ] Positional filaments, when there is a printer with more than one extruder. Scheduling uses
   only a job's FIRST filament today, which is right for one extruder and wrong for several: the
