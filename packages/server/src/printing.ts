@@ -10,8 +10,11 @@ import { nextToPrint } from './selection.js';
  * by its path, so there is no separate handle to invent.
  */
 export interface Printer {
-  /** Answers once the printer has taken the file. Rejecting means it never started. */
-  send(remotePath: string, gcode: Readable): Promise<void>;
+  /**
+   * Answers, once the printer has taken the file, with where it actually FILED it - which is not
+   * always the path it was asked for. Rejecting means it never started.
+   */
+  send(remotePath: string, gcode: Readable): Promise<string>;
   /** Answers when the print stops, however it stops. */
   awaitOutcome(remotePath: string): Promise<PrinterOutcome>;
 }
@@ -23,6 +26,9 @@ export type PrintAttempt =
 
 // AIDEV-NOTE: a job that names no path is given one. Built from the id rather than the display
 // name: ids are unique and safe in a path, display names are neither.
+//
+// What this answers is where the shop ASKS for a job to go. Where it ended up is what the machine
+// said when it took it, which is on the printer's `holding` - see `printingAt`.
 export function remotePathFor(job: Job): string {
   return job.remotePath ?? `3d-print-shop/job-${job.id}.gcode`;
 }
@@ -56,11 +62,12 @@ export async function startNextPrint(shop: JobStore, reach: () => Promise<Printe
   // makes - so an eager reach would connect to every idle printer every time anything happened.
   const machine = await reach();
 
-  const remotePath = remotePathFor(job);
+  const asked = remotePathFor(job);
   const started = await shop.startPrinting(printerName, job.id);
 
+  let storedAt: string;
   try {
-    await machine.send(remotePath, await shop.gcodeStream(job.id));
+    storedAt = await machine.send(asked, await shop.gcodeStream(job.id));
   } catch (failure) {
     // AIDEV-NOTE: nothing was printed, so the printer simply lets go and the job is queued again by
     // not being held. Whether the printer then STOPS is the caller's to decide: a send that fails
@@ -68,8 +75,14 @@ export async function startNextPrint(shop: JobStore, reach: () => Promise<Printe
     // the loop knows that is what happened.
     await shop.couldNotStart(printerName);
 
-    return { did: 'could-not-start', job, remotePath, failure: failure as Error };
+    return { did: 'could-not-start', job, remotePath: asked, failure: failure as Error };
   }
+
+  // AIDEV-NOTE: outside the try, and after the printer has the file. A failure HERE is not a print
+  // that never started - the machine is printing - so answering it by letting the printer go would
+  // queue a job that is on a bed. The cost of that is a holding with no path, which is the case the
+  // fallback in `recordOutcome` already covers.
+  await shop.printingAt(printerName, storedAt);
 
   return { did: 'started', job: started };
 }
@@ -89,7 +102,10 @@ export async function recordOutcome(shop: JobStore, machine: Printer, printerNam
   const job = await shop.find(printer.holding.job);
   if (!job) throw new WrongState(`${printerName} is holding job ${printer.holding.job}, which is not here`);
 
-  const outcome = await machine.awaitOutcome(remotePathFor(job));
+  // AIDEV-NOTE: where the machine SAID it filed it, because that is the string its completion event
+  // will carry. The fallback is the shop's guess, for a print started before the shop read the
+  // answer back or interrupted between the upload and the write - which is what a restart finds.
+  const outcome = await machine.awaitOutcome(printer.holding.remotePath ?? remotePathFor(job));
 
   // Whatever the printer says, the job now waits for a person: `finished` means it ran to the end,
   // not that what came off the bed is usable. The printer keeps holding it, and the bed, until then.

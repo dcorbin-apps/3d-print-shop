@@ -5,9 +5,10 @@ design/3d-print-shop.md for why it is shaped this way. PLAN.md is what is still 
 
 # The one invariant
 
-The shop knows nothing about its clients. Nothing here may depend on gamebox, or on any other
-client, in code, in tests, or in a design document. A client hands the shop gcode and says what it
-needs; that is the whole of the relationship, and it runs one way.
+The shop knows nothing about its clients. Nothing here may depend on any client - not in code, not
+in tests, not in a design document, and not in a comment reasoning from what one of them does. A
+client hands the shop gcode and says what it needs; that is the whole of the relationship, and it
+runs one way. Naming one is how the dependency starts, so nothing here names one.
 
 # Where things live
 

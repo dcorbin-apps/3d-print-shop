@@ -84,7 +84,7 @@ describe('reaching a printer', () => {
   // proves the machine really was let go is a caller waiting on it being told so.
   it('lets go of every machine when the shop closes', async () => {
     const machine = await machines.reach(await shop.printerNamed('mk4'));
-    const waiting = machine.awaitOutcome('gamebox/job-1.gcode');
+    const waiting = machine.awaitOutcome('plates/job-1.gcode');
 
     machines.closeAll();
 

@@ -5,26 +5,26 @@
 A service that accepts print jobs and is responsible for getting them onto a printer: holding them
 until the filament they need is loaded, submitting them, and tracking what has been printed.
 
-**It knows nothing about gamebox.** It does not know what a kit is, what a piece is, or that a DSL
-exists. Its clients hand it gcode and say what it needs; gamebox is one such client and has no
-special standing. This is deliberate - the queue is useful for printing that has nothing to do with
+**It knows nothing about its clients.** It does not know what a kit is, what a piece is, or that a
+DSL exists. A client hands it gcode and says what it needs; the one it was written for is no
+exception and has no special standing. This is deliberate - the queue is useful for printing that has nothing to do with
 board game inserts, and that is the reason it is separate rather than a part of the print pipeline.
 
-It was written inside gamebox, where getting the interface right was easier with its first client in
-reach, and moved here once that was done. The boundary it was built to is now the repository
+It was written inside its first client, where getting the interface right was easier with a caller
+in reach, and moved here once that was done. The boundary it was built to is now the repository
 boundary: nothing here may depend on anything a client owns, and the dependency runs one way and
 only one way - a client may depend on the shop.
 
 There are three packages under the scope. `@3d-print-shop/server` is the service.
 `@3d-print-shop/octoprint-sim` is a stand-in OctoPrint, which the shop needs in order to prove it
-talks to a real one, and which a client may drive a window around - gamebox does. `@3d-print-shop/client`
+talks to a real one, and which a client may drive a window around. `@3d-print-shop/client`
 is the contract: the wire types, an interface covering everything the API can be asked, and the HTTP
 implementation of it.
 
 **The client is where the contract lives, and the server depends on it** rather than the other way
-about. There were two clients before - one inside gamebox for submitting, one inside the server for
-the operator's commands - which covered different halves of the same API, duplicated the same
-fetch-and-explain plumbing, and between them covered the job side not at all. Two hand-maintained
+about. There were two clients before - one inside the calling application for submitting, one in the
+server for the operator's commands - which covered different halves of the same API, duplicated the
+same fetch-and-explain plumbing, and between them covered the job side not at all. Two hand-kept
 clients drift, and a copy inside a client is written against an API it can no longer see - which is
 exactly what this repository being separate would have made of it.
 
@@ -41,8 +41,9 @@ must be one, and must not require either.
 
 **A GUI is expected, on macOS, eventually.** That settles two things now, before either is expensive
 to change. The service stays HEADLESS and the GUI is a client of it, rather than the service living
-inside a desktop app - gamebox's octo-sim is the cautionary example, an Electron app with a protocol
-server buried in it, reachable by tests only through a relative path into its `src`. Pulling that
+inside a desktop app - the cautionary example is an octo-sim that WAS a desktop app, an Electron
+app with a protocol server buried in it, reachable by tests only through a relative path into its
+`src`. Pulling that
 server out is how `@3d-print-shop/octoprint-sim` came to exist. And
 the API has to be usable from another process, which means an out-of-process interface from the
 start, not in-process calls that a UI is later expected to reach around.
@@ -229,7 +230,7 @@ this shop has no printers - the operator adds one before anything can be printed
 A shop with no printers accepts nothing. That reads harshly and is honest: nothing can print.
 
 **`filaments` are the printer's names for materials, not a client's.** The first is what has to be
-loaded; see "One extruder, for now". gamebox resolves `gray` to
+loaded; see "One extruder, for now". A client resolves its own `gray` to
 `PLA-SpaceGray` before submitting, because that mapping is an input to its slicing. The queue never
 sees a client's own vocabulary.
 
@@ -242,14 +243,14 @@ here because a client often has a better idea of how prints should be organised 
 the queue does.
 
 **`metadata` is carried and never read.** It is how a client keeps its own meaning attached to a job
-- gamebox puts the pieces and copy counts here, so a queue UI can show "Player Box x4" rather than a
-filename - without the queue growing a concept of pieces.
+- a client puts its pieces and copy counts here, so a queue UI can show "Player Box x4" rather than
+a filename - without the queue growing a concept of pieces.
 
 ## The API
 
 REST over HTTP, and no alternative is interesting here: the service is out-of-process by constraint,
 polling is the update model, an HTTP request body is already the stream a gcode wants, and a GUI,
-gamebox and curl all speak it without acquiring anything to do so.
+a script and curl all speak it without acquiring anything to do so.
 
 ```
 POST   /jobs                    submit
@@ -512,9 +513,18 @@ registration is a snapshot, and whether a printer is stopped changes while the s
 inside that call, which stops one when an upload fails.
 
 ```ts
-send(remotePath, gcode: Readable)     // answers once the printer has taken it
+send(remotePath, gcode: Readable)     // answers with where it FILED it, once it has taken it
 awaitOutcome(remotePath)              // answers when the print stops, however it stops
 ```
+
+**Where the file went is the machine's answer, not the shop's guess.** `send` says where to put it
+and the machine says where it put it, and those are not always the same string - OctoPrint
+transliterates a name it cannot store. A completion event carries the path it filed, and the watcher
+matches on that string, so a rename the shop did not follow is a print nobody hears the end of. The
+answer goes on the printer's `holding`, beside everything else that moves: it cannot go on the job,
+which is written once, and it is not known until the upload has been answered. A holding with no
+path - a print started before the shop read that answer back, or interrupted between the upload and
+the write - falls back to the path the shop asked for, which is what it did for every print before.
 
 **Starting a print and hearing how it ended are two things.** `startNextPrint` answers as soon as
 the machine has taken the file. A print runs for hours, and waiting for it would make its outcome

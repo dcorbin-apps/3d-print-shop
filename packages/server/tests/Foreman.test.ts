@@ -18,7 +18,7 @@ describe('the foreman', () => {
   let spool: string;
   let shop: JobStore;
   let foreman: Foreman;
-  let mockSend: jest.Mock<(remotePath: string, gcode: Readable) => Promise<void>>;
+  let mockSend: jest.Mock<(remotePath: string, gcode: Readable) => Promise<string>>;
   let mockAwaitOutcome: jest.Mock<(remotePath: string) => Promise<PrinterOutcome>>;
   let mockReach: jest.Mock<Machines>;
 
@@ -58,7 +58,7 @@ describe('the foreman', () => {
     spool = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-foreman-'));
     shop = new JobStore(spool);
 
-    mockSend = jest.fn<(remotePath: string, gcode: Readable) => Promise<void>>().mockResolvedValue(undefined);
+    mockSend = jest.fn<(remotePath: string, gcode: Readable) => Promise<string>>().mockImplementation((remotePath) => Promise.resolve(remotePath));
     // Never settles unless a test says so: a print that is still running is the ordinary case.
     mockAwaitOutcome = jest.fn<(remotePath: string) => Promise<PrinterOutcome>>().mockReturnValue(new Promise(() => {}));
     mockReach = jest.fn<Machines>().mockImplementation(async (_printer: RegisteredPrinter): Promise<Printer> => {

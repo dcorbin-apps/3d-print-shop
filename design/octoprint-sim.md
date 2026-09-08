@@ -10,16 +10,18 @@ under test is always the one that will meet the real printer.
 
 It is a library, not an application. `startOctoPrintServer()` answers with a running server and the
 handles to drive it, so a test can decide what a submitted job does. A client of this repository may
-draw a window around it - gamebox's octo-sim is an Electron app that renders each submitted job and
-lets a person click Complete, Fail or Cancel - and that window is no part of this package.
+draw a window around it - one such is an Electron app that renders each submitted job and lets a
+person click Complete, Fail or Cancel - and that window is no part of this package.
 
 ## Protocol surface
 
 Derived from what `OctoPrint` actually sends:
 
 - `POST /api/files/local` - multipart form upload (`file`, `path`, `print=true`), `X-Api-Key`
-  header. Must respond 2xx. The client computes the job's path itself and never reads it from the
-  response body.
+  header. Must respond 2xx, answering `{"done":true,"files":{"local":{"name","path","origin"}}}`.
+  The client asks for a path and reads `files.local.path` back to learn where the file actually
+  went: a completion event carries the path the machine filed it under, so a rename the client did
+  not follow is a print nobody hears the end of.
 - `GET /api/files/local/<path>` - what the machine holds at that path, which is how a print already
   running is picked up again after a restart.
 - `POST /api/job` - JSON body `{"command":"cancel"}`, `X-Api-Key` header. Must respond 2xx.

@@ -5,8 +5,8 @@ needs is loaded, sending it to a machine that can take it, and keeping it until 
 whether what came off the bed is usable.
 
 It knows nothing about what it is printing. A client hands it a gcode file and says what filament it
-needs and how much room it takes; the shop schedules on that and nothing else. gamebox is its first
-client and has no special standing.
+needs and how much room it takes; the shop schedules on that and nothing else. No client has
+special standing, including the one it was written for.
 
 See [design/3d-print-shop.md](design/3d-print-shop.md) for why it is shaped this way, and
 [PLAN.md](PLAN.md) for what is still to do.
@@ -76,7 +76,7 @@ Every command but `serve` and `init` is a client of a running shop and takes `--
 **Who may call it** is `/etc/3d-print-shop/callers.json`, a list of ids, names, roles and tokens:
 
 ```json
-[ { "id": "gamebox", "name": "gamebox", "role": "user",  "token": "..." },
+[ { "id": "slicer",  "name": "slicer",  "role": "user",  "token": "..." },
   { "id": "dave",    "name": "dave",    "role": "admin", "token": "..." } ]
 ```
 

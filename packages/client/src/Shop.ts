@@ -8,7 +8,7 @@ export interface PrinterAdded {
 }
 
 // AIDEV-NOTE: the whole of what a shop can be asked, in one place. There were two clients before -
-// one inside gamebox for submitting, one inside the server for the operator's commands - which
+// one inside the calling application for submitting, one inside the server for the operator's - which
 // covered different halves of the same API, duplicated the same fetch-and-explain plumbing, and
 // covered the job side between them not at all.
 export interface Shop {

@@ -22,7 +22,7 @@ describe('the credentials a shop is given', () => {
 
   // The id is deliberately not the name: nothing may pass by treating the two as one field.
   const dave = { id: 'u-1', name: 'dave', role: 'admin', token: 'dave-token' };
-  const gamebox = { id: 'u-2', name: 'gamebox', role: 'user', token: 'gamebox-token' };
+  const slicer = { id: 'u-2', name: 'slicer', role: 'user', token: 'slicer-token' };
 
   async function write(file: string, contents: unknown, mode = 0o600): Promise<void> {
     await writeFile(path.join(etc, file), typeof contents === 'string' ? contents : JSON.stringify(contents), { mode });
@@ -38,12 +38,12 @@ describe('the credentials a shop is given', () => {
 
   describe('who may call it', () => {
     it('knows each caller by the token they present', async () => {
-      await write(CALLERS_FILE, [dave, gamebox]);
+      await write(CALLERS_FILE, [dave, slicer]);
 
       const callers = await callersIn(etc);
 
       expect(callers.get('dave-token')).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
-      expect(callers.get('gamebox-token')).toEqual({ id: 'u-2', name: 'gamebox', role: 'user' });
+      expect(callers.get('slicer-token')).toEqual({ id: 'u-2', name: 'slicer', role: 'user' });
     });
 
     it('knows nobody by a token it was not given', async () => {
@@ -60,7 +60,7 @@ describe('the credentials a shop is given', () => {
 
     // An id outlives the name beside it, so what one may look like is fixed before any job is
     // written with one - a rule this narrow can be relaxed later, and never the other way.
-    it.each([['dave'], ['gamebox-v3'], ['a.b_c-1'], ['7'], ['x'.repeat(64)]])('takes %j as an id', async (id) => {
+    it.each([['dave'], ['slicer-v3'], ['a.b_c-1'], ['7'], ['x'.repeat(64)]])('takes %j as an id', async (id) => {
       await write(CALLERS_FILE, [{ ...dave, id }]);
 
       expect((await callersIn(etc)).get('dave-token')?.id).toBe(id);
@@ -78,15 +78,15 @@ describe('the credentials a shop is given', () => {
     // Two callers on one id are one owner, and no later reading of the records could say which of
     // them meant any given job - the shop cannot rewrite one to find out.
     it('refuses two callers sharing an id, saying a job could not say which owns it', async () => {
-      await write(CALLERS_FILE, [dave, { ...gamebox, id: 'u-1' }]);
+      await write(CALLERS_FILE, [dave, { ...slicer, id: 'u-1' }]);
 
-      await expect(callersIn(etc)).rejects.toThrow('gives the id u-1 to both dave and gamebox');
+      await expect(callersIn(etc)).rejects.toThrow('gives the id u-1 to both dave and slicer');
     });
 
     // The audit trail is the point of a name, and two callers on one token would put one caller's
     // actions under the other's name - which is worse than having no name at all.
     it('refuses two callers sharing a token, saying it could not tell them apart', async () => {
-      await write(CALLERS_FILE, [dave, { ...gamebox, token: 'dave-token' }]);
+      await write(CALLERS_FILE, [dave, { ...slicer, token: 'dave-token' }]);
 
       await expect(callersIn(etc)).rejects.toThrow('the same token, so neither could be told apart');
     });
@@ -119,7 +119,7 @@ describe('the credentials a shop is given', () => {
 
     it.each([
       ['not JSON', 'dave: admin', 0o600],
-      ['a duplicate token', JSON.stringify([dave, { ...gamebox, token: dave.token }]), 0o600],
+      ['a duplicate token', JSON.stringify([dave, { ...slicer, token: dave.token }]), 0o600],
       ['a mode anybody can read', JSON.stringify([dave]), 0o644],
     ])('is a refusal and not an empty shop when the file is there with %s', async (_why, contents, mode) => {
       await write(CALLERS_FILE, contents, mode);
@@ -146,17 +146,17 @@ describe('the credentials a shop is given', () => {
     it('knows a caller the file has since been given', async () => {
       await write(CALLERS_FILE, [dave]);
       const before = await callersIn(etc);
-      await write(CALLERS_FILE, [dave, gamebox]);
+      await write(CALLERS_FILE, [dave, slicer]);
 
-      expect((await rereadCallers(etc, before, log)).get('gamebox-token')).toEqual({ id: 'u-2', name: 'gamebox', role: 'user' });
+      expect((await rereadCallers(etc, before, log)).get('slicer-token')).toEqual({ id: 'u-2', name: 'slicer', role: 'user' });
     });
 
     it('no longer knows a caller the file has stopped naming', async () => {
-      await write(CALLERS_FILE, [dave, gamebox]);
+      await write(CALLERS_FILE, [dave, slicer]);
       const before = await callersIn(etc);
       await write(CALLERS_FILE, [dave]);
 
-      expect((await rereadCallers(etc, before, log)).get('gamebox-token')).toBeUndefined();
+      expect((await rereadCallers(etc, before, log)).get('slicer-token')).toBeUndefined();
     });
 
     // A stray comma, or a file caught halfway through being replaced: read as "nobody may call this
@@ -183,7 +183,7 @@ describe('the credentials a shop is given', () => {
 
     // The line an operator looks for after signalling, to see that the shop did anything at all.
     it('says how many it re-read', async () => {
-      await write(CALLERS_FILE, [dave, gamebox]);
+      await write(CALLERS_FILE, [dave, slicer]);
 
       await rereadCallers(etc, new Map(), log);
 
@@ -228,10 +228,10 @@ describe('the credentials a shop is given', () => {
     // This file holds every token the shop knows, so writing over one revokes every caller at once
     // and orphans every job their ids own.
     it('refuses to write over callers already there, and leaves them exactly as they were', async () => {
-      await write(CALLERS_FILE, [dave, gamebox]);
+      await write(CALLERS_FILE, [dave, slicer]);
 
       await expect(writeFirstCaller(etc, 'u-3', 'someone')).rejects.toBeInstanceOf(AlreadyHasCallers);
-      expect(JSON.parse(await readFile(path.join(etc, CALLERS_FILE), 'utf-8'))).toEqual([dave, gamebox]);
+      expect(JSON.parse(await readFile(path.join(etc, CALLERS_FILE), 'utf-8'))).toEqual([dave, slicer]);
     });
 
     // Refused here rather than written and refused at the next start, when whoever typed it has

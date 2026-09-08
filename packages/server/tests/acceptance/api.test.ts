@@ -29,10 +29,10 @@ describe('the shop over HTTP', () => {
   // Every route names its caller, so every request here carries a token - an admin's unless the
   // test is about what a user may do.
   const ADMIN = 'dave-token';
-  const USER = 'gamebox-token';
+  const USER = 'slicer-token';
   const CALLERS = new Map([
     [ADMIN, { id: 'dave', name: 'dave', role: 'admin' as const }],
-    [USER, { id: 'gamebox', name: 'gamebox', role: 'user' as const }],
+    [USER, { id: 'slicer', name: 'slicer', role: 'user' as const }],
   ]);
   const AS_ADMIN = { authorization: `Bearer ${ADMIN}` };
 
@@ -424,7 +424,7 @@ describe('the shop over HTTP', () => {
       const response = await as(USER, method, path, body);
 
       expect(response.status).toBe(403);
-      expect(await response.json()).toEqual({ error: `${method} ${path} is for an admin, and gamebox is not one` });
+      expect(await response.json()).toEqual({ error: `${method} ${path} is for an admin, and slicer is not one` });
     });
 
     it.each([
@@ -501,7 +501,7 @@ describe('the shop over HTTP', () => {
     }
 
     it('is the caller who submitted it, by the id that outlives their name', async () => {
-      expect(await submittedBy(USER)).toMatchObject({ owner: 'gamebox' });
+      expect(await submittedBy(USER)).toMatchObject({ owner: 'slicer' });
     });
 
     it('shows a caller their own work, and how much the shop holds altogether', async () => {
@@ -509,7 +509,7 @@ describe('the shop over HTTP', () => {
       await submittedBy(USER, { filaments: ['PLA-Red'], displayName: 'Tray' });
 
       expect(await (await asUser('GET', '/jobs')).json()).toMatchObject({
-        accessibleJobs: [{ displayName: 'Tray', owner: 'gamebox' }],
+        accessibleJobs: [{ displayName: 'Tray', owner: 'slicer' }],
         totalJobs: 2,
       });
     });
@@ -519,7 +519,7 @@ describe('the shop over HTTP', () => {
       await submittedBy(ADMIN);
 
       expect(await (await ask('/jobs')).json()).toMatchObject({
-        accessibleJobs: [{ owner: 'gamebox' }, { owner: 'dave' }],
+        accessibleJobs: [{ owner: 'slicer' }, { owner: 'dave' }],
         totalJobs: 2,
       });
     });

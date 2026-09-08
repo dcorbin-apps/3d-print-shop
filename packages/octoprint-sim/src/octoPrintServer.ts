@@ -103,7 +103,7 @@ export function startOctoPrintServer(
   // one; the api key alone is not accepted, exactly as OctoPrint behaves. The key itself still is
   // not checked on login - this remains a test double, not a security boundary.
   const issuedSessions = new Map<string, string>();
-  const SIMULATED_USER = 'gamebox';
+  const SIMULATED_USER = 'operator';
 
   const sendToAuthenticated = (message: string): void => {
     for (const client of authenticated) {
@@ -184,7 +184,7 @@ export function startOctoPrintServer(
       }
 
       // AIDEV-NOTE: the path the CLIENT asked for, which is what real OctoPrint files an upload
-      // under. This used to be hardcoded `gamebox/...` - one client's filing scheme baked into the
+      // under. The folder used to be hardcoded here - one client's filing scheme baked into the
       // simulator - so a client uploading anywhere else was told its print had finished under a
       // path it had never named, and waited for an event that could not come.
       const folder = typeof req.body?.path === 'string' ? (req.body.path as string) : '';
@@ -192,7 +192,14 @@ export function startOctoPrintServer(
       activeJobPath = remotePath;
       lastJobPath = remotePath;
       uploadedFiles.add(remotePath);
-      res.status(200).json({ done: true });
+      // AIDEV-NOTE: the shape OctoPrint documents for an upload, not a bare `done`. The client reads
+      // `files.local.path` back to learn where the file actually went, so a simulator that answered
+      // only `done` could not tell it - and the one thing this answer proves is that the client
+      // takes the path from the machine rather than from its own guess.
+      res.status(200).json({
+        done: true,
+        files: { local: { name: file.originalname, path: remotePath, origin: 'local' } },
+      });
       broadcastStatus();
 
       const complete: CompleteJob = (type) => {

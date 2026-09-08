@@ -57,7 +57,7 @@ export function waitingOn(jobs: Job[], printer?: RegisteredPrinter): FilamentDem
 
   // AIDEV-NOTE: busiest by COUNT, which is the wrong measure - "load red, it is six hours of work"
   // is the answer an operator wants, and four quick jobs should not outrank one long one. A job
-  // carries no duration today; gamebox has one on its plate and does not pass it.
+  // carries no duration today, so a client that knows one has no way to say it.
   //
   // If that is added it must be an optional field of its own, NOT the `metadata` bag: metadata is
   // carried and never interpreted, and ranking by something inside it would break that rule for

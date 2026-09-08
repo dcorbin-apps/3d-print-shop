@@ -208,6 +208,19 @@ export class JobStore {
   }
 
   /**
+   * Where the printer said it filed the gcode, which is not always where it was asked to.
+   *
+   * A second write rather than part of `startPrinting`, because until the machine has answered the
+   * upload nobody knows the answer - and the printer has to be claimed BEFORE the upload, or two
+   * passes over the queue would both send it the same job.
+   */
+  async printingAt(printerName: string, remotePath: string): Promise<void> {
+    const holding = await this.requireHolding(printerName, 'printing');
+
+    await this.changeStatus(printerName, (status) => ({ ...status, holding: { ...holding, remotePath } }));
+  }
+
+  /**
    * The printer never took it - the upload failed, the connection was down. Nothing was printed, so
    * the printer simply lets go and the job is queued again by not being held.
    */

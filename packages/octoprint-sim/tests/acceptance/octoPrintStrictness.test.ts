@@ -3,7 +3,7 @@ import { startOctoPrintServer } from '../../src/octoPrintServer';
 import type { JobSubmittedHandler, OctoPrintServer } from '../../src/octoPrintServer';
 
 // AIDEV-NOTE: what octo-sim REFUSES, which is the one thing its own strictness is needed for and
-// the one thing no acceptance test of gamebox can cover.
+// the one thing no acceptance test of a client can cover.
 //
 // Everything octo-sim accepts is already exercised by driving a real client at it - packages/cli's
 // print acceptance suite and packages/printer's reconnectRecovery. A break in any of that shows up
@@ -57,7 +57,7 @@ describe('octo-sim refuses what real OctoPrint refuses', () => {
   function uploadForm(filename: string): FormData {
     const form = new FormData();
     form.append('file', new Blob(['G1 X0 Y0'], { type: 'text/plain' }), filename);
-    form.append('path', 'gamebox');
+    form.append('path', 'plates');
     form.append('print', 'true');
     return form;
   }
@@ -89,7 +89,7 @@ describe('octo-sim refuses what real OctoPrint refuses', () => {
     // it through is what let the mistake stand for months without anything noticing.
     it.each([
       ['an api key in place of an issued session', { auth: 'apikey:test-key' }],
-      ['a session it never issued', { auth: 'gamebox:sess-invented' }],
+      ['a session it never issued', { auth: 'operator:sess-invented' }],
       ['a frame that is not an auth frame at all', { subscribe: 'everything' }],
     ])('refuses %s', async (_case, frame) => {
       server = await startOctoPrintServer(0, () => {});
@@ -110,9 +110,20 @@ describe('octo-sim refuses what real OctoPrint refuses', () => {
     });
   });
 
-  // AIDEV-NOTE: a real printer runs one job at a time. Nothing in gamebox submits concurrently -
-  // PrintQueue is strictly sequential - so no acceptance test springs this trap, and a regression
-  // here would let a future queue bug overlap jobs silently.
+  // AIDEV-NOTE: the client reads this back to learn where the file actually went - a completion event
+  // carries the path the machine FILED it under, and OctoPrint does not always file it where it was
+  // asked to. A simulator answering a bare `done` leaves the client with nothing but its own guess.
+  it('answers an upload with the path it filed it under', async () => {
+    server = await startOctoPrintServer(0, () => {});
+
+    const answered = (await submit(server.port, 'tray.gcode')).json();
+
+    expect(await answered).toMatchObject({ done: true, files: { local: { name: 'tray.gcode', path: 'plates/tray.gcode' } } });
+  });
+
+  // AIDEV-NOTE: a real printer runs one job at a time. Nothing that drives this submits two at once -
+  // a printer already holding a job takes no other - so no acceptance test springs this trap, and a
+  // regression here would let a future scheduling bug overlap jobs silently.
   it('refuses a second job while one is still printing', async () => {
     const neverCompletes: JobSubmittedHandler = () => {};
     server = await startOctoPrintServer(0, neverCompletes);

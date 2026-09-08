@@ -12,7 +12,7 @@ import type { Job, PrinterOutcome } from '../src/Job';
 describe('printing the next job', () => {
   let spool: string;
   let shop: JobStore;
-  let mockSend: jest.Mock<(remotePath: string, gcode: Readable) => Promise<void>>;
+  let mockSend: jest.Mock<(remotePath: string, gcode: Readable) => Promise<string>>;
   let mockAwaitOutcome: jest.Mock<(remotePath: string) => Promise<PrinterOutcome>>;
   let machine: Printer;
 
@@ -36,7 +36,9 @@ describe('printing the next job', () => {
     spool = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-printing-'));
     shop = new JobStore(spool);
 
-    mockSend = jest.fn<(remotePath: string, gcode: Readable) => Promise<void>>().mockResolvedValue(undefined);
+    // A machine that files a job where it was asked to, which is the ordinary case. A test about one
+    // that files it somewhere else says so itself.
+    mockSend = jest.fn<(remotePath: string, gcode: Readable) => Promise<string>>().mockImplementation((remotePath) => Promise.resolve(remotePath));
     mockAwaitOutcome = jest.fn<(remotePath: string) => Promise<PrinterOutcome>>().mockResolvedValue('finished');
     machine = { send: mockSend, awaitOutcome: mockAwaitOutcome };
 
@@ -67,7 +69,7 @@ describe('printing the next job', () => {
 
       await printOn('mk4', ['PLA-Red']);
 
-      expect((await shop.printerNamed('mk4')).holding).toEqual({ job: job.id, phase: 'printing' });
+      expect((await shop.printerNamed('mk4')).holding).toEqual({ job: job.id, phase: 'printing', remotePath: remotePathFor(job) });
     });
 
     it('sends the gcode that was stored with it', async () => {
@@ -82,11 +84,11 @@ describe('printing the next job', () => {
     });
 
     it('takes the path the client asked for', async () => {
-      await submit(['PLA-Red'], { remotePath: 'gamebox/cards.gcode' });
+      await submit(['PLA-Red'], { remotePath: 'plates/cards.gcode' });
 
       await printOn('mk4', ['PLA-Red']);
 
-      expect(mockSend.mock.calls[0][0]).toBe('gamebox/cards.gcode');
+      expect(mockSend.mock.calls[0][0]).toBe('plates/cards.gcode');
     });
 
     // From the id, not the display name: ids are unique and safe in a path, names are neither.
@@ -180,12 +182,45 @@ describe('printing the next job', () => {
     });
 
     it('watches the path the job was sent to', async () => {
-      const job = await submit(['PLA-Red'], { remotePath: 'gamebox/cards.gcode' });
+      const job = await submit(['PLA-Red'], { remotePath: 'plates/cards.gcode' });
       await printOn('mk4', ['PLA-Red']);
 
       await recordOutcome(shop, machine, 'mk4');
 
       expect(mockAwaitOutcome).toHaveBeenCalledWith(remotePathFor(job));
+    });
+
+    // AIDEV-NOTE: the machine files a job where it likes - OctoPrint transliterates a name it cannot
+    // store - and its completion event carries THAT path. A shop watching the path it asked for
+    // would wait for an event that never comes, for a print that has already finished.
+    it('watches where the machine said it filed it, not where it was asked to', async () => {
+      await submit(['PLA-Red'], { remotePath: 'plates/ümläut.gcode' });
+      mockSend.mockResolvedValue('plates/umlaut.gcode');
+      await printOn('mk4', ['PLA-Red']);
+
+      await recordOutcome(shop, machine, 'mk4');
+
+      expect(mockAwaitOutcome).toHaveBeenCalledWith('plates/umlaut.gcode');
+    });
+
+    it('writes down where the machine filed it, so a later run watches the same path', async () => {
+      await submit(['PLA-Red']);
+      mockSend.mockResolvedValue('somewhere/else.gcode');
+
+      await printOn('mk4', ['PLA-Red']);
+
+      expect((await shop.printerNamed('mk4')).holding?.remotePath).toBe('somewhere/else.gcode');
+    });
+
+    // What a run started before the shop read that answer back looks like, and what an interrupted
+    // one leaves: a holding with no path at all. The shop's own guess is what is left to watch.
+    it('falls back to the path it asked for when nothing recorded one', async () => {
+      const job = await submit(['PLA-Red'], { remotePath: 'plates/cards.gcode' });
+      await shop.startPrinting('mk4', job.id);
+
+      await recordOutcome(shop, machine, 'mk4');
+
+      expect(mockAwaitOutcome).toHaveBeenCalledWith('plates/cards.gcode');
     });
 
     // A restarted service knows only what the printer's status says, which is enough.

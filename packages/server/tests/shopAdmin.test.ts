@@ -42,8 +42,8 @@ describe('setting a fresh machine up', () => {
   // An admin: there is nothing an operator can do to a fresh shop as a user - not add a printer,
   // and not judge what comes off one.
   it('names them by the name it was given, and by that as their id', async () => {
-    await initialiseShop(etc, 'gamebox');
+    await initialiseShop(etc, 'slicer');
 
-    expect([...(await callersIn(etc)).values()]).toEqual([{ id: 'gamebox', name: 'gamebox', role: 'admin' }]);
+    expect([...(await callersIn(etc)).values()]).toEqual([{ id: 'slicer', name: 'slicer', role: 'admin' }]);
   });
 });

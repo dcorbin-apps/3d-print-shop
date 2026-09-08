@@ -322,14 +322,14 @@ export class OctoPrint implements Printer {
     this.arrivedCompletions.clear();
   }
 
-  // AIDEV-NOTE: the caller says where it goes. This used to build `gamebox/<filename>` itself, which
-  // is one client's filing scheme baked into a printer.
+  // AIDEV-NOTE: the caller says where it goes. This used to build the folder name itself, which was
+  // one client's filing scheme baked into a printer.
   //
   // The stream is read whole for the upload, because a multipart body built from FormData wants a
   // Blob and a Blob wants its bytes. It arrives as a stream so the shop never holds a gcode it is
   // only storing; holding one it is about to send is a shorter-lived cost, and streaming the upload
   // would mean writing the multipart body by hand. See PLAN.
-  async send(remotePath: string, gcode: Readable): Promise<void> {
+  async send(remotePath: string, gcode: Readable): Promise<string> {
     await this.ensureConnected();
 
     const folder = dirname(remotePath);
@@ -347,6 +347,8 @@ export class OctoPrint implements Printer {
     if (!response.ok) {
       throw new Error(`OctoPrint upload failed: ${response.status} ${response.statusText}`);
     }
+
+    return filedAt(await response.json().catch(() => undefined), remotePath);
   }
 
   // AIDEV-NOTE: connected on first use and kept open. A service prints for as long as it runs, so
@@ -591,4 +593,18 @@ async function readWhole(stream: Readable): Promise<Uint8Array<ArrayBuffer>> {
   }
 
   return whole;
+}
+
+// AIDEV-NOTE: read back rather than assumed. OctoPrint answers an upload with what it FILED, and the
+// name it used is not always the one it was given - the docs show `20mm-ümläut-böx.gcode` stored as
+// `20mm-umlaut-box.gcode`. A print's completion event carries that stored path and the watcher
+// matches on the string, so a rename the shop did not follow is a print nobody hears the end of.
+//
+// The asked-for path is the fallback rather than a refusal: the upload has already SUCCEEDED, and
+// turning that into a failed print over a body this cannot read would be worse than the guess the
+// shop made for every print before this. Confirming the rule against a real machine is in PLAN.md.
+function filedAt(answer: unknown, asked: string): string {
+  const filed = (answer as { files?: { local?: { path?: unknown } } } | undefined)?.files?.local?.path;
+
+  return typeof filed === 'string' && filed.trim() !== '' ? filed : asked;
 }

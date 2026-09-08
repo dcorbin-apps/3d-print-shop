@@ -16,6 +16,13 @@ export interface PrinterRecord {
 export interface Holding {
   job: number;
   phase: JobPhase;
+  /**
+   * Where the machine said it filed the gcode, which is not always where it was asked to.
+   *
+   * Recorded once the upload has been answered, so a print started before the shop read that answer
+   * back - or interrupted between the upload and the write - has none.
+   */
+  remotePath?: string;
   /** What the machine said when it stopped. Present once it has stopped. */
   outcome?: PrinterOutcome;
 }

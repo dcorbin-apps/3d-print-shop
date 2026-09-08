@@ -69,7 +69,7 @@ describe('OctoPrint', () => {
     apiKey: 'test-key',
   };
 
-  const REMOTE_PATH = 'gamebox/tray.gcode';
+  const REMOTE_PATH = 'plates/tray.gcode';
   const gcode = (): Readable => Readable.from(['G1 X0 Y0\n']);
 
   function makeMockWs(): MockPushSocket {
@@ -99,7 +99,7 @@ describe('OctoPrint', () => {
     } as unknown as Response;
   }
 
-  function sendEvent(type: string, path: string = 'gamebox/tray.gcode', ws: MockPushSocket = mockWs): void {
+  function sendEvent(type: string, path: string = 'plates/tray.gcode', ws: MockPushSocket = mockWs): void {
     ws.onmessage!(JSON.stringify({ event: { type, payload: { path } } }));
   }
 
@@ -133,7 +133,7 @@ describe('OctoPrint', () => {
     // OctoPrint's auth frame wants `<user id>:<session key>` and the session comes from that call.
     // Every test that connects therefore needs a login response available.
     mockHttpClient = jest.fn<HttpClient>();
-    mockHttpClient.mockResolvedValue(makeOkResponse({ name: 'gamebox', session: 'sess-1' }));
+    mockHttpClient.mockResolvedValue(makeOkResponse({ name: 'operator', session: 'sess-1' }));
     mockWs = makeMockWs();
     mockWsFactory = jest.fn<PushSocketFactory>().mockReturnValue(mockWs);
     mockReconnectDelay = jest.fn<ReconnectDelay>().mockResolvedValue(undefined);
@@ -196,7 +196,7 @@ describe('OctoPrint', () => {
     it('sends the session-based auth message on open', async () => {
       await connectAdapter();
 
-      expect(mockWs.send).toHaveBeenCalledWith(JSON.stringify({ auth: 'gamebox:sess-1' }));
+      expect(mockWs.send).toHaveBeenCalledWith(JSON.stringify({ auth: 'operator:sess-1' }));
     });
 
     it('resolves once the socket opens', async () => {
@@ -251,7 +251,7 @@ describe('OctoPrint', () => {
 
     it('rejects any print job still waiting for completion', async () => {
       await connectAdapter();
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       adapter.disconnect();
       await expect(promise).rejects.toThrow('OctoPrint connection was closed before print completion');
     });
@@ -323,11 +323,11 @@ describe('OctoPrint', () => {
       expect(init?.body).toBeInstanceOf(FormData);
     });
 
-    // AIDEV-NOTE: the caller says where it goes. This used to build `gamebox/<filename>` itself,
-    // which is one client's filing scheme baked into a printer - two paths, because one would be
+    // AIDEV-NOTE: the caller says where it goes. This used to build the folder name itself, which
+    // was one client's filing scheme baked into a printer - two paths, because one would be
     // satisfied by ignoring the argument and hardcoding the old answer.
     it.each([
-      ['gamebox/tray.gcode', 'gamebox', 'tray.gcode'],
+      ['plates/tray.gcode', 'plates', 'tray.gcode'],
       ['3d-print-shop/job-7.gcode', '3d-print-shop', 'job-7.gcode'],
     ])('files %s under %s', async (remotePath, folder, filename) => {
       await adapter.send(remotePath, gcode());
@@ -357,6 +357,39 @@ describe('OctoPrint', () => {
       expect(form.get('print')).toBe('true');
     });
 
+    // AIDEV-NOTE: the machine says where it FILED it, and that is the path its completion event will
+    // carry. OctoPrint transliterates a name it cannot store, so the shop's guess and the machine's
+    // answer are not always the same string - and the watcher matches on the string.
+    it('answers with the path the machine filed it under', async () => {
+      mockHttpClient.mockResolvedValue(makeOkResponse({ done: true, files: { local: { path: 'plates/umlaut.gcode' } } }));
+
+      expect(await adapter.send('plates/ümläut.gcode', gcode())).toBe('plates/umlaut.gcode');
+    });
+
+    // The upload has already succeeded, so a body this cannot read must not become a failed print -
+    // it falls back to the guess the shop made for every print before it read the answer at all.
+    it.each([
+      ['says nothing about where it went', { done: true }],
+      ['names no path', { files: { local: { name: 'tray.gcode' } } }],
+      ['gives a path that is not a string', { files: { local: { path: 7 } } }],
+      ['answers with no body at all', undefined],
+    ])('answers with the path it asked for when the machine %s', async (_case, body) => {
+      mockHttpClient.mockResolvedValue(makeOkResponse(body));
+
+      expect(await adapter.send(REMOTE_PATH, gcode())).toBe(REMOTE_PATH);
+    });
+
+    // A 2xx whose body is not JSON - a proxy's HTML, a truncated answer. The file is on the machine
+    // either way, so this is the same fallback and not an exception thrown out of a print.
+    it('answers with the path it asked for when the answer cannot be read', async () => {
+      mockHttpClient.mockResolvedValue({
+        ok: true,
+        json: jest.fn<() => Promise<unknown>>().mockRejectedValue(new SyntaxError('Unexpected token <')),
+      } as unknown as Response);
+
+      expect(await adapter.send(REMOTE_PATH, gcode())).toBe(REMOTE_PATH);
+    });
+
     it('throws when upload response is not ok', async () => {
       mockHttpClient.mockResolvedValue(makeErrorResponse(500, 'Internal Server Error'));
       await expect(adapter.send(REMOTE_PATH, gcode())).rejects.toThrow(
@@ -371,25 +404,25 @@ describe('OctoPrint', () => {
     });
 
     it('resolves with complete on PrintDone event', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       sendEvent('PrintDone');
       await expect(promise).resolves.toBe('finished');
     });
 
     it('resolves with error on PrintFailed event', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       sendEvent('PrintFailed');
       await expect(promise).resolves.toBe('failed');
     });
 
     it('resolves with cancelled on PrintCancelled event', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       sendEvent('PrintCancelled');
       await expect(promise).resolves.toBe('cancelled');
     });
 
     it('ignores non-terminal events', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       sendEvent('PrintStarted');
       sendEvent('PrintPaused');
       sendEvent('PrintDone');
@@ -397,7 +430,7 @@ describe('OctoPrint', () => {
     });
 
     it('ignores terminal events for a different print job', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       let settled = false;
       promise.then(
         () => {
@@ -408,31 +441,31 @@ describe('OctoPrint', () => {
         }
       );
 
-      sendEvent('PrintFailed', 'gamebox/other.gcode');
+      sendEvent('PrintFailed', 'plates/other.gcode');
       await Promise.resolve();
       expect(settled).toBe(false);
 
-      sendEvent('PrintDone', 'gamebox/tray.gcode');
+      sendEvent('PrintDone', 'plates/tray.gcode');
       await expect(promise).resolves.toBe('finished');
     });
 
     it('does not miss a completion event that arrives before awaitOutcome is called', async () => {
-      sendEvent('PrintDone', 'gamebox/tray.gcode');
-      await expect(adapter.awaitOutcome('gamebox/tray.gcode')).resolves.toBe('finished');
+      sendEvent('PrintDone', 'plates/tray.gcode');
+      await expect(adapter.awaitOutcome('plates/tray.gcode')).resolves.toBe('finished');
     });
 
     it('reconnects instead of failing on an unexpected close', async () => {
       const secondWs = makeMockWs();
       mockWsFactory.mockReturnValueOnce(secondWs);
 
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       mockWs.onclose!();
       await settle();
 
       expect(mockWsFactory).toHaveBeenCalledTimes(2);
 
       secondWs.onopen!();
-      sendEvent('PrintDone', 'gamebox/tray.gcode', secondWs);
+      sendEvent('PrintDone', 'plates/tray.gcode', secondWs);
       await expect(promise).resolves.toBe('finished');
     });
 
@@ -446,7 +479,7 @@ describe('OctoPrint', () => {
       await settle();
 
       secondWs.onopen!();
-      expect(secondWs.send).toHaveBeenCalledWith(JSON.stringify({ auth: 'gamebox:sess-1' }));
+      expect(secondWs.send).toHaveBeenCalledWith(JSON.stringify({ auth: 'operator:sess-1' }));
     });
 
     it('keeps retrying with increasing attempt numbers across repeated closes', async () => {
@@ -565,8 +598,8 @@ describe('OctoPrint', () => {
   // These cover using that frame to settle what the outage hid - and, where it is unreadable or
   // the job is still running, refusing to guess.
   describe('reconciling a print whose events were missed', () => {
-    const TRAY_PATH = 'gamebox/tray.gcode';
-    const TRAY_FILE_URL = 'http://octoprint.local/api/files/local/gamebox/tray.gcode';
+    const TRAY_PATH = 'plates/tray.gcode';
+    const TRAY_FILE_URL = 'http://octoprint.local/api/files/local/plates/tray.gcode';
 
     // OctoPrint keeps naming the last job after it ends, so the flags - never the job path alone -
     // are what say whether it is still running.
@@ -580,7 +613,7 @@ describe('OctoPrint', () => {
 
     function respondTo(routes: Record<string, Response>): void {
       mockHttpClient.mockImplementation((url) =>
-        Promise.resolve(routes[url] ?? makeOkResponse({ name: 'gamebox', session: 'sess-1' }))
+        Promise.resolve(routes[url] ?? makeOkResponse({ name: 'operator', session: 'sess-1' }))
       );
     }
 
@@ -671,14 +704,14 @@ describe('OctoPrint', () => {
     // Piece names become file names, and they are only barred from holding a separator or a control
     // character - a space or a '#' reaches the URL and would truncate it unencoded.
     it('encodes the job path when asking for its print history', async () => {
-      const promise = adapter.awaitOutcome('gamebox/player box #2.gcode');
+      const promise = adapter.awaitOutcome('plates/player box #2.gcode');
       respondTo({
-        'http://octoprint.local/api/files/local/gamebox/player%20box%20%232.gcode': makeOkResponse({
+        'http://octoprint.local/api/files/local/plates/player%20box%20%232.gcode': makeOkResponse({
           prints: { last: { success: true } },
         }),
       });
 
-      await reconnectReporting(idleStatus('gamebox/player box #2.gcode'));
+      await reconnectReporting(idleStatus('plates/player box #2.gcode'));
 
       await expect(promise).resolves.toBe('finished');
     });
@@ -731,11 +764,11 @@ describe('OctoPrint', () => {
   // The bound is on time out of contact, not on how long a print may take - prints legitimately
   // run for hours.
   describe('losing contact with the printer', () => {
-    const TRAY_FILE_URL = 'http://octoprint.local/api/files/local/gamebox/tray.gcode';
+    const TRAY_FILE_URL = 'http://octoprint.local/api/files/local/plates/tray.gcode';
     let currentTimeMs: number;
 
     function sendStatus(ws: MockPushSocket): void {
-      const status = { state: { flags: { printing: false, paused: false, pausing: false, cancelling: false } }, job: { file: { path: 'gamebox/tray.gcode' } } };
+      const status = { state: { flags: { printing: false, paused: false, pausing: false, cancelling: false } }, job: { file: { path: 'plates/tray.gcode' } } };
       ws.onmessage!(JSON.stringify({ history: status }));
     }
 
@@ -752,7 +785,7 @@ describe('OctoPrint', () => {
     });
 
     it('tells the caller the print outcome is unknown rather than waiting forever', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
 
       mockWs.onclose!();
       currentTimeMs = 60_000;
@@ -761,7 +794,7 @@ describe('OctoPrint', () => {
     });
 
     it('keeps waiting while contact has been lost for less than the timeout', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
 
       mockWs.onclose!();
       currentTimeMs = 59_000;
@@ -772,7 +805,7 @@ describe('OctoPrint', () => {
     // The outage is one continuous stretch however many attempts it spans. Timing each attempt
     // separately would never reach the timeout, because the backoff itself is capped below it.
     it('measures the outage from when contact was first lost, not from the last attempt', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       mockReconnectDelay.mockImplementation(() => {
         currentTimeMs += 35_000;
         return Promise.resolve();
@@ -789,7 +822,7 @@ describe('OctoPrint', () => {
     // An unauthenticated socket is answered with silence rather than an error, so a socket that
     // opens and then says nothing is still a lost connection. Only a frame arriving ends an outage.
     it('keeps counting the outage when a reconnected socket opens but says nothing', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       const secondWs = makeMockWs();
       mockWsFactory.mockReturnValueOnce(secondWs);
 
@@ -805,7 +838,7 @@ describe('OctoPrint', () => {
     });
 
     it('restarts the outage clock once a reconnected socket sends a frame', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       const secondWs = makeMockWs();
       mockWsFactory.mockReturnValueOnce(secondWs);
 
@@ -824,7 +857,7 @@ describe('OctoPrint', () => {
     });
 
     it('stops asking OctoPrint about a job it has given up on', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
       const secondWs = makeMockWs();
       mockWsFactory.mockReturnValueOnce(secondWs);
 
@@ -850,7 +883,7 @@ describe('OctoPrint', () => {
     // A throw out of the message handler escapes the socket's own close/reconnect handling and can
     // take the CLI process down mid-print.
     it('survives a frame that is not JSON and still handles later events', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
 
       expect(() => mockWs.onmessage!('<html>gateway timeout</html>')).not.toThrow();
 
@@ -859,7 +892,7 @@ describe('OctoPrint', () => {
     });
 
     it('survives a binary frame and still handles later events', async () => {
-      const promise = adapter.awaitOutcome('gamebox/tray.gcode');
+      const promise = adapter.awaitOutcome('plates/tray.gcode');
 
       expect(() => mockWs.onmessage!(new ArrayBuffer(8))).not.toThrow();
 

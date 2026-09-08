@@ -50,12 +50,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   - tokens are stored in the clear. Tolerable for 32 random bytes in a 0600 file, wrong the moment
     a human chooses one - and hashing breaks lookup-by-token, which is the first fault again
 
-- [ ] Take the stored path from OctoPrint's answer instead of guessing it. `send()` throws the
-  upload response away and everything downstream recomputes `remotePathFor(job)`, which is only
-  right for as long as the shop's idea of what the printer stored matches the printer's. The
-  response carries the name it actually used, and a print's completion event is matched on that
-  string - so reading it back removes the guess. It cannot live on the job, which is written once;
-  it belongs on the printer's `holding`, beside everything else that moves
 - [ ] Confirm the `remotePath` rule against a real OctoPrint - the printer here is offline, so the
   rule in `validateDetails` was written from the API docs and pathvalidate's, not from a machine.
   The one known gap: the docs show `20mm-ümläut-böx.gcode` stored as `20mm-umlaut-box.gcode`
@@ -75,8 +69,9 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   write, rather than creating or fixing either - so the packaging is what has to exist: a `launchd`
   plist, a `systemd` unit, and whatever makes the directory 0700 (or 0750) and owns it
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this
-  repository sitting beside it — gamebox_v3 reaches it as `portal:../3d-print-shop/packages/client`,
-  which cannot survive a fresh clone that has no shop next door
+  repository sitting beside it — the client it was written for reaches it as
+  `portal:../3d-print-shop/packages/client`, which cannot survive a fresh clone that has no shop
+  next door
 
 ### Beyond one printer
 

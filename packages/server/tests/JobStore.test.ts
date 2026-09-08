@@ -75,9 +75,9 @@ describe('JobStore', () => {
     // is for the life of the job. It is the caller's ID rather than their name for the same reason:
     // a name may be retyped, and a record that cannot be rewritten could not follow it.
     it('records who submitted it, and still says so after a restart', async () => {
-      const { id } = await submit(details(), gcode(), 'u-gamebox');
+      const { id } = await submit(details(), gcode(), 'u-slicer');
 
-      expect((await new JobStore(spool).find(id))?.owner).toBe('u-gamebox');
+      expect((await new JobStore(spool).find(id))?.owner).toBe('u-slicer');
     });
 
     it('starts a job queued, with nothing printed yet', async () => {
@@ -89,12 +89,12 @@ describe('JobStore', () => {
     // Carried, never interpreted - it is how a client keeps its own meaning attached.
     it('carries the metadata, remote path and printer through untouched', async () => {
       const job = await submit(
-        details({ remotePath: 'gamebox/cards.gcode', printer: 'mk4', metadata: { pieces: [{ piece: 'cards' }] } }),
+        details({ remotePath: 'plates/cards.gcode', printer: 'mk4', metadata: { pieces: [{ piece: 'cards' }] } }),
         gcode()
       );
 
       expect(await shop.find(job.id)).toMatchObject({
-        remotePath: 'gamebox/cards.gcode',
+        remotePath: 'plates/cards.gcode',
         printer: 'mk4',
         metadata: { pieces: [{ piece: 'cards' }] },
       });
@@ -189,6 +189,31 @@ describe('JobStore', () => {
     it('is printing because the printer says it is holding it to print', async () => {
       expect(await shop.startPrinting('mk4', id)).toMatchObject({ state: 'printing', heldBy: 'mk4' });
       expect((await shop.printerNamed('mk4')).holding).toEqual({ job: id, phase: 'printing' });
+    });
+
+    // AIDEV-NOTE: written after the upload rather than with the holding, because until the machine
+    // has answered nobody knows where the file went. What watches the print matches on that string.
+    it('records where the printer said it filed the gcode', async () => {
+      await shop.startPrinting('mk4', id);
+
+      await shop.printingAt('mk4', 'plates/umlaut.gcode');
+
+      expect((await shop.printerNamed('mk4')).holding).toEqual({ job: id, phase: 'printing', remotePath: 'plates/umlaut.gcode' });
+    });
+
+    // A print is watched to its end from a holding that has by then moved phase, so a path lost on
+    // the way would be lost exactly when a restart needed it.
+    it('still has that path once the print has ended', async () => {
+      await shop.startPrinting('mk4', id);
+      await shop.printingAt('mk4', 'plates/umlaut.gcode');
+
+      await shop.finishedPrinting('mk4', 'finished');
+
+      expect((await shop.printerNamed('mk4')).holding?.remotePath).toBe('plates/umlaut.gcode');
+    });
+
+    it('refuses to record one for a printer that is printing nothing', async () => {
+      await expect(shop.printingAt('mk4', 'plates/umlaut.gcode')).rejects.toThrow(WrongState);
     });
 
     // The printer never took it: nothing was printed, so it lets go and the job is queued again by

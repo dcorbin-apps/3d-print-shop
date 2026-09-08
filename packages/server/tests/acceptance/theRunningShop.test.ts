@@ -39,7 +39,7 @@ describe('the shop, running as its own process', () => {
   // No route answers a caller the shop cannot name, so every shop here is started with credentials
   // and every request carries a token.
   const ADMIN = 'dave-token';
-  const USER = 'gamebox-token';
+  const USER = 'slicer-token';
   const asAdmin = { authorization: `Bearer ${ADMIN}` };
 
   let spool: string;
@@ -342,7 +342,7 @@ describe('the shop, running as its own process', () => {
     async function guardedShop(): Promise<RunningShop> {
       const bothOfThem = await credentialsNaming([
         { id: 'dave', name: 'dave', role: 'admin', token: ADMIN },
-        { id: 'gamebox', name: 'gamebox', role: 'user', token: USER },
+        { id: 'slicer', name: 'slicer', role: 'user', token: USER },
       ]);
       const shop = await startShopOver(spool, [], bothOfThem);
 
@@ -399,14 +399,14 @@ describe('the shop, running as its own process', () => {
   // configuration with, and the whole of the mechanism is the file it already reads, read again.
   describe('told to re-read its callers', () => {
     const DAVE = { id: 'dave', name: 'dave', role: 'admin', token: ADMIN };
-    const GAMEBOX = { id: 'gamebox', name: 'gamebox', role: 'user', token: USER };
+    const SLICER = { id: 'slicer', name: 'slicer', role: 'user', token: USER };
 
     it('answers a caller added while it was running', async () => {
       const credentials = await credentialsNaming([DAVE]);
       const shop = await startShopOver(spool, [], credentials);
       expect((await askCarrying(shop, USER)).status).toBe(401);
 
-      await writeCallers(credentials, [DAVE, GAMEBOX]);
+      await writeCallers(credentials, [DAVE, SLICER]);
       shop.reload();
       await shop.saysSomethingLike(/callers re-read/);
 
@@ -414,7 +414,7 @@ describe('the shop, running as its own process', () => {
     }, 30_000);
 
     it('refuses a caller taken out while it was running', async () => {
-      const credentials = await credentialsNaming([DAVE, GAMEBOX]);
+      const credentials = await credentialsNaming([DAVE, SLICER]);
       const shop = await startShopOver(spool, [], credentials);
       expect((await askCarrying(shop, USER)).status).toBe(200);
 
