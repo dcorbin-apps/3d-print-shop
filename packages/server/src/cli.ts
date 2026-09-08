@@ -7,7 +7,8 @@ import { Foreman } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
 import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
-import { ETC_ENV, callersIn, defaultEtc, printerKeysIn } from './credentials.js';
+import { ETC_ENV, callersIn, defaultEtc, printerKeysIn, rereadCallers } from './credentials.js';
+import type { Caller } from './credentials.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 import { redacting, toStdout } from './log.js';
 import { initialiseShop } from './shopAdmin.js';
@@ -56,15 +57,16 @@ export function createCLI(): Command {
       // missing file as "nobody configured yet" is how a fresh machine ends up serving anybody who
       // reaches the port. A file that is THERE and wrong stops it for the same reason: answering a
       // typo in the security file by removing the security is the failure nobody notices.
-      const callers = await callersIn(etc);
+      let callers: ReadonlyMap<string, Caller> = await callersIn(etc);
       const printerKeys = await printerKeysIn(etc);
       const listenOn = options.listen ?? LOOPBACK;
 
       // AIDEV-NOTE: built from every secret this process holds - each printer's key, and every
       // caller's token - so that neither can reach a line whatever a failure happens to be carrying.
       // Built HERE because this is the only place that has both, and after the credentials are read
-      // because there is nothing to redact until they are.
-      const log = redacting(toStdout(), [...printerKeys.values(), ...callers.keys()]);
+      // because there is nothing to redact until they are. Asked for the secrets afresh on each
+      // line, because a re-read adds tokens this process did not hold when the log was made.
+      const log = redacting(toStdout(), () => [...printerKeys.values(), ...callers.keys()]);
 
       // Before anything else: a spool that is not there, or is already being served, is a shop that
       // must refuse to start rather than start and do damage.
@@ -103,12 +105,19 @@ export function createCLI(): Command {
         });
       };
 
-      const shopServer = await serve(store, options.port, { changed: lookForWork, shutDown: stopTheShop, callers, log }, listenOn);
+      const shopServer = await serve(store, options.port, { changed: lookForWork, shutDown: stopTheShop, callers: () => callers, log }, listenOn);
 
       // What a supervised service is stopped with. `launchd` and `systemd` both send it, and one
       // that ignored it would be killed with prints still being watched.
       process.on('SIGTERM', stopTheShop);
       process.on('SIGINT', stopTheShop);
+
+      // AIDEV-NOTE: SIGHUP is how a token is added or revoked without stopping the shop, and node
+      // ENDS a process that has no handler for it - so a shop under a terminal that closed used to
+      // die where it now re-reads. Nothing else is re-read: see `rereadCallers`.
+      process.on('SIGHUP', () => {
+        void rereadCallers(etc, callers, log).then((known) => (callers = known));
+      });
 
       // Where it actually IS, not where it was asked to be. Port 0 means "any free one", and
       // an operator who used it has no other way to find out which. The address is said too,

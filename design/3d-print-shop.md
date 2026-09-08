@@ -343,6 +343,18 @@ it carried is nobody's; the jobs that recorded it are simply owned by somebody w
 id is not spent by that, so putting the same id back makes them theirs again - which is the whole
 reason an identity's id is neither its name nor its token. Rotating a credential orphans nothing.
 
+**And it takes effect on SIGHUP, not on a restart.** Adding or revoking a caller is editing the file
+the shop already reads, and the signal is what tells it to read it again - which is what a
+long-running service is told with, and what keeps rotating a token from meaning losing sight of
+every print the shop is watching. Only the callers are re-read: a printer's key is held by a client
+already connected to a machine, so swapping one under a running watcher is a different question.
+
+A re-read it cannot make sense of leaves the callers exactly as they were, and says why. The other
+answer - no readable file, therefore nobody may call - revokes every caller at once over a stray
+comma, including the operator who would then have to get back in to fix it. That is the opposite of
+the rule at STARTUP, where an unreadable file stops the shop: there, nothing is running yet and
+refusing costs nothing, while here a shop is already holding work.
+
 The cost is deliberate and worth writing down: an admin may judge work that is not theirs, and
 afterwards nothing says they did. Approval discards the job, the shop keeps no history, and the
 verdict leaves no record of whose it was. That is the price of never holding a bed for a job nobody

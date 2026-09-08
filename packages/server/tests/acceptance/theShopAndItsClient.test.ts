@@ -37,7 +37,7 @@ describe('the shop and its client', () => {
     spool = await mkdtemp(path.join(tmpdir(), 'print-shop-contract-'));
     store = new JobStore(spool);
 
-    server = await serve(store, 0, { callers: new Map([[TOKEN, { id: 'dave', name: 'dave', role: 'admin' }]]) });
+    server = await serve(store, 0, { callers: () => new Map([[TOKEN, { id: 'dave', name: 'dave', role: 'admin' }]]) });
     shop = new HttpShop(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, TOKEN);
   });
 

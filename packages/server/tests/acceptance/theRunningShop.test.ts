@@ -20,9 +20,20 @@ describe('the shop, running as its own process', () => {
     url: string;
     /** The address it actually bound, which is what `--listen` is for. */
     address: string;
+    /** What an operator sends after editing the credentials - the shop re-reads them and keeps running. */
+    reload: () => void;
+    /** Settles once the shop has written a line like this, which is how a test waits for a signal to land. */
+    saysSomethingLike: (pattern: RegExp) => Promise<void>;
     stop: () => Promise<void>;
     /** Settles when the process has ended, however it was asked to. */
     stopped: Promise<void>;
+  }
+
+  interface WrittenCaller {
+    id: string;
+    name: string;
+    role: string;
+    token: string;
   }
 
   // No route answers a caller the shop cannot name, so every shop here is started with credentials
@@ -51,6 +62,9 @@ describe('the shop, running as its own process', () => {
       spawned.push(shop);
       let said = '';
       let complaint = '';
+      // AIDEV-NOTE: a signal is answered in the shop's own time, so a test that sent one has nothing
+      // to await. Its log is what says the signal landed, and waiting on a line beats a sleep.
+      let waiting: { pattern: RegExp; heard: () => void }[] = [];
 
       shop.stdout.on('data', (chunk: Buffer) => {
         said += chunk.toString();
@@ -61,10 +75,20 @@ describe('the shop, running as its own process', () => {
           resolve({
             address: listening[1],
             url: reachedAt(listening[1], listening[2]),
+            reload: () => shop.kill('SIGHUP'),
+            saysSomethingLike: (pattern: RegExp) =>
+              new Promise<void>((heard) => {
+                if (pattern.test(said)) heard();
+                else waiting.push({ pattern, heard });
+              }),
             stop: () => stopShop(shop),
             stopped: new Promise<void>((ended) => shop.on('close', () => ended())),
           });
         }
+
+        const arrived = waiting.filter((waiter) => waiter.pattern.test(said));
+        waiting = waiting.filter((waiter) => !arrived.includes(waiter));
+        arrived.forEach((waiter) => waiter.heard());
       });
 
       shop.stderr.on('data', (chunk: Buffer) => {
@@ -146,12 +170,16 @@ describe('the shop, running as its own process', () => {
   }
 
   // 0600, because the shop refuses to read credentials anybody else could.
-  async function credentialsNaming(callers: { id: string; name: string; role: string; token: string }[]): Promise<string> {
+  async function credentialsNaming(callers: WrittenCaller[]): Promise<string> {
     const written = await mkdtemp(path.join(tmpdir(), 'print-shop-etc-'));
-    await writeFile(path.join(written, 'callers.json'), JSON.stringify(callers), { mode: 0o600 });
     madeEtc.push(written);
+    await writeCallers(written, callers);
 
     return written;
+  }
+
+  async function writeCallers(credentials: string, callers: WrittenCaller[]): Promise<void> {
+    await writeFile(path.join(credentials, 'callers.json'), JSON.stringify(callers), { mode: 0o600 });
   }
 
   async function submitGcode(shop: RunningShop, gcode: string): Promise<Response> {
@@ -164,6 +192,11 @@ describe('the shop, running as its own process', () => {
 
   function ask(shop: RunningShop, path: string): Promise<Response> {
     return fetch(`${shop.url}${path}`, { headers: asAdmin });
+  }
+
+  // A route every caller may reach, so what the answer turns on is whether the shop knows the token.
+  function askCarrying(shop: RunningShop, token: string): Promise<Response> {
+    return fetch(`${shop.url}/jobs`, { headers: { authorization: `Bearer ${token}` } });
   }
 
   beforeEach(async () => {
@@ -350,6 +383,52 @@ describe('the shop, running as its own process', () => {
       const stopping = ['printer', '--shop-url', shop.url, 'stop', 'mk4', 'door is open'];
 
       expect((await runCommandSaying(stopping, { PRINT_SHOP_TOKEN: USER })).code).toBe(1);
+    }, 30_000);
+  });
+
+  // AIDEV-NOTE: rotating a token used to mean stopping the shop, which meant losing sight of every
+  // print it was watching. SIGHUP is what a long-running service is told to re-read its
+  // configuration with, and the whole of the mechanism is the file it already reads, read again.
+  describe('told to re-read its callers', () => {
+    const DAVE = { id: 'dave', name: 'dave', role: 'admin', token: ADMIN };
+    const GAMEBOX = { id: 'gamebox', name: 'gamebox', role: 'user', token: USER };
+
+    it('answers a caller added while it was running', async () => {
+      const credentials = await credentialsNaming([DAVE]);
+      const shop = await startShopOver(spool, [], credentials);
+      expect((await askCarrying(shop, USER)).status).toBe(401);
+
+      await writeCallers(credentials, [DAVE, GAMEBOX]);
+      shop.reload();
+      await shop.saysSomethingLike(/callers re-read/);
+
+      expect((await askCarrying(shop, USER)).status).toBe(200);
+    }, 30_000);
+
+    it('refuses a caller taken out while it was running', async () => {
+      const credentials = await credentialsNaming([DAVE, GAMEBOX]);
+      const shop = await startShopOver(spool, [], credentials);
+      expect((await askCarrying(shop, USER)).status).toBe(200);
+
+      await writeCallers(credentials, [DAVE]);
+      shop.reload();
+      await shop.saysSomethingLike(/callers re-read/);
+
+      expect((await askCarrying(shop, USER)).status).toBe(401);
+    }, 30_000);
+
+    // Reading a mistyped file as "nobody may call this shop" would revoke every caller at once, the
+    // operator who has to fix it among them - and node ends a process that ignores SIGHUP, so a shop
+    // that answers this at all is a shop that stayed up to answer it.
+    it('keeps the callers it has when what it is told to re-read is unusable', async () => {
+      const credentials = await credentialsNaming([DAVE]);
+      const shop = await startShopOver(spool, [], credentials);
+
+      await writeFile(path.join(credentials, 'callers.json'), '{ not json', { mode: 0o600 });
+      shop.reload();
+      await shop.saysSomethingLike(/could not re-read the callers/);
+
+      expect((await askCarrying(shop, ADMIN)).status).toBe(200);
     }, 30_000);
   });
 

@@ -63,11 +63,15 @@ function asValue(value: unknown): string {
 //
 // Over the whole of what a line says, message included: a secret may arrive nested, inside a URL, or
 // in the middle of a sentence, and the point is that it never leaves this process.
-export function redacting(log: Log, secrets: Iterable<string>): Log {
+//
+// AIDEV-NOTE: a FUNCTION, asked afresh for every line, rather than a list read once here. The shop
+// re-reads its callers while it runs, so the token most likely to be new is the one a snapshot taken
+// at startup could not know about - and that is exactly the one a leak would be about.
+export function redacting(log: Log, secrets: () => Iterable<string>): Log {
   // Empty and one-character secrets are refused rather than honoured: replacing "" or "a" everywhere
   // would shred every line, and a secret that short is not one.
-  const worth = [...new Set(secrets)].filter((secret) => secret.trim().length > 1);
-  const scrub = (text: string): string => worth.reduce((said, secret) => said.split(secret).join('[redacted]'), text);
+  const worth = (): string[] => [...new Set(secrets())].filter((secret) => secret.trim().length > 1);
+  const scrub = (text: string): string => worth().reduce((said, secret) => said.split(secret).join('[redacted]'), text);
 
   const scrubbed = (about: About = {}): About => JSON.parse(scrub(JSON.stringify(about))) as About;
 

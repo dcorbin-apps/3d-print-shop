@@ -114,8 +114,10 @@ export interface ShopHooks {
   changed?: () => void;
   /** Told to shut the shop down. Answered before it happens, because it cannot be answered after. */
   shutDown?: () => void;
+  // Asked per request rather than handed over once: the shop re-reads its callers on SIGHUP, so a
+  // token added or revoked while it runs has to be the one the next request is judged against.
   /** Who may talk to this shop, by their token. Every request names one of them, or is refused. */
-  callers: ReadonlyMap<string, Caller>;
+  callers: () => ReadonlyMap<string, Caller>;
   /** Where the running service writes down what it did. Silent unless somebody supplies one. */
   log?: Log;
 }
@@ -167,7 +169,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // existence without callers. Who asked is put on the request rather than used here: the log has
   // nowhere to write it yet, and a name in an ANSWER would tell a stranger which names exist.
   api.use((request, _response, next) => {
-    const caller = callers.get(tokenIn(request.header('authorization')) ?? '');
+    const caller = callers().get(tokenIn(request.header('authorization')) ?? '');
     if (caller === undefined) throw new NotAKnownCaller('this shop does not know that token');
     if (needsAdmin(request.method, request.path) && caller.role !== 'admin') {
       throw new NotTheirs(`${request.method} ${request.path} is for an admin, and ${caller.name} is not one`);

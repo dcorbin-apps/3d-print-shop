@@ -36,7 +36,7 @@ writes that file with one admin in it - see **Who may call it** below.
 
 `yarn shop` runs the server straight from source; an installed shop is the `3d-print-shop` binary
 `@3d-print-shop/server` declares. Either way it is a plain long-running process, so `launchd` and
-`systemd` can both supervise it, and it stops on `SIGTERM`.
+`systemd` can both supervise it, it stops on `SIGTERM`, and it re-reads `callers.json` on `SIGHUP`.
 
 **The spool root is the installer's to create, not the shop's.** `/var/spool/cups` is made at
 install time and owned by the service's user, and this is the same: a missing root is a machine that
@@ -83,6 +83,11 @@ shows and may be changed whenever. Letters, digits, dot, dash and underscore, up
 A `user` submits jobs and reads them back. An `admin` does everything else - printers and shutting
 down. A caller presents its token as `Authorization: Bearer ...`, which `HttpShop` sends for you
 from `PRINT_SHOP_TOKEN` or `~/.config/3d-print-shop/token`.
+
+**A caller is added or revoked while the shop runs**: edit the file and send `SIGHUP` - `kill -HUP
+<pid>`, or `launchctl kill HUP ...` / `systemctl reload ...` - and the next request is judged against
+what it now says. A file it cannot read leaves the callers as they were, and the shop says so in its
+log rather than locking everybody out over a stray comma. Nothing else is re-read.
 
 **A job belongs to the caller who submitted it**, by the `id` above, written with the record and
 never rewritten. The owner or an admin reads it; anybody else is told it is not here, because a

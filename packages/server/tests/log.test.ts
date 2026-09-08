@@ -102,7 +102,7 @@ describe('what the shop writes down', () => {
     function guarded(): { log: Log; lines: () => string[] } {
       const { log, lines } = written();
 
-      return { log: redacting(log, ['mk4-api-key', 'dave-token']), lines };
+      return { log: redacting(log, () => ['mk4-api-key', 'dave-token']), lines };
     }
 
     it('is not written even when it is the whole of a value', () => {
@@ -150,15 +150,28 @@ describe('what the shop writes down', () => {
     it.each([[''], [' '], ['a']])('is not made of %j, which would match everything', (nothing) => {
       const { log, lines } = written();
 
-      redacting(log, [nothing]).info('job submitted', { displayName: 'Player Box' });
+      redacting(log, () => [nothing]).info('job submitted', { displayName: 'Player Box' });
 
       expect(lines()[0]).toContain('displayName="Player Box"');
+    });
+
+    // AIDEV-NOTE: the shop re-reads its callers while it runs, so a token can begin to exist after
+    // the log was built - and a list read once here would print the one secret nothing had declared.
+    it('is not written when it became a secret after the log was made', () => {
+      const { log, lines } = written();
+      const secrets = ['mk4-api-key'];
+      const guarded = redacting(log, () => secrets);
+
+      secrets.push('a-token-added-later');
+      guarded.info('a caller asked', { authorization: 'Bearer a-token-added-later' });
+
+      expect(lines()[0]).toContain('authorization="Bearer [redacted]"');
     });
 
     it('takes the same secret twice without writing it twice over', () => {
       const { log, lines } = written();
 
-      redacting(log, ['mk4-api-key', 'mk4-api-key']).info('reached it', { key: 'mk4-api-key' });
+      redacting(log, () => ['mk4-api-key', 'mk4-api-key']).info('reached it', { key: 'mk4-api-key' });
 
       expect(lines()[0]).toContain('key=[redacted]');
     });

@@ -77,7 +77,7 @@ describe('the shop over HTTP', () => {
 
     mockChanged = jest.fn<() => void>();
     mockShutDown = jest.fn<() => void>();
-    server = await serve(shop, 0, { changed: mockChanged, shutDown: mockShutDown, callers: CALLERS });
+    server = await serve(shop, 0, { changed: mockChanged, shutDown: mockShutDown, callers: () => CALLERS });
     shopUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
 
@@ -281,7 +281,7 @@ describe('the shop over HTTP', () => {
     beforeEach(async () => {
       const store = new JobStore(spool, { maxGcodeBytes: CAP });
       await store.addPrinter({ name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS });
-      small = await serve(store, 0, { callers: CALLERS });
+      small = await serve(store, 0, { callers: () => CALLERS });
       smallUrl = `http://127.0.0.1:${(small.address() as AddressInfo).port}`;
     });
 
@@ -347,7 +347,7 @@ describe('the shop over HTTP', () => {
   describe('when the spool has no room left', () => {
     it('takes nothing, and says to come back later', async () => {
       const full = new JobStore(spool, { maxGcodeBytes: 1024, freeBytes: () => Promise.resolve(512) });
-      const server = await serve(full, 0, { callers: CALLERS });
+      const server = await serve(full, 0, { callers: () => CALLERS });
 
       try {
         const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -765,7 +765,7 @@ describe('the shop over HTTP', () => {
   describe('when the shop was never installed', () => {
     it('says so, and says a client may as well come back later', async () => {
       const missing = path.join(spool, 'never-made');
-      const unusable = await serve(new JobStore(missing), 0, { callers: CALLERS });
+      const unusable = await serve(new JobStore(missing), 0, { callers: () => CALLERS });
 
       try {
         const response = await fetch(`http://127.0.0.1:${(unusable.address() as AddressInfo).port}/jobs`, { headers: AS_ADMIN });

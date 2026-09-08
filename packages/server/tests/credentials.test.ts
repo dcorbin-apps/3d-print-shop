@@ -11,8 +11,11 @@ import {
   callersIn,
   defaultEtc,
   printerKeysIn,
+  rereadCallers,
   writeFirstCaller,
 } from '../src/credentials';
+import { toStdout } from '../src/log';
+import type { Log } from '../src/log';
 
 describe('the credentials a shop is given', () => {
   let etc: string;
@@ -128,6 +131,67 @@ describe('the credentials a shop is given', () => {
   // AIDEV-NOTE: the way into a fresh machine. There is no anonymous mode, so a shop with no callers
   // answers nobody and refuses to start - which leaves writing the first one as the one thing that
   // cannot be done by asking the shop.
+  // AIDEV-NOTE: what SIGHUP does. A token is added or revoked by editing the file the shop already
+  // reads, so what matters is which of the two lists a running shop ends up with - the new one, or
+  // the one it already had.
+  describe('reading the callers again while the shop is running', () => {
+    let lines: string[];
+    let log: Log;
+
+    beforeEach(() => {
+      lines = [];
+      log = toStdout(() => new Date(), (line) => lines.push(line));
+    });
+
+    it('knows a caller the file has since been given', async () => {
+      await write(CALLERS_FILE, [dave]);
+      const before = await callersIn(etc);
+      await write(CALLERS_FILE, [dave, gamebox]);
+
+      expect((await rereadCallers(etc, before, log)).get('gamebox-token')).toEqual({ id: 'u-2', name: 'gamebox', role: 'user' });
+    });
+
+    it('no longer knows a caller the file has stopped naming', async () => {
+      await write(CALLERS_FILE, [dave, gamebox]);
+      const before = await callersIn(etc);
+      await write(CALLERS_FILE, [dave]);
+
+      expect((await rereadCallers(etc, before, log)).get('gamebox-token')).toBeUndefined();
+    });
+
+    // A stray comma, or a file caught halfway through being replaced: read as "nobody may call this
+    // shop" it would revoke every caller at once, the operator who has to fix it among them.
+    it.each([
+      ['is not JSON', (): Promise<void> => write(CALLERS_FILE, '{ not json')],
+      ['is not there at all', (): Promise<void> => rm(path.join(etc, CALLERS_FILE))],
+    ])('keeps the callers it has when the file %s', async (_what, spoil) => {
+      await write(CALLERS_FILE, [dave]);
+      const before = await callersIn(etc);
+      await spoil();
+
+      expect(await rereadCallers(etc, before, log)).toBe(before);
+    });
+
+    it('says it kept them, and what was wrong with the file', async () => {
+      await write(CALLERS_FILE, '{ not json');
+
+      await rereadCallers(etc, new Map(), log);
+
+      expect(lines.join('\n')).toContain('ERROR could not re-read the callers, so the shop keeps the ones it has');
+      expect(lines.join('\n')).toContain('is not JSON');
+    });
+
+    // The line an operator looks for after signalling, to see that the shop did anything at all.
+    it('says how many it re-read', async () => {
+      await write(CALLERS_FILE, [dave, gamebox]);
+
+      await rereadCallers(etc, new Map(), log);
+
+      expect(lines.join('\n')).toContain('INFO  callers re-read');
+      expect(lines.join('\n')).toContain('callers=2');
+    });
+  });
+
   describe('the first caller a machine is given', () => {
     it('writes an admin the shop then knows by the token it answered with', async () => {
       const token = await writeFirstCaller(etc, 'u-1', 'dave');

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
+import type { Log } from './log.js';
 
 // AIDEV-NOTE: two files, not one, and deliberately. `callers` lets somebody into the SHOP; `printer
 // keys` let somebody into the PRINTERS, bypassing the shop entirely. One file holding both means
@@ -154,6 +155,34 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Map<string,
   }
 
   return callers;
+}
+
+// AIDEV-NOTE: the answer to "how does a token get rotated without stopping the shop". SIGHUP is what
+// a long-running service is told to re-read its configuration with, and callers.json is the only
+// thing this one re-reads: a printer's key is held by an open client watching a print, so swapping
+// one under a running loop is a different question from adding a caller.
+/**
+ * Read the callers again, so one can be added or revoked while the shop is running.
+ *
+ * A file it cannot read leaves the callers exactly as they were, and says why. The alternative is a
+ * shop that answers nobody because of a stray comma - which revokes every caller at once, including
+ * the operator who would then have to get back in to fix it.
+ */
+export async function rereadCallers(etc: string, keeping: ReadonlyMap<string, Caller>, log: Log): Promise<ReadonlyMap<string, Caller>> {
+  try {
+    const callers = await callersIn(etc);
+    log.info('callers re-read', { etc, callers: callers.size });
+
+    return callers;
+  } catch (failure) {
+    log.error('could not re-read the callers, so the shop keeps the ones it has', {
+      etc,
+      callers: keeping.size,
+      why: (failure as Error).message,
+    });
+
+    return keeping;
+  }
 }
 
 /** How this shop talks to each machine, by the printer's own name - the one on its record. */

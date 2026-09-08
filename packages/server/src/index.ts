@@ -9,6 +9,7 @@ export {
   callersIn,
   defaultEtc,
   printerKeysIn,
+  rereadCallers,
   writeFirstCaller,
 } from './credentials.js';
 export type { Caller, Role } from './credentials.js';

@@ -50,8 +50,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   - tokens are stored in the clear. Tolerable for 32 random bytes in a 0600 file, wrong the moment
     a human chooses one - and hashing breaks lookup-by-token, which is the first fault again
 
-- [ ] Rotating a token means editing `callers.json` and restarting; there is no way to add or revoke
-  one while the shop runs. Re-reading the file on SIGHUP is the boring answer
 - [ ] Take the stored path from OctoPrint's answer instead of guessing it. `send()` throws the
   upload response away and everything downstream recomputes `remotePathFor(job)`, which is only
   right for as long as the shop's idea of what the printer stored matches the printer's. The
