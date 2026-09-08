@@ -322,14 +322,25 @@ theirs. An identity therefore has an id that is neither its display name nor any
 holds. From it:
 
 - the owner, or any admin, reads a job's details
-- the OWNER ALONE renders its verdict. Judging a plate is saying whether the thing you asked for
-  came out the way you wanted, which is a question only the person who asked it can answer - an
-  admin can see the job and still have no idea whether that warp matters
+- the owner renders its verdict, and so may an admin. Judging a plate is saying whether the thing
+  you asked for came out the way you wanted, which is a question only the person who asked it can
+  really answer - an admin can see the job and still have no idea whether that warp matters. But an
+  owner can be revoked, and a job nobody may judge holds a printer's bed for good, so an admin is
+  how one gets unstuck. Both halves are true: the owner is the only one who KNOWS, and an admin is
+  the only one who can always act
 - every other caller learns only how many jobs the shop holds, as a bare total. Enough to see that
   the queue is busy, and nothing about whose work it is
 
-The cost is deliberate and worth writing down: a job whose owner is gone has nobody who may judge
-it, and it holds its printer until something is done about that.
+**An owner is revoked by an absence, not by an act.** Their entry leaves `callers.json` and the id
+it carried is nobody's; the jobs that recorded it are simply owned by somebody who is not here. The
+id is not spent by that, so putting the same id back makes them theirs again - which is the whole
+reason an identity's id is neither its name nor its token. Rotating a credential orphans nothing.
+
+The cost is deliberate and worth writing down: an admin may judge work that is not theirs, and
+afterwards nothing says they did. Approval discards the job, the shop keeps no history, and the
+verdict leaves no record of whose it was. That is the price of never holding a bed for a job nobody
+is left to judge, and it is an argument for the logging in PLAN.md rather than for a field on a
+record that is written once.
 
 ## The operator's commands
 

@@ -41,13 +41,16 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 - [ ] Ownership, decided and unbuilt. A job carries the STABLE ID of the caller who submitted it,
   written with the record at submission and never rewritten - a role says what a caller MAY DO, and this is what is
-  THEIRS. The owner or an admin reads a job's details; the OWNER ALONE renders its verdict; every
-  other caller learns only how many jobs the shop holds, as a bare total. Today any token reads
-  every job, including another client's `displayName` and `metadata`, which is honest with one
-  client and wrong with two. Two things to settle while building it:
+  THEIRS. The owner or an admin reads a job's details; the owner renders its verdict and so may an
+  admin; every other caller learns only how many jobs the shop holds, as a bare total. Today any
+  token reads every job, including another client's `displayName` and `metadata`, which is honest
+  with one client and wrong with two. One thing left to settle:
   - `jobs()` answers `Job[]` and has no shape for "a total instead of a list"
-  - a job whose owner is revoked can never be judged, so it holds its printer for good. An admin
-    override is the obvious escape and was deliberately not taken; something has to be
+
+  An admin may judge any job. That is what keeps a revoked owner's work from holding a bed for
+  good - revocation is an absence rather than an act, so nothing else would ever free it. The cost
+  is that nothing afterwards says an admin rather than the owner gave the verdict: approval discards
+  the job and the shop keeps no history, which wants the logging below more than it wants a field
 
 - [ ] `callers.json` is shaped for machine callers and nothing else, which is what a web UI exposes.
   The token is the map's KEY, so the credential is the identity: a caller holds exactly one token,
