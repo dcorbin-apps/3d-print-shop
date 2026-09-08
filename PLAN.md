@@ -37,6 +37,11 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### What an operator can see
 
+- [ ] "fetch failed" is what a printer that cannot be reached logs, and it is node's message rather
+  than an answer: it says nothing about the address, the port, or whether the name resolved. It
+  reaches both the log and `printer.paused.reason`, so it is what an operator is left with. The
+  error's `cause` carries the real reason (ECONNREFUSED, ENOTFOUND) and `OctoPrint` should say it
+
 - [ ] `job waiting` answers for the SHOP, not for a machine. A job that names another printer, or
   that no printer but the big one could take, is counted all the same - so an operator at the mini
   can be told to load a filament nothing there could use. `printableNow` filters on `canTake` and
@@ -59,8 +64,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 - [ ] Rotating a token means editing `callers.json` and restarting; there is no way to add or revoke
   one while the shop runs. Re-reading the file on SIGHUP is the boring answer
-- [ ] A name is checked and then dropped. `request.caller` is set and read by nobody, waiting for
-  the logging below - which is the whole point of a name rather than a shared secret
 - [ ] Take the stored path from OctoPrint's answer instead of guessing it. `send()` throws the
   upload response away and everything downstream recomputes `remotePathFor(job)`, which is only
   right for as long as the shop's idea of what the printer stored matches the printer's. The
@@ -84,27 +87,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   installer makes the root, so either it sets the mode or `ready()` refuses a wide one
 - [ ] Anything already in a spool keeps the mode it was written with - a record is written once and
   never rewritten, so an existing install stays as it was until every job has left
-
-### Logging
-
-Three `console` calls in the whole service. It runs unattended for hours and leaves no trace of what
-it did — the only durable evidence of a fault is the sentence in `printer.paused.reason`.
-
-- [ ] A `Log` port the CLI supplies, injected the way `Machines` is, rather than `console` scattered
-  through the store and the foreman. Tests stay silent and the sink stays the operator's choice
-- [ ] One line per event to stdout, structured. `launchd` and `systemd` capture stdout, so this
-  lands with the packaging above; a file the shop has to rotate is the thing to avoid
-- [ ] Worth a line each: submitted, started on X, sent N bytes, the printer's outcome, the verdict,
-  stopped, resumed, loaded, every reason the foreman pauses for, and on restart what was picked up
-  and what was started — that last is invisible today
-- [ ] The API edge: method, path, status, ms. The `response.on('finish')` hook that already tells the
-  foreman about a change is the seam
-- [ ] This is where history is allowed to live. The store keeps none by design, and a log is not a
-  second writer — so it is the cheapest form of the run count above, and the only way to answer
-  "what happened to job 7" once the job is gone
-- [ ] Two levels, not five: what an operator needs, and why something failed
-- [ ] Never log a printer's key. An OctoPrint failure carrying request headers would put
-  `PRINT_SHOP_KEY_MK4` in the journal, so the redaction rule comes with the first line of logging
 
 ### Installation
 

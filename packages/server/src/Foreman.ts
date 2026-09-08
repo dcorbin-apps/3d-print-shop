@@ -1,4 +1,6 @@
 import type { JobStore } from './JobStore.js';
+import { silent } from './log.js';
+import type { Log } from './log.js';
 import type { Printer } from './printing.js';
 import { recordOutcome, startNextPrint } from './printing.js';
 import type { RegisteredPrinter } from './Printer.js';
@@ -27,7 +29,8 @@ export class Foreman {
 
   constructor(
     private readonly shop: JobStore,
-    private readonly machines: Machines
+    private readonly machines: Machines,
+    private readonly log: Log = silent
   ) {}
 
   /**
@@ -69,7 +72,13 @@ export class Foreman {
     for (const printer of await this.shop.printers()) {
       // Only a print still running. One waiting for a verdict has already ended, and there is
       // nothing left to hear about it.
-      if (printer.holding?.phase === 'printing' && this.watch(printer.name)) picked.push(printer.name);
+      if (printer.holding?.phase === 'printing' && this.watch(printer.name)) {
+        // AIDEV-NOTE: invisible until now. A shop that came back up and picked a print back up said
+        // nothing about it, so the one moment an operator would want confirmation - did it lose my
+        // eight-hour print? - was the one the shop had no answer for.
+        this.log.happened('picked up a print already running', { printer: printer.name, job: printer.holding.job });
+        picked.push(printer.name);
+      }
     }
 
     return picked;
@@ -87,12 +96,31 @@ export class Foreman {
   private async start(printer: RegisteredPrinter): Promise<void> {
     try {
       const attempt = await startNextPrint(this.shop, () => this.machines(printer), printer.name);
-      if (attempt.did === 'started') this.watch(printer.name);
+
+      if (attempt.did === 'started') {
+        this.log.happened('started printing', {
+          printer: printer.name,
+          job: attempt.job.id,
+          displayName: attempt.job.displayName,
+          gcodeBytes: attempt.job.gcodeBytes,
+        });
+        this.watch(printer.name);
+      }
+
+      if (attempt.did === 'could-not-start') {
+        this.log.failed('could not send a job to the printer', {
+          printer: printer.name,
+          job: attempt.job.id,
+          why: attempt.failure.message,
+        });
+      }
     } catch (failure) {
       // AIDEV-NOTE: a machine that cannot even be built - no key, an address nothing answers at -
       // would otherwise be tried again on every single change, one failure per change. It stops for
       // the same reason a failed upload stops it: the next attempt will fail the same way.
-      await this.shop.pause(printer.name, `could not start anything on ${printer.name}: ${(failure as Error).message}`);
+      const why = `could not start anything on ${printer.name}: ${(failure as Error).message}`;
+      this.log.failed('printer stopped', { printer: printer.name, why });
+      await this.shop.pause(printer.name, why);
     }
   }
 
@@ -115,7 +143,11 @@ export class Foreman {
   private async watchToTheEnd(name: string): Promise<void> {
     try {
       const printer = await this.shop.printerNamed(name);
-      await recordOutcome(this.shop, await this.machines(printer), name);
+      const outcome = await recordOutcome(this.shop, await this.machines(printer), name);
+
+      // What the PRINTER said, which is not a verdict - the bed is still held until a person judges
+      // what came off it.
+      this.log.happened('print ended', { printer: name, outcome });
     } catch (failure) {
       // On the way out this is expected, and stopping every printer on a shutdown would leave a
       // shop that comes back up refusing to print for a reason nobody caused.
@@ -123,9 +155,9 @@ export class Foreman {
 
       // Losing track leaves a job that says it is printing and a machine nobody is listening to.
       // Stopping the printer is what puts that in front of an operator instead of leaving it.
-      await this.shop
-        .pause(name, `lost track of the print on ${name}: ${(failure as Error).message}`)
-        .catch(() => undefined);
+      const why = `lost track of the print on ${name}: ${(failure as Error).message}`;
+      this.log.failed('printer stopped', { printer: name, why });
+      await this.shop.pause(name, why).catch(() => undefined);
     }
   }
 }

@@ -6,6 +6,8 @@ import { InvalidSubmission } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
 import { NoSuchJob, NoSuchPrinter, SpoolUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
 import type { Caller } from './credentials.js';
+import { silent } from './log.js';
+import type { Log } from './log.js';
 import type { JobStore } from './JobStore.js';
 import type { PrinterRecord } from './Printer.js';
 import { waitingOn } from './selection.js';
@@ -114,6 +116,8 @@ export interface ShopHooks {
   shutDown?: () => void;
   /** Who may talk to this shop, by their token. Every request names one of them, or is refused. */
   callers: ReadonlyMap<string, Caller>;
+  /** Where the running service writes down what it did. Silent unless somebody supplies one. */
+  log?: Log;
 }
 
 declare module 'express-serve-static-core' {
@@ -129,6 +133,33 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
 
   const changed = hooks.changed ?? ((): void => undefined);
   const callers = hooks.callers;
+  const log = hooks.log ?? silent;
+
+  // AIDEV-NOTE: first, so it covers the requests the next middleware REFUSES - a shop being asked
+  // for things by somebody it cannot name is the most interesting line it will ever write, and a
+  // logger installed after the guard would be the one thing that never sees it.
+  //
+  // The same `finish` seam the `changed` hook uses, and deliberately not the same middleware: that
+  // one runs after the guard and only for requests that changed something.
+  api.use((request, response, next) => {
+    const began = Date.now();
+
+    response.on('finish', () => {
+      const about = {
+        method: request.method,
+        path: request.path,
+        status: response.statusCode,
+        ms: Date.now() - began,
+        // Whoever it turned out to be, which is nobody when the guard refused them.
+        caller: request.caller?.name,
+      };
+
+      if (response.statusCode >= 500) log.failed('request failed', about);
+      else log.happened('request', about);
+    });
+
+    next();
+  });
 
   // AIDEV-NOTE: before everything, so no route has to remember. There is no anonymous mode, not even
   // on loopback: a shop that answered an unnamed request is one where a job has no submitter to
@@ -172,7 +203,17 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   });
 
   api.post('/jobs', async (request, response) => {
-    response.status(201).json(await submission(shop, request, request.caller.id));
+    const job = await submission(shop, request, request.caller.id);
+
+    log.happened('job submitted', {
+      job: job.id,
+      displayName: job.displayName,
+      filaments: job.filaments,
+      gcodeBytes: job.gcodeBytes,
+      owner: job.owner,
+    });
+
+    response.status(201).json(job);
   });
 
   api.get('/jobs', async (request, response) => {
@@ -210,6 +251,11 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     // request that brought none is a client's mistake worth naming as one.
     const judging = await shop.find(id);
     if (!judging || !theirs(request.caller, judging)) throw new NoSuchJob(`no job ${id}`);
+
+    // AIDEV-NOTE: the one place a verdict is recorded at all. The job leaves the shop when it is
+    // approved and the store keeps no history, so without this line nothing afterwards can say what
+    // was decided about job 7 - or that an ADMIN decided it rather than the person who asked for it.
+    log.happened('verdict given', { job: id, verdict, by: request.caller.name, owner: judging.owner });
 
     if (verdict === 'rejected') {
       response.json(await shop.reject(id));
@@ -275,7 +321,10 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
       throw new UnusableRequest('loaded is the filaments on the machine, in order, and an empty list means none');
     }
 
-    response.json(await shop.load(request.params.name, loaded as string[]));
+    const printer = await shop.load(request.params.name, loaded as string[]);
+    log.happened('filament loaded', { printer: printer.name, loaded: printer.loaded });
+
+    response.json(printer);
   });
 
   api.put('/printers/:name/status', async (request, response) => {
@@ -286,8 +335,10 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
         throw new UnusableRequest('stopping a printer needs a reason an operator can act on');
       }
       await shop.pause(request.params.name, reason);
+      log.happened('printer stopped', { printer: request.params.name, why: reason, by: request.caller.name });
     } else if (stopped === false) {
       await shop.resume(request.params.name);
+      log.happened('printer started', { printer: request.params.name, by: request.caller.name });
     } else {
       throw new UnusableRequest('a printer status says stopped true or false');
     }
@@ -295,7 +346,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     response.json(await shop.printerNamed(request.params.name));
   });
 
-  api.use(explainRefusal);
+  api.use((error: unknown, request: Request, response: Response, next: NextFunction) => explainRefusal(log, error, request, response, next));
 
   return api;
 }
@@ -477,11 +528,13 @@ function printerIn(body: unknown): PrinterRecord {
 // stderr, which is what launchd and systemd capture.
 //
 // AIDEV-TODO: console.error until there is a Log port to hand this to. See PLAN.md.
-function explainRefusal(error: unknown, _request: Request, response: Response, _next: NextFunction): void {
+function explainRefusal(log: Log, error: unknown, _request: Request, response: Response, _next: NextFunction): void {
   const status = statusFor(error);
 
   if (status === 500) {
-    console.error(`3d-print-shop failed to answer a request: ${(error as Error).stack ?? (error as Error).message}`);
+    // The one the shop did NOT mean, so the whole of what broke goes down - and the client is told
+    // nothing but where to look, because a message written by node carries paths and arguments.
+    log.failed('the shop could not answer a request', { why: (error as Error).stack ?? (error as Error).message });
     response.status(500).json({ error: 'the shop could not do that, and why is in its log' });
 
     return;

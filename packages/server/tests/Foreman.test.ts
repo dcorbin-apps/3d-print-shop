@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { Foreman } from '../src/Foreman';
+import { toStdout } from '../src/log';
 import type { Machines } from '../src/Foreman';
 import { JobStore } from '../src/JobStore';
 import type { PrinterOutcome } from '../src/Job';
@@ -70,6 +71,62 @@ describe('the foreman', () => {
 
   afterEach(async () => {
     await fs.rm(spool, { recursive: true, force: true });
+  });
+
+  // AIDEV-NOTE: the machine's half of the story. The shop runs unattended for hours, and without
+  // these lines the only durable trace of anything is the sentence in `printer.paused.reason` -
+  // which says nothing about the prints that went well, or about what happened in what order.
+  describe('what it writes down', () => {
+    let lines: Record<string, unknown>[];
+    let watched: Foreman;
+
+    beforeEach(() => {
+      lines = [];
+      watched = new Foreman(
+        shop,
+        mockReach,
+        toStdout(
+          () => new Date(),
+          (line) => lines.push(JSON.parse(line) as Record<string, unknown>)
+        )
+      );
+    });
+
+    it('says what it started, on which printer, and how much gcode went over', async () => {
+      const id = await submit();
+
+      await watched.considerStarting();
+
+      expect(lines).toContainEqual(
+        expect.objectContaining({ event: 'started printing', level: 'note', printer: 'mk4', job: id, gcodeBytes: 9 })
+      );
+    });
+
+    it('says why it could not send one, which is the reason an operator has to act on', async () => {
+      await submit();
+      mockSend.mockRejectedValue(new Error('octopi.local refused the connection'));
+
+      await watched.considerStarting();
+
+      expect(lines).toContainEqual(
+        expect.objectContaining({
+          event: 'could not send a job to the printer',
+          level: 'fault',
+          printer: 'mk4',
+          why: 'octopi.local refused the connection',
+        })
+      );
+    });
+
+    it('says what the printer made of a print when it ended', async () => {
+      const id = await submit();
+      mockAwaitOutcome.mockResolvedValue('failed');
+
+      await watched.considerStarting();
+      await until(jobIs(id, 'awaiting-approval'));
+
+      expect(lines).toContainEqual(expect.objectContaining({ event: 'print ended', printer: 'mk4', outcome: 'failed' }));
+    });
   });
 
   describe('looking for work', () => {

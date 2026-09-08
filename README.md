@@ -118,6 +118,12 @@ raises it. OctoPrint's own default is 1GB, so the shop is the binding limit unti
 **A verdict is not a formality.** A printer holds its bed until a person has judged what came off it,
 so a shop nobody gives verdicts to prints one thing per machine and then stops.
 
+**It writes down what it did**, one JSON object per line, to stdout - what was submitted, what
+started on which printer, how each print ended, every verdict and who gave it, and every reason a
+printer was stopped. `launchd` and `systemd` both capture stdout, so there is no file for the shop to
+rotate. Two levels: `note` for what happened, `fault` for why something did not. A printer's key and
+a caller's token are never written, whatever a failure was carrying when it arrived.
+
 **A printer's API key never reaches the command line**, where it would be in shell history and in
 `ps`. The shop reads it from `printer-keys.json`, keyed by the printer's own name. Not from the
 environment, which it was until that had to be written into a `launchd` plist anybody can read.

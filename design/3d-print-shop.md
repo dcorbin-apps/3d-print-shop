@@ -349,6 +349,47 @@ verdict leaves no record of whose it was. That is the price of never holding a b
 is left to judge, and it is an argument for the logging in PLAN.md rather than for a field on a
 record that is written once.
 
+## What it writes down
+
+The shop runs unattended for hours. Until it had this, the only durable evidence of anything was the
+sentence in `printer.paused.reason` - which says nothing about the prints that went well, nothing
+about the order things happened in, and nothing at all once a job has left.
+
+**One JSON object per line, to stdout.** `launchd` and `systemd` both capture stdout, so that is a
+log the shop does not have to open, rotate, or lose; a file it managed itself would be a second thing
+to get right on every machine. One line per event rather than prose, because prose has to be parsed
+back out the day anybody wants to count anything.
+
+**Two levels, not five.** `note` is what an operator needs to know happened; `fault` is why something
+did not work. Eight hours of a running shop has to be readable in one pass, and every level past
+those two is a decision at each call site that somebody eventually gets wrong.
+
+**A port the CLI supplies**, injected the way `Machines` is, and defaulting to a silent one. A unit
+test is then quiet without saying so, and where the lines go stays the operator's business rather
+than being `console` decided in the middle of the store.
+
+**The API edge and the printing loop, not the store.** The edge is where a caller's intent is known -
+who asked, for what, and what they were told - and it hangs off the same `response.on('finish')` seam
+that already tells the foreman something changed. The loop is where the machine's story is known:
+what started, how much gcode went over, how the print ended, why a printer was stopped, and what was
+picked up again after a restart. The store is left alone; it has no caller and no machine, and
+logging from it would say the same things twice.
+
+**This is where history is allowed to live.** The store keeps none by design - a job leaves the shop
+when it is approved - so the line saying job 7 was approved, by whom, and whose it was, is the only
+thing that will ever be able to answer what happened to it. A log is not a second writer, which is
+why this does not break the one-writer rule.
+
+**A secret is never written, and the rule is at the SINK.** The way a printer's key or a caller's
+token reaches a log is not that somebody logged it: it is that a failure carried it, in a path, a
+header, or a stack. So the sink is built knowing every secret this process holds and refuses to
+write any of them, rather than each call site remembering - one place to get right, and a new call
+site cannot forget it.
+
+The command line's own output is a different thing on the same stream. `say()` is the COMMAND
+answering the person who typed it, and the log is the running SERVICE's record. That is also why the
+`listening on <address>:<port>` line keeps its shape: two test suites read the port back out of it.
+
 ## The operator's commands
 
 ```

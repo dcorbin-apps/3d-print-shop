@@ -9,6 +9,7 @@ import type { PrinterApi } from './Printer.js';
 import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
 import { ETC_ENV, callersIn, defaultEtc, printerKeysIn } from './credentials.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
+import { redacting, toStdout } from './log.js';
 import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { claimSpool } from './spoolLock.js';
@@ -46,7 +47,8 @@ export function createCLI(): Command {
     )
     .option('--etc <path>', `where its credentials are kept (or ${ETC_ENV}; defaults to ${defaultEtc()})`)
     .action(async (options: { port: number; listen?: string; spool?: string; maxGcode?: number; etc?: string }) => {
-      const store = new JobStore(options.spool ?? defaultSpoolRoot(), { maxGcodeBytes: options.maxGcode });
+      const spool = options.spool ?? defaultSpoolRoot();
+      const store = new JobStore(spool, { maxGcodeBytes: options.maxGcode });
       const etc = options.etc ?? defaultEtc();
 
       // AIDEV-NOTE: credentials come first, and a shop that has none does not start. Every route
@@ -58,19 +60,25 @@ export function createCLI(): Command {
       const printerKeys = await printerKeysIn(etc);
       const listenOn = options.listen ?? LOOPBACK;
 
+      // AIDEV-NOTE: built from every secret this process holds - each printer's key, and every
+      // caller's token - so that neither can reach a line whatever a failure happens to be carrying.
+      // Built HERE because this is the only place that has both, and after the credentials are read
+      // because there is nothing to redact until they are.
+      const log = redacting(toStdout(), [...printerKeys.values(), ...callers.keys()]);
+
       // Before anything else: a spool that is not there, or is already being served, is a shop that
       // must refuse to start rather than start and do damage.
       await store.ready();
-      const releaseSpool = await claimSpool(options.spool ?? defaultSpoolRoot());
+      const releaseSpool = await claimSpool(spool);
 
       const machines = new OctoPrintMachines(printerKeys);
-      const foreman = new Foreman(store, machines.reach);
+      const foreman = new Foreman(store, machines.reach, log);
 
       // AIDEV-NOTE: every change the API makes is a moment something might be startable, so the
       // foreman is told about all of them rather than about a chosen few. Not awaited: a client
       // waiting on its own submission has no reason to wait for a printer to take a different job.
       const lookForWork = (): void => {
-        void foreman.considerStarting().catch((failure: unknown) => console.error((failure as Error).message));
+        void foreman.considerStarting().catch((failure: unknown) => log.failed('could not look for work', { why: (failure as Error).message }));
       };
 
       // AIDEV-NOTE: stopping the listener is what makes the process end - nothing else here holds
@@ -89,10 +97,13 @@ export function createCLI(): Command {
         machines.closeAll();
         releaseSpool();
 
-        void foreman.watchersSettled().then(() => say(['3d-print-shop has stopped']));
+        void foreman.watchersSettled().then(() => {
+          log.happened('the shop has stopped');
+          say(['3d-print-shop has stopped']);
+        });
       };
 
-      const shopServer = await serve(store, options.port, { changed: lookForWork, shutDown: stopTheShop, callers }, listenOn);
+      const shopServer = await serve(store, options.port, { changed: lookForWork, shutDown: stopTheShop, callers, log }, listenOn);
 
       // What a supervised service is stopped with. `launchd` and `systemd` both send it, and one
       // that ignored it would be killed with prints still being watched.
@@ -104,11 +115,22 @@ export function createCLI(): Command {
       // because whether this shop can be reached from the network is the difference between the
       // default and `--listen`, and it is worth being able to see which one is running.
       const bound = shopServer.address() as AddressInfo;
+
+      // AIDEV-NOTE: both, and they are not the same thing. `say` is the COMMAND answering the person
+      // who typed it - and two test suites read the port back out of that line, so its shape is a
+      // contract. The log line is the running SERVICE's record, which is what a supervisor captures
+      // and what somebody reads days later asking what this process was.
+      // AIDEV-NOTE: which spool and which credentials, because a process that outlives the run that
+      // started it is a process somebody has to identify later - and argv alone was not enough to do
+      // that for two shops found still listening, one of them 14 hours old.
+      log.happened('the shop is listening', { address: bound.address, port: bound.port, callers: callers.size, spool, etc });
       say([`3d-print-shop is listening on ${bound.address}:${bound.port}`, `${callers.size} caller(s) may ask`]);
 
       // A restart does not stop a machine. Prints that were already running are picked up first,
       // then anything that could start now - nothing else will wake this up until a change arrives.
-      await foreman.resumeWatching();
+      const pickedUp = await foreman.resumeWatching();
+      if (pickedUp.length > 0) log.happened('prints picked up after a restart', { printers: pickedUp });
+
       lookForWork();
     });
 
