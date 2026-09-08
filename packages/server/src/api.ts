@@ -545,6 +545,18 @@ function explainRefusal(log: Log, error: unknown, _request: Request, response: R
     return;
   }
 
+  // AIDEV-NOTE: every SpoolUnavailable names the spool - it is not there, it has N bytes free, it is
+  // one somebody else could write - and that path is the whole of what an OPERATOR needs and none of
+  // what a client does. Same split as the 500 above, for the same reason: the sentence goes to the
+  // log, and what goes out is that the machine cannot answer just now. The exception keeps the path,
+  // because the other reader of these is `serve` refusing to start, where it is all there is to say.
+  if (error instanceof SpoolUnavailable) {
+    log.error('the shop cannot use its spool', { why: (error as Error).message });
+    response.status(status).json({ error: 'the shop cannot get at the work it keeps, and why is in its log' });
+
+    return;
+  }
+
   response.status(status).json({ error: (error as Error).message });
 }
 

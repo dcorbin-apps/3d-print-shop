@@ -65,10 +65,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   Decided: an admin may point the shop anywhere, because that is close to what admin means, and a
   range check here would be defeated by a hostname resolving at connect time. What is left is
   whether a leaked admin token should be able to redirect a key without also holding the key
-- [ ] The 503s still name the spool - "<path> is not there", "<path> has N bytes free", "<path> can
-  be written by somebody other than its owner". Deliberate and tested, and arguably fine for a
-  caller the shop has named, but the same path a 500 no longer gives away. Decide whether an
-  authenticated caller may know where the spool is
 - [ ] Anything already in a spool keeps the mode it was written with - a record is written once and
   never rewritten, so an existing install stays as it was until every job has left
 

@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import { serve } from '../../src/api';
 import type { Job, JobDetails } from '../../src/Job';
 import { JobStore } from '../../src/JobStore';
+import { toStdout } from '../../src/log';
 
 // AIDEV-NOTE: real HTTP against a real listener on an ephemeral port, over a real spool. There is no
 // unit-level cover for the routes on purpose - what is worth proving here is what goes over the
@@ -345,9 +346,10 @@ describe('the shop over HTTP', () => {
   // A full disk is the machine's fault, not the client's, so it is told to come back rather than
   // told it did something wrong. Room for the BIGGEST job, because this one's size is not yet known.
   describe('when the spool has no room left', () => {
-    it('takes nothing, and says to come back later', async () => {
+    it('takes nothing, and says to come back later without saying where it keeps its work', async () => {
+      const lines: string[] = [];
       const full = new JobStore(spool, { maxGcodeBytes: 1024, freeBytes: () => Promise.resolve(512) });
-      const server = await serve(full, 0, { callers: () => CALLERS });
+      const server = await serve(full, 0, { callers: () => CALLERS, log: toStdout(() => new Date(), (line) => lines.push(line)) });
 
       try {
         const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -356,9 +358,14 @@ describe('the shop over HTTP', () => {
         body.append('gcode', new Blob(['G1\n']), 'print.gcode');
 
         const response = await submitting(url, body);
+        const said = await response.text();
 
+        // A 503 rather than a 4xx: a client that comes back later is doing the right thing.
         expect(response.status).toBe(503);
-        expect(await response.json()).toEqual({ error: `${spool} has 512 bytes free, and the shop keeps 1024 spare for a job` });
+        expect(JSON.parse(said)).toEqual({ error: 'the shop cannot get at the work it keeps, and why is in its log' });
+        expect(said).not.toContain(spool);
+        // The operator's half of the same event: how much room there is, and which directory has it.
+        expect(lines.join('\n')).toContain(`${spool} has 512 bytes free, and the shop keeps 1024 spare for a job`);
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
@@ -763,15 +770,22 @@ describe('the shop over HTTP', () => {
   // The spool root is made when the shop is installed and never by the shop - so a missing one is a
   // machine that was never set up, which is the service's fault and not the client's.
   describe('when the shop was never installed', () => {
-    it('says so, and says a client may as well come back later', async () => {
+    it('says a client may as well come back later, and tells the operator which directory is missing', async () => {
+      const lines: string[] = [];
       const missing = path.join(spool, 'never-made');
-      const unusable = await serve(new JobStore(missing), 0, { callers: () => CALLERS });
+      const unusable = await serve(new JobStore(missing), 0, {
+        callers: () => CALLERS,
+        log: toStdout(() => new Date(), (line) => lines.push(line)),
+      });
 
       try {
         const response = await fetch(`http://127.0.0.1:${(unusable.address() as AddressInfo).port}/jobs`, { headers: AS_ADMIN });
+        const said = await response.text();
 
         expect(response.status).toBe(503);
-        expect(await response.json()).toEqual({ error: `${missing} is not there - it is created when the shop is installed` });
+        expect(JSON.parse(said)).toEqual({ error: 'the shop cannot get at the work it keeps, and why is in its log' });
+        expect(said).not.toContain(missing);
+        expect(lines.join('\n')).toContain(`${missing} is not there - it is created when the shop is installed`);
       } finally {
         await new Promise<void>((resolve) => unusable.close(() => resolve()));
       }
