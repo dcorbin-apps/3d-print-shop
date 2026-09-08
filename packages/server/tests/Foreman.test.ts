@@ -44,8 +44,13 @@ describe('the foreman', () => {
     await shop.load(name, ['PLA-Red']);
   }
 
+  // Every submission carries a caller: the shop answers nobody it cannot name, so there is no such
+  // thing as a job that arrived unowned. Whose it is matters in `who a job belongs to` below; the
+  // rest of these say it once, here.
+  const DAVE = 'u-dave';
+
   async function submit(overrides: Record<string, unknown> = {}): Promise<number> {
-    return (await shop.submit({ filaments: ['PLA-Red'], ...overrides }, Readable.from(['G1 X0 Y0\n']))).id;
+    return (await shop.submit({ filaments: ['PLA-Red'], ...overrides }, Readable.from(['G1 X0 Y0\n']), DAVE)).id;
   }
 
   beforeEach(async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, jest } from '@jest/globals';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -103,9 +103,10 @@ describe('the shop over HTTP', () => {
       await submit(playerBox);
       await submit({ filaments: ['PLA-Red'] });
 
-      const held = (await (await ask('/jobs')).json()) as Job[];
+      const held = (await (await ask('/jobs')).json()) as { accessibleJobs: Job[]; totalJobs: number };
 
-      expect(held.map((job) => job.displayName).sort()).toEqual(['Job 2', 'Player Box']);
+      expect(held.accessibleJobs.map((job) => job.displayName).sort()).toEqual(['Job 2', 'Player Box']);
+      expect(held.totalJobs).toBe(2);
     });
 
     // AIDEV-NOTE: the order is the contract, not a convenience - the description is what lets a
@@ -324,7 +325,7 @@ describe('the shop over HTTP', () => {
     it('keeps nothing at all of one it refused', async () => {
       await submitting(smallUrl, submission('G'.repeat(CAP + 1)));
 
-      expect(await (await fetch(`${smallUrl}/jobs`, { headers: AS_ADMIN })).json()).toEqual([]);
+      expect(await (await fetch(`${smallUrl}/jobs`, { headers: AS_ADMIN })).json()).toEqual({ accessibleJobs: [], totalJobs: 0 });
       await expect(readdir(path.join(spool, 'jobs'))).resolves.toEqual([]);
     });
 
@@ -408,7 +409,6 @@ describe('the shop over HTTP', () => {
 
     it.each([
       ['POST', '/shutdown', {}],
-      ['PUT', '/jobs/1/verdict', { verdict: 'approved' }],
       ['POST', '/printers', { name: 'mini', buildVolume: MK4, address: 'http://mini' }],
       ['DELETE', '/printers/mk4', undefined],
       ['PUT', '/printers/mk4/filament', { loaded: ['PLA'] }],
@@ -441,6 +441,9 @@ describe('the shop over HTTP', () => {
       ['GET', '/JOBS'],
       ['GET', '/printers/'],
       ['HEAD', '/jobs'],
+      // A verdict is open to any caller and refused on OWNERSHIP inside the route, so what a user
+      // must not meet here is a 403 about their role.
+      ['PUT', '/jobs/1/verdict/'],
     ])('lets a user %s %s, which express routes to one they may have', async (method, path) => {
       expect((await as(USER, method, path)).status).not.toBe(403);
     });
@@ -449,9 +452,115 @@ describe('the shop over HTTP', () => {
     it.each([
       ['POST', '/shutdown/'],
       ['DELETE', '/PRINTERS/mk4'],
-      ['PUT', '/jobs/1/verdict/'],
+      ['PUT', '/printers/mk4/status/'],
     ])('still needs an admin for %s %s', async (method, path) => {
       expect((await as(USER, method, path)).status).toBe(403);
+    });
+  });
+
+  // AIDEV-NOTE: a role says what a caller may DO, and this is what is THEIRS - two questions, and
+  // only the second depends on the job. Everything here is decided inside the routes that name one,
+  // which is why none of it is in the admin list above.
+  describe('whose job it is', () => {
+    const asUser = (method: string, path: string, body?: unknown): Promise<Response> => as(USER, method, path, body);
+
+    async function submittedBy(token: string, details: JobDetails = playerBox): Promise<Job> {
+      const body = new FormData();
+      body.append('job', JSON.stringify(details));
+      body.append('gcode', new Blob(['G1\n']), 'print.gcode');
+
+      return (await submitting(shopUrl, body, token)).json() as Promise<Job>;
+    }
+
+    async function printedFor(token: string): Promise<number> {
+      const { id } = await submittedBy(token);
+      await shop.startPrinting('mk4', id);
+      await shop.finishedPrinting('mk4', 'finished');
+
+      return id;
+    }
+
+    // AIDEV-NOTE: what an install from before this has on disk. A record is written once and never
+    // rewritten, so a job from then stays ownerless until it leaves - which is indistinguishable
+    // from an owner who has since been revoked, and is handled as the same thing.
+    async function aJobFromBeforeOwners(): Promise<number> {
+      await mkdir(path.join(spool, 'jobs', '9'), { recursive: true });
+      await writeFile(
+        path.join(spool, 'jobs', '9', 'job.json'),
+        JSON.stringify({ id: 9, displayName: 'Old Box', filaments: ['PLA-SpaceGray'], submittedAt: new Date().toISOString(), gcodeBytes: 3 })
+      );
+
+      return 9;
+    }
+
+    it('is the caller who submitted it, by the id that outlives their name', async () => {
+      expect(await submittedBy(USER)).toMatchObject({ owner: 'gamebox' });
+    });
+
+    it('shows a caller their own work, and how much the shop holds altogether', async () => {
+      await submittedBy(ADMIN);
+      await submittedBy(USER, { filaments: ['PLA-Red'], displayName: 'Tray' });
+
+      expect(await (await asUser('GET', '/jobs')).json()).toMatchObject({
+        accessibleJobs: [{ displayName: 'Tray', owner: 'gamebox' }],
+        totalJobs: 2,
+      });
+    });
+
+    it('shows an admin every job, whoever it belongs to', async () => {
+      await submittedBy(USER);
+      await submittedBy(ADMIN);
+
+      expect(await (await ask('/jobs')).json()).toMatchObject({
+        accessibleJobs: [{ owner: 'gamebox' }, { owner: 'dave' }],
+        totalJobs: 2,
+      });
+    });
+
+    // AIDEV-NOTE: not theirs is answered as not here, deliberately. A 403 would tell a stranger that
+    // job 1 exists, and how many jobs the shop holds is the whole of what they are meant to learn.
+    it('answers a job that is not theirs as one that is not here', async () => {
+      const { id } = await submittedBy(ADMIN);
+
+      const response = await asUser('GET', `/jobs/${id}`);
+
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: `no job ${id}` });
+    });
+
+    it('lets a caller read their own', async () => {
+      const { id } = await submittedBy(USER);
+
+      expect((await asUser('GET', `/jobs/${id}`)).status).toBe(200);
+    });
+
+    it('refuses a verdict on a job that is not theirs, as one that is not here', async () => {
+      const id = await printedFor(ADMIN);
+
+      expect((await asUser('PUT', `/jobs/${id}/verdict`, { verdict: 'approved' })).status).toBe(404);
+    });
+
+    // Judging a plate is saying whether the thing you asked for came out the way you wanted, which
+    // is a question only the caller who asked can answer - so a user judges their own.
+    it('lets the owner judge their own print, whatever their role', async () => {
+      const id = await printedFor(USER);
+
+      expect((await asUser('PUT', `/jobs/${id}/verdict`, { verdict: 'approved' })).status).toBe(204);
+    });
+
+    // And an admin judges anybody's, which is what keeps a revoked owner's job from holding a bed
+    // for good - revocation is an absence, so nothing else would ever free it.
+    it('lets an admin judge a print that is not theirs', async () => {
+      const id = await printedFor(USER);
+
+      expect((await send('PUT', `/jobs/${id}/verdict`, { verdict: 'approved' })).status).toBe(204);
+    });
+
+    it('is nobody for a job written before the shop recorded an owner, leaving it to an admin', async () => {
+      const id = await aJobFromBeforeOwners();
+
+      expect((await asUser('GET', `/jobs/${id}`)).status).toBe(404);
+      expect((await ask(`/jobs/${id}`)).status).toBe(200);
     });
   });
 

@@ -30,6 +30,19 @@ export interface JobDetails {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * What a caller may see of the work a shop is holding, and how much of it there is altogether.
+ *
+ * One answer rather than a list and a count asked for separately: a submission landing between two
+ * questions would give a caller three jobs and a total of two, and the two have to agree. `totalJobs`
+ * is every job the shop holds, whoever owns them - enough to see that the queue is busy, and
+ * nothing about whose work it is.
+ */
+export interface JobsHeld {
+  accessibleJobs: Job[];
+  totalJobs: number;
+}
+
 /** Where a job is. Derived by the shop from what its printers are holding. */
 export type JobState = 'queued' | 'printing' | 'awaiting-approval';
 
@@ -48,6 +61,14 @@ export type Verdict = 'approved' | 'rejected' | 'abandoned';
 /** A job as the shop reports it. */
 export interface Job extends JobDetails {
   id: number;
+  /**
+   * The id of the caller who submitted it, written with the record and never rewritten.
+   *
+   * Absent is a job that belongs to nobody: its submitter was revoked - their entry left the shop's
+   * callers and the id it carried is nobody's - or it was submitted before the shop recorded this
+   * at all. An admin is then who is left to read and judge it.
+   */
+  owner?: string;
   displayName: string;
   submittedAt: Date;
   gcodeBytes: number;

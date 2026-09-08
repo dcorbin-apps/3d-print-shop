@@ -1,4 +1,4 @@
-import type { Job, JobDetails, Verdict } from './Job.js';
+import type { Job, JobDetails, JobsHeld, Verdict } from './Job.js';
 import type { PrinterRecord, RegisteredPrinter } from './Printer.js';
 import type { PrinterAdded, Shop } from './Shop.js';
 import { defaultToken } from './token.js';
@@ -16,8 +16,10 @@ export class HttpShop implements Shop {
     private readonly token: string | undefined = defaultToken()
   ) {}
 
-  async jobs(): Promise<Job[]> {
-    return ((await this.answered('GET', '/jobs')) as WireJob[]).map(asJob);
+  async jobs(): Promise<JobsHeld> {
+    const held = (await this.answered('GET', '/jobs')) as { accessibleJobs: WireJob[]; totalJobs: number };
+
+    return { accessibleJobs: held.accessibleJobs.map(asJob), totalJobs: held.totalJobs };
   }
 
   async job(id: number): Promise<Job> {

@@ -120,7 +120,7 @@ describe('the shop and its client', () => {
       await shop.submit({ filaments: ['PLA-SpaceGray'], displayName: 'Player Box' }, gcode());
       await shop.submit({ filaments: ['PLA-Red'] }, gcode());
 
-      expect((await shop.jobs()).map((job) => job.displayName)).toEqual(['Player Box', 'Job 2']);
+      expect((await shop.jobs()).accessibleJobs.map((job) => job.displayName)).toEqual(['Player Box', 'Job 2']);
     });
 
     it('asks after one by id', async () => {
@@ -151,7 +151,7 @@ describe('the shop and its client', () => {
       // Approved work leaves the shop entirely, so there is nothing to answer with.
       it('answers with nothing when a person approves it', async () => {
         expect(await shop.verdict(id, 'approved')).toBeUndefined();
-        expect(await shop.jobs()).toEqual([]);
+        expect(await shop.jobs()).toEqual({ accessibleJobs: [], totalJobs: 0 });
       });
 
       // The verdict is what frees the BED, not just the job.

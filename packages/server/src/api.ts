@@ -57,12 +57,9 @@ export class NotAKnownCaller extends Error {}
 /** A caller this shop knows, asking for something their role does not cover. */
 export class NotTheirs extends Error {}
 
-// AIDEV-NOTE: a role is AUTHORITY, not ownership. Every caller with a token can read every job in
-// the shop, another client's displayName and metadata included - there is no notion of whose job a
-// job is, and `heldBy` names a printer rather than a caller. That is honest while gamebox is the
-// only client and wrong the moment there are two who should not read each other's work. Fixing it
-// is not a bigger list here: it needs a job to record who submitted it, which is a change to a
-// record written once and never rewritten. See PLAN.md.
+// AIDEV-NOTE: a role is AUTHORITY, and ownership is what is THEIRS - two different questions, and
+// this list answers only the first. Whether a caller may see a particular job is `theirs()` below,
+// asked inside the routes that name one, because it depends on the job rather than on the route.
 //
 // AIDEV-NOTE: the USER-permitted routes are the list, not the admin ones - so a route nobody
 // classified needs admin, and forgetting makes the shop stricter rather than looser. The same
@@ -72,6 +69,9 @@ const OPEN_TO_EVERY_CALLER: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: 'POST', path: /^\/jobs$/ },
   { method: 'GET', path: /^\/jobs$/ },
   { method: 'GET', path: /^\/jobs\/[^/]+$/ },
+  // A verdict is the owner's to give, which is a thing about the JOB rather than about the caller's
+  // role - so the route is open here and the ownership of it is decided in the route itself.
+  { method: 'PUT', path: /^\/jobs\/[^/]+\/verdict$/ },
   { method: 'GET', path: /^\/printers$/ },
 ];
 
@@ -91,6 +91,14 @@ function needsAdmin(method: string, urlPath: string): boolean {
 
 // AIDEV-NOTE: `Bearer` because it is what every HTTP client already knows how to send, and because
 // a header keeps the token out of a URL - which is where things get logged, cached and pasted.
+// AIDEV-NOTE: the owner, or any admin. A job with NO owner belongs to nobody - its submitter was
+// revoked, their entry gone from callers.json and the id it carried nobody's, or it was written
+// before the shop recorded an owner at all. An admin is then the only one left who can read it or
+// judge it, which is what keeps a printer's bed from being held for good by a job nobody may end.
+function theirs(caller: Caller, job: Job): boolean {
+  return caller.role === 'admin' || job.owner === caller.id;
+}
+
 function tokenIn(header: string | undefined): string | undefined {
   const said = /^Bearer (.+)$/.exec(header ?? '');
 
@@ -163,16 +171,22 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   });
 
   api.post('/jobs', async (request, response) => {
-    response.status(201).json(await submission(shop, request));
+    response.status(201).json(await submission(shop, request, request.caller.id));
   });
 
-  api.get('/jobs', async (_request, response) => {
-    response.json(await shop.all());
+  api.get('/jobs', async (request, response) => {
+    const held = await shop.all();
+
+    response.json({ accessibleJobs: held.filter((job) => theirs(request.caller, job)), totalJobs: held.length });
   });
 
   api.get('/jobs/:id', async (request, response) => {
     const job = await shop.find(jobId(request.params.id));
-    if (!job) throw new NoSuchJob(`no job ${request.params.id}`);
+
+    // AIDEV-NOTE: not this caller's is answered as not here, deliberately - a 403 would tell a
+    // stranger that job 7 exists, which is the one thing a caller who may not read it is not to
+    // learn. A bare total is what they get instead, and that is on GET /jobs.
+    if (!job || !theirs(request.caller, job)) throw new NoSuchJob(`no job ${request.params.id}`);
 
     response.json(job);
   });
@@ -188,6 +202,13 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     }
 
     const id = jobId(request.params.id);
+
+    // AIDEV-NOTE: after the body and before the shop is asked to do anything. Not this caller's is
+    // answered as not here, for the reason GET /jobs/:id is - a 403 would say that job 7 exists. The
+    // body is judged FIRST because a complaint about the body reveals nothing either way, and a
+    // request that brought none is a client's mistake worth naming as one.
+    const judging = await shop.find(id);
+    if (!judging || !theirs(request.caller, judging)) throw new NoSuchJob(`no job ${id}`);
 
     if (verdict === 'rejected') {
       response.json(await shop.reject(id));
@@ -285,7 +306,7 @@ export function serve(shop: JobStore, port: number, hooks: ShopHooks, address: s
 //
 // busboy rather than multer: multer lands the file in memory or a temp file first, where this hands
 // the part to the store as the stream the store exists to take.
-function submission(shop: JobStore, request: Request): Promise<Job> {
+function submission(shop: JobStore, request: Request, owner: string): Promise<Job> {
   return new Promise<Job>((resolve, reject) => {
     const parts = busboy({ headers: request.headers, limits: SUBMISSION_LIMITS });
     let details: JobDetails | undefined;
@@ -324,7 +345,7 @@ function submission(shop: JobStore, request: Request): Promise<Job> {
 
       taken = true;
 
-      shop.submit(details, contents).then(resolve, (refusal: unknown) => {
+      shop.submit(details, contents, owner).then(resolve, (refusal: unknown) => {
         // The answer is already decided, but a client part way through an upload has to stay
         // connected long enough to read it - so what is still arriving is drained, not dropped.
         contents.resume();

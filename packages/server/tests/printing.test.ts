@@ -16,8 +16,13 @@ describe('printing the next job', () => {
   let mockAwaitOutcome: jest.Mock<(remotePath: string) => Promise<PrinterOutcome>>;
   let machine: Printer;
 
+  // Every submission carries a caller: the shop answers nobody it cannot name, so there is no such
+  // thing as a job that arrived unowned. Whose it is matters in `who a job belongs to` below; the
+  // rest of these say it once, here.
+  const DAVE = 'u-dave';
+
   async function submit(filaments: string[], overrides: Record<string, unknown> = {}): Promise<Job> {
-    return shop.submit({ filaments, ...overrides }, Readable.from(['G1 X0 Y0\n']));
+    return shop.submit({ filaments, ...overrides }, Readable.from(['G1 X0 Y0\n']), DAVE);
   }
 
   // What a printer can print is what is loaded ON it now, so saying so is part of setting one up.

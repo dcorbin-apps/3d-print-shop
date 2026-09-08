@@ -22,8 +22,14 @@ describe('minding the work', () => {
     };
   }
 
+  // What the shop answers: the jobs this caller may see, and how many it holds altogether.
+  const holding = (accessibleJobs: Job[], totalJobs = accessibleJobs.length): { accessibleJobs: Job[]; totalJobs: number } => ({
+    accessibleJobs,
+    totalJobs,
+  });
+
   beforeEach(() => {
-    mockJobs.mockResolvedValue([]);
+    mockJobs.mockResolvedValue(holding([]));
     mockVerdict.mockResolvedValue(undefined);
   });
 
@@ -33,21 +39,38 @@ describe('minding the work', () => {
     });
 
     it('gives each job, what it needs, and that it is waiting', async () => {
-      mockJobs.mockResolvedValue([job()]);
+      mockJobs.mockResolvedValue(holding([job()]));
 
       expect(await listJobs(shop)).toEqual(['1  Player Box  PLA-SpaceGray  queued']);
     });
 
     it('says which printer has one that is running', async () => {
-      mockJobs.mockResolvedValue([job({ state: 'printing', heldBy: 'mk4' })]);
+      mockJobs.mockResolvedValue(holding([job({ state: 'printing', heldBy: 'mk4' })]));
 
       expect(await listJobs(shop)).toEqual(['1  Player Box  PLA-SpaceGray  printing on mk4']);
+    });
+
+    // AIDEV-NOTE: said rather than left out. A list that quietly showed a caller only their own work
+    // would read as the whole queue, and "what is this shop busy with" is what an operator asks it.
+    it('says how many it is holding that are not this caller\'s', async () => {
+      mockJobs.mockResolvedValue(holding([job()], 4));
+
+      expect(await listJobs(shop)).toEqual([
+        '1  Player Box  PLA-SpaceGray  queued',
+        'and 3 more this shop is holding, which are not yours',
+      ]);
+    });
+
+    it('says the shop is busy even when none of it is theirs', async () => {
+      mockJobs.mockResolvedValue(holding([], 4));
+
+      expect(await listJobs(shop)).toEqual(['nothing of yours - this shop is holding 4']);
     });
 
     // AIDEV-NOTE: what an operator is really looking for. A job here is holding a bed until somebody
     // judges it, and the printer's own outcome is what they need before they can.
     it('says which are waiting on a person, and what the printer made of them', async () => {
-      mockJobs.mockResolvedValue([job({ state: 'awaiting-approval', heldBy: 'mk4', lastPrinterOutcome: 'failed' })]);
+      mockJobs.mockResolvedValue(holding([job({ state: 'awaiting-approval', heldBy: 'mk4', lastPrinterOutcome: 'failed' })]));
 
       expect(await listJobs(shop)).toEqual(['1  Player Box  PLA-SpaceGray  printed on mk4, failed - waiting for a verdict']);
     });

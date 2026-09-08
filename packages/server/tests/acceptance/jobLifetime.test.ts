@@ -48,6 +48,8 @@ describe('the life of a job', () => {
     await fs.rm(spool, { recursive: true, force: true });
   });
 
+  const DAVE = 'u-dave';
+
   it(
     'is taken in, printed, rejected, printed again, approved, and gone',
     async () => {
@@ -61,7 +63,8 @@ describe('the life of a job', () => {
           requiredBuildVolume: { x: 120, y: 90, z: 40 },
           metadata: { pieces: [{ piece: 'player_box' }] },
         },
-        realisticGcode()
+        realisticGcode(),
+        DAVE
       );
       expect(job.gcodeBytes).toBeGreaterThan(MEGABYTES * 1024 * 1024);
 
@@ -92,7 +95,7 @@ describe('the life of a job', () => {
       await expect(fs.readdir(path.join(spool, 'jobs'))).resolves.toEqual([]);
 
       // ...but its number is spent. The next job is 2.
-      const next = await afterRestart.submit({ filaments: ['PLA-White'] }, Readable.from(['G1 X0\n']));
+      const next = await afterRestart.submit({ filaments: ['PLA-White'] }, Readable.from(['G1 X0\n']), DAVE);
       expect(next.id).toBe(2);
     },
     30_000

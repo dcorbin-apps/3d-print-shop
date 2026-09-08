@@ -57,9 +57,9 @@ describe('the shop over HTTP', () => {
     // at its first comparison, somewhere else entirely - which is the whole reason for a client
     // rather than a cast over `response.json()`.
     it('hands back a time as a time', async () => {
-      answers = { status: 200, body: [{ ...aJob, submittedAt: '2026-09-06T11:22:04.177Z' }] };
+      answers = { status: 200, body: { accessibleJobs: [{ ...aJob, submittedAt: '2026-09-06T11:22:04.177Z' }], totalJobs: 1 } };
 
-      const [job] = await shop.jobs();
+      const [job] = (await shop.jobs()).accessibleJobs;
 
       expect(job.submittedAt).toBeInstanceOf(Date);
       expect(job.submittedAt.toISOString()).toBe('2026-09-06T11:22:04.177Z');

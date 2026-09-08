@@ -1,4 +1,4 @@
-import type { Job, JobDetails, Verdict } from './Job.js';
+import type { Job, JobDetails, JobsHeld, Verdict } from './Job.js';
 import type { PrinterRecord, RegisteredPrinter } from './Printer.js';
 
 /** Whether the shop had this printer already, which is the difference between adding and changing. */
@@ -12,8 +12,12 @@ export interface PrinterAdded {
 // covered different halves of the same API, duplicated the same fetch-and-explain plumbing, and
 // covered the job side between them not at all.
 export interface Shop {
-  /** Everything the shop is holding. */
-  jobs(): Promise<Job[]>;
+  /**
+   * What this caller may see, and how many jobs the shop holds altogether. An admin sees a list as
+   * long as the total; everybody else sees their own beside a number that says how busy it is.
+   */
+  jobs(): Promise<JobsHeld>;
+  /** Refused as a job that is not here when it is not this caller's to read - see `jobs`. */
   job(id: number): Promise<Job>;
   /**
    * The description goes first and the gcode second, which is the shop's own rule: it refuses a job

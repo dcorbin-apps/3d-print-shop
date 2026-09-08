@@ -98,7 +98,7 @@ export class JobStore {
    * held whole. Nothing incomplete is ever visible: the record is written last, and a stream that
    * fails or delivers nothing takes the whole job directory with it.
    */
-  async submit(details: JobDetails, gcode: Readable): Promise<Job> {
+  async submit(details: JobDetails, gcode: Readable, owner: string): Promise<Job> {
     validateDetails(details);
     await this.requireSpool();
     await this.requireRoomForOne();
@@ -117,6 +117,11 @@ export class JobStore {
       const record: JobRecord = {
         ...details,
         id,
+        // AIDEV-NOTE: said by the shop rather than by the submission - a client cannot claim to be
+        // somebody else, because this is the caller the request was already authenticated as. It is
+        // written here and nowhere again: the record is written once, so an owner is for the life of
+        // the job, which is why what is stored is a caller's ID and never their name.
+        owner,
         displayName: details.displayName ?? generatedDisplayName(id),
         submittedAt: new Date(),
         gcodeBytes,

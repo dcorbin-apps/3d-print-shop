@@ -122,6 +122,14 @@ describe('the shop, running as its own process', () => {
     return submitGcode(shop, GCODE);
   }
 
+  async function submitAs(shop: RunningShop, token: string, displayName: string): Promise<Response> {
+    const body = new FormData();
+    body.append('job', JSON.stringify({ filaments: ['PLA-SpaceGray'], displayName }));
+    body.append('gcode', new Blob([GCODE]), 'print.gcode');
+
+    return fetch(`${shop.url}/jobs`, { method: 'POST', body, headers: { authorization: `Bearer ${token}` } });
+  }
+
   // 0600, because the shop refuses to read credentials anybody else could.
   async function credentialsNaming(callers: { id: string; name: string; role: string; token: string }[]): Promise<string> {
     const written = await mkdtemp(path.join(tmpdir(), 'print-shop-etc-'));
@@ -222,7 +230,7 @@ describe('the shop, running as its own process', () => {
 
     const again = await shopIsRunning();
 
-    expect(await (await ask(again, '/jobs')).json()).toMatchObject([{ id: 1, displayName: 'Player Box', state: 'queued' }]);
+    expect(await (await ask(again, '/jobs')).json()).toMatchObject({ accessibleJobs: [{ id: 1, displayName: 'Player Box', state: 'queued' }] });
   }, 30_000);
 
   // The cap belongs to the operator: a slicer that outgrows the default has to be able to say so,
@@ -272,6 +280,23 @@ describe('the shop, running as its own process', () => {
       const listing = ['printer', '--shop-url', shop.url, 'list'];
 
       expect((await runCommandSaying(listing, { PRINT_SHOP_TOKEN: '', XDG_CONFIG_HOME: spool })).code).toBe(1);
+    }, 30_000);
+
+    // AIDEV-NOTE: the whole way through, for the half of access control a role cannot express -
+    // argv, the API, the store, and back out as the lines a person reads. A user is shown their own
+    // work and told only how much else the shop is holding.
+    it('is shown its own work, and a count of what is not', async () => {
+      const shop = await guardedShop();
+      await addMk4(shop);
+      await submitAs(shop, USER, 'Player Box');
+      await submitAs(shop, ADMIN, 'Somebody Else');
+
+      const { stdout } = await runCommandSaying(['job', '--shop-url', shop.url, 'list'], { PRINT_SHOP_TOKEN: USER });
+
+      expect(stdout.trim().split('\n')).toEqual([
+        '1  Player Box  PLA-SpaceGray  queued',
+        'and 1 more this shop is holding, which are not yours',
+      ]);
     }, 30_000);
 
     // The role travels with the token: the same command, the same shop, a different caller.

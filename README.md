@@ -79,9 +79,19 @@ The `id` is what the shop records as owning a job, and a record is never rewritt
 fixed for as long as that caller exists, while the `name` beside it is only what a log or a UI
 shows and may be changed whenever. Letters, digits, dot, dash and underscore, up to 64.
 
-A `user` submits jobs and reads what the shop holds. An `admin` does everything else - printers,
-verdicts, and shutting down. A caller presents its token as `Authorization: Bearer ...`, which
-`HttpShop` sends for you from `PRINT_SHOP_TOKEN` or `~/.config/3d-print-shop/token`.
+A `user` submits jobs and reads them back. An `admin` does everything else - printers and shutting
+down. A caller presents its token as `Authorization: Bearer ...`, which `HttpShop` sends for you
+from `PRINT_SHOP_TOKEN` or `~/.config/3d-print-shop/token`.
+
+**A job belongs to the caller who submitted it**, by the `id` above, written with the record and
+never rewritten. The owner or an admin reads it; anybody else is told it is not here, because a
+refusal would say that it exists. `jobs()` answers `{ accessibleJobs, totalJobs }` - what this
+caller may see, and how many the shop holds altogether, which is all a stranger learns.
+
+**A verdict is the owner's**, whatever their role: saying whether the thing you asked for came out
+the way you wanted is a question only the caller who asked it can answer. An admin may judge any job
+too - an owner is revoked by their entry leaving `callers.json`, and a job nobody may judge would
+hold a printer's bed for good.
 
 The shop's own credentials for reaching each printer are a separate file,
 `/etc/3d-print-shop/printer-keys.json`, keyed by the printer's name - separate because copying the

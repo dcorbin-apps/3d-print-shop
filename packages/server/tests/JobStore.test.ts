@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { InvalidSubmission } from '../src/Job';
-import type { BuildVolume, JobDetails, PrinterOutcome } from '../src/Job';
+import type { BuildVolume, Job, JobDetails, PrinterOutcome } from '../src/Job';
 import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, SpoolUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
 
 async function readAll(stream: Readable): Promise<Buffer> {
@@ -20,6 +20,13 @@ describe('JobStore', () => {
   let shop: JobStore;
 
   const gcode = (text = 'G1 X0 Y0\n'): Readable => Readable.from([text]);
+
+  // Every submission carries a caller: the shop answers nobody it cannot name, so there is no such
+  // thing as a job that arrived unowned. Whose it is matters in `who a job belongs to` below; the
+  // rest of these say it once, here.
+  const DAVE = 'u-dave';
+
+  const submit = (details: JobDetails, gcode: Readable, owner: string = DAVE): Promise<Job> => shop.submit(details, gcode, owner);
 
   function details(overrides: Partial<JobDetails> = {}): JobDetails {
     return { filaments: ['PLA-SpaceGray'], ...overrides };
@@ -46,33 +53,42 @@ describe('JobStore', () => {
 
   describe('taking a job in', () => {
     it('issues ids in order', async () => {
-      const first = await shop.submit(details(), gcode());
-      const second = await shop.submit(details(), gcode());
+      const first = await submit(details(), gcode());
+      const second = await submit(details(), gcode());
 
       expect([first.id, second.id]).toEqual([1, 2]);
     });
 
     it('keeps the display name a client gave it', async () => {
-      const job = await shop.submit(details({ displayName: 'Player Box' }), gcode());
+      const job = await submit(details({ displayName: 'Player Box' }), gcode());
 
       expect(job.displayName).toBe('Player Box');
     });
 
     it('names a job the client did not', async () => {
-      const job = await shop.submit(details(), gcode());
+      const job = await submit(details(), gcode());
 
       expect(job.displayName).toBe('Job 1');
     });
 
+    // AIDEV-NOTE: written with the record and never again - the record is written once, so an owner
+    // is for the life of the job. It is the caller's ID rather than their name for the same reason:
+    // a name may be retyped, and a record that cannot be rewritten could not follow it.
+    it('records who submitted it, and still says so after a restart', async () => {
+      const { id } = await submit(details(), gcode(), 'u-gamebox');
+
+      expect((await new JobStore(spool).find(id))?.owner).toBe('u-gamebox');
+    });
+
     it('starts a job queued, with nothing printed yet', async () => {
-      const job = await shop.submit(details(), gcode());
+      const job = await submit(details(), gcode());
 
       expect(job).toMatchObject({ state: 'queued' });
     });
 
     // Carried, never interpreted - it is how a client keeps its own meaning attached.
     it('carries the metadata, remote path and printer through untouched', async () => {
-      const job = await shop.submit(
+      const job = await submit(
         details({ remotePath: 'gamebox/cards.gcode', printer: 'mk4', metadata: { pieces: [{ piece: 'cards' }] } }),
         gcode()
       );
@@ -90,19 +106,19 @@ describe('JobStore', () => {
       ['G1 X0\n', 6],
       ['G1 X0 Y0 E1\n', 12],
     ])('records how many bytes of %p arrived', async (text, expected) => {
-      const job = await shop.submit(details(), gcode(text));
+      const job = await submit(details(), gcode(text));
 
       expect(job.gcodeBytes).toBe(expected);
     });
 
     it('hands the gcode back when something is about to print it', async () => {
-      const job = await shop.submit(details(), gcode('G1 X0 Y0\n'));
+      const job = await submit(details(), gcode('G1 X0 Y0\n'));
 
       expect((await readAll(await shop.gcodeStream(job.id))).toString()).toBe('G1 X0 Y0\n');
     });
 
     it('refuses details it can see are wrong before reading the stream', async () => {
-      await expect(shop.submit(details({ filaments: [] }), gcode())).rejects.toThrow(InvalidSubmission);
+      await expect(submit(details({ filaments: [] }), gcode())).rejects.toThrow(InvalidSubmission);
     });
   });
 
@@ -116,7 +132,7 @@ describe('JobStore', () => {
       );
 
     it('refuses a stream that delivers nothing', async () => {
-      await expect(shop.submit(details(), Readable.from([]))).rejects.toThrow('delivered none');
+      await expect(submit(details(), Readable.from([]))).rejects.toThrow('delivered none');
     });
 
     // AIDEV-NOTE: the point of writing the record LAST. A half-delivered job that stayed on disk
@@ -125,7 +141,7 @@ describe('JobStore', () => {
       ['delivered nothing', (): Readable => Readable.from([])],
       ['died part way', brokenStream],
     ])('leaves nothing behind when the stream %s', async (_case, stream) => {
-      await expect(shop.submit(details(), stream())).rejects.toThrow();
+      await expect(submit(details(), stream())).rejects.toThrow();
 
       expect(await shop.all()).toEqual([]);
       await expect(fs.readdir(path.join(spool, 'jobs'))).resolves.toEqual([]);
@@ -135,16 +151,16 @@ describe('JobStore', () => {
     // over in its own order - "10" sorts before "2". Fewer jobs than that and a listing that never
     // sorted at all would look right.
     it('lists what it holds in the order it took them, not the order the disk gives them', async () => {
-      for (let taken = 0; taken < 10; taken++) await shop.submit(details(), gcode());
+      for (let taken = 0; taken < 10; taken++) await submit(details(), gcode());
 
       expect((await shop.all()).map((job) => job.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     });
 
     // A number that once named a job must never name a different one.
     it('spends the id of a job that failed rather than reusing it', async () => {
-      await expect(shop.submit(details(), Readable.from([]))).rejects.toThrow();
+      await expect(submit(details(), Readable.from([]))).rejects.toThrow();
 
-      expect((await shop.submit(details(), gcode())).id).toBe(2);
+      expect((await submit(details(), gcode())).id).toBe(2);
     });
   });
 
@@ -154,7 +170,7 @@ describe('JobStore', () => {
     const recordOnDisk = (): Promise<string> => fs.readFile(path.join(spool, 'jobs', String(id), 'job.json'), 'utf-8');
 
     beforeEach(async () => {
-      id = (await shop.submit(details(), gcode())).id;
+      id = (await submit(details(), gcode())).id;
     });
 
     // AIDEV-NOTE: the claim the whole model rests on. A job is printing because a PRINTER says it is
@@ -245,7 +261,7 @@ describe('JobStore', () => {
       await shop.finishedPrinting('mk4', 'finished');
       await shop.approve(id);
 
-      expect((await shop.submit(details(), gcode())).id).toBe(2);
+      expect((await submit(details(), gcode())).id).toBe(2);
     });
   });
 
@@ -287,8 +303,8 @@ describe('JobStore', () => {
 
   describe('a move the lifecycle does not allow', () => {
     it('refuses a second job on a printer that is already holding one', async () => {
-      const { id } = await shop.submit(details(), gcode());
-      const other = await shop.submit(details(), gcode());
+      const { id } = await submit(details(), gcode());
+      const other = await submit(details(), gcode());
       await shop.startPrinting('mk4', id);
 
       await expect(shop.startPrinting('mk4', other.id)).rejects.toThrow(WrongState);
@@ -297,14 +313,14 @@ describe('JobStore', () => {
     // Two printers, because one would be satisfied by refusing every second start.
     it('refuses to start a job another printer is already holding', async () => {
       await addPrinter('mini', { x: 180, y: 180, z: 180 });
-      const { id } = await shop.submit(details(), gcode());
+      const { id } = await submit(details(), gcode());
       await shop.startPrinting('mk4', id);
 
       await expect(shop.startPrinting('mini', id)).rejects.toThrow(WrongState);
     });
 
     it('refuses to start anything on a printer that is stopped', async () => {
-      const { id } = await shop.submit(details(), gcode());
+      const { id } = await submit(details(), gcode());
       await shop.pause('mk4', 'the door is open');
 
       await expect(shop.startPrinting('mk4', id)).rejects.toThrow(WrongState);
@@ -314,13 +330,13 @@ describe('JobStore', () => {
     // job claiming mk4 is not mini's to start, however it was asked for.
     it('refuses to start a job on a printer that could not take it', async () => {
       await addPrinter('mini', { x: 180, y: 180, z: 180 });
-      const { id } = await shop.submit(details({ printer: 'mk4' }), gcode());
+      const { id } = await submit(details({ printer: 'mk4' }), gcode());
 
       await expect(shop.startPrinting('mini', id)).rejects.toThrow(WrongState);
     });
 
     it('refuses to finish a print that never started', async () => {
-      await shop.submit(details(), gcode());
+      await submit(details(), gcode());
 
       await expect(shop.finishedPrinting('mk4', 'finished')).rejects.toThrow(WrongState);
     });
@@ -329,7 +345,7 @@ describe('JobStore', () => {
     it.each<['approve' | 'reject' | 'abandon']>([['approve'], ['reject'], ['abandon']])(
       'refuses to %s a job still queued',
       async (verdict) => {
-        const { id } = await shop.submit(details(), gcode());
+        const { id } = await submit(details(), gcode());
 
         await expect(shop[verdict](id)).rejects.toThrow(WrongState);
       }
@@ -338,7 +354,7 @@ describe('JobStore', () => {
     // The machine is still printing it. Letting the printer go would queue the job for a second
     // machine while the first is still running it.
     it('refuses to take a printer out of the shop while it is holding work', async () => {
-      const { id } = await shop.submit(details(), gcode());
+      const { id } = await submit(details(), gcode());
       await shop.startPrinting('mk4', id);
 
       await expect(shop.removePrinter('mk4')).rejects.toThrow(WrongState);
@@ -423,11 +439,11 @@ describe('JobStore', () => {
     it('refuses everything when it has no printers at all', async () => {
       const empty = new JobStore(await fs.mkdtemp(path.join(tmpdir(), 'print-shop-empty-')));
 
-      await expect(empty.submit(details(), gcode())).rejects.toThrow('no printers');
+      await expect(empty.submit(details(), gcode(), DAVE)).rejects.toThrow('no printers');
     });
 
     it('refuses a job for a printer it does not have, naming the ones it does', async () => {
-      await expect(shop.submit(details({ printer: 'ender' }), gcode())).rejects.toThrow(
+      await expect(submit(details({ printer: 'ender' }), gcode())).rejects.toThrow(
         'no printer called ender - this shop has mk4'
       );
     });
@@ -435,18 +451,18 @@ describe('JobStore', () => {
     it('refuses a job too big for anything here, saying how big everything is', async () => {
       const tall = details({ requiredBuildVolume: { x: 100, y: 100, z: 400 } });
 
-      await expect(shop.submit(tall, gcode())).rejects.toThrow('nothing here has room for 100x100x400mm');
+      await expect(submit(tall, gcode())).rejects.toThrow('nothing here has room for 100x100x400mm');
     });
 
     // Two sizes, because one would be satisfied by refusing everything that names a volume.
     it('takes a job that fits', async () => {
       const fits = details({ requiredBuildVolume: { x: 240, y: 200, z: 100 } });
 
-      await expect(shop.submit(fits, gcode())).resolves.toMatchObject({ id: 1 });
+      await expect(submit(fits, gcode())).resolves.toMatchObject({ id: 1 });
     });
 
     it('takes a job that asked for no particular room', async () => {
-      await expect(shop.submit(details(), gcode())).resolves.toMatchObject({ id: 1 });
+      await expect(submit(details(), gcode())).resolves.toMatchObject({ id: 1 });
     });
   });
 
@@ -454,21 +470,21 @@ describe('JobStore', () => {
     // AIDEV-NOTE: the load-bearing test. A second store over the same directory is what a restarted
     // service is, and it must find everything by scanning - there is no index to rebuild.
     it('finds the jobs a previous run left, in the states it left them', async () => {
-      const printing = await shop.submit(details({ displayName: 'Player Box' }), gcode());
-      await shop.submit(details(), gcode());
+      const printing = await submit(details({ displayName: 'Player Box' }), gcode());
+      await submit(details(), gcode());
       await shop.startPrinting('mk4', printing.id);
 
       expect(await held(new JobStore(spool))).toEqual(['1:Player Box:printing', '2:Job 2:queued']);
     });
 
     it('goes on issuing ids where the previous run stopped', async () => {
-      await shop.submit(details(), gcode());
+      await submit(details(), gcode());
 
-      expect((await new JobStore(spool).submit(details(), gcode())).id).toBe(2);
+      expect((await new JobStore(spool).submit(details(), gcode(), DAVE)).id).toBe(2);
     });
 
     it('still has the gcode a previous run stored', async () => {
-      const { id } = await shop.submit(details(), gcode('G1 X42\n'));
+      const { id } = await submit(details(), gcode('G1 X42\n'));
 
       expect((await readAll(await new JobStore(spool).gcodeStream(id))).toString()).toBe('G1 X42\n');
     });
@@ -485,7 +501,7 @@ describe('JobStore', () => {
     }
 
     it('keeps a job to itself, directory and contents', async () => {
-      await shop.submit(details({ displayName: 'Player Box' }), gcode());
+      await submit(details({ displayName: 'Player Box' }), gcode());
 
       expect(await modeOf('jobs', '1')).toBe('700');
       expect(await modeOf('jobs', '1', 'print.gcode')).toBe('600');
@@ -502,7 +518,7 @@ describe('JobStore', () => {
 
     // Written by the same atomic rename as everything else, so it is easy to miss.
     it('keeps the id counter to itself', async () => {
-      await shop.submit(details(), gcode());
+      await submit(details(), gcode());
 
       expect(await modeOf('next-id')).toBe('600');
     });
@@ -514,7 +530,7 @@ describe('JobStore', () => {
     it.each([
       ['listing', (store: JobStore) => store.all()],
       ['finding', (store: JobStore) => store.find(1)],
-      ['submitting', (store: JobStore) => store.submit({ filaments: ['PLA'] }, Readable.from(['G1']))],
+      ['submitting', (store: JobStore) => store.submit({ filaments: ['PLA'] }, Readable.from(['G1']), DAVE)],
       // Asked at startup, so a service refuses to START rather than refusing to serve.
       ['starting up', (store: JobStore) => store.ready()],
     ])('refuses rather than creating one when %s', async (_case, act) => {

@@ -64,8 +64,10 @@ describe('recovering a print outcome across a dropped connection', () => {
     return machine;
   }
 
+  const DAVE = 'u-dave';
+
   async function submit(displayName = 'tray'): Promise<number> {
-    const job = await shop.submit({ filaments: ['PLA'], displayName }, Readable.from(['G1 X0 Y0\n']));
+    const job = await shop.submit({ filaments: ['PLA'], displayName }, Readable.from(['G1 X0 Y0\n']), DAVE);
     return job.id;
   }
 

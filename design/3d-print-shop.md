@@ -245,7 +245,7 @@ gamebox and curl all speak it without acquiring anything to do so.
 
 ```
 POST   /jobs                    submit
-GET    /jobs                    what is queued, and what each is waiting for
+GET    /jobs                    what this caller may see, and how many there are altogether
 GET    /jobs/{id}
 PUT    /jobs/{id}/verdict       approved | rejected | abandoned
 GET    /printers
@@ -274,6 +274,12 @@ print changes, which is why it is a route rather than a file somebody edits.
 `startNextPrint` inside the service, and they are the loop's own bookkeeping rather than anything a client decides.
 Publishing them would invite a second writer into a store built for one, and would hand out states
 no client is in a position to set honestly - only the loop knows whether a printer took a job.
+
+**`GET /jobs` answers one object, not a list.** `{ accessibleJobs, totalJobs }` - what this caller
+may see, and how many the shop holds whoever owns them. A list and a count asked for separately are
+two snapshots: a submission landing between them gives a GUI three jobs and a total of two, and
+polling is the update model here, so that pair would be asked over and over. There is also no clean
+second route for it - `GET /jobs/count` collides with `GET /jobs/{id}`.
 
 **A verdict is a resource, not an action.** `PUT /jobs/7/verdict` carrying `approved`, `rejected` or
 `abandoned`, rather than `POST /jobs/7/approve`. The third of them arrived as another value on the
