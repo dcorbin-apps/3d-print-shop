@@ -78,7 +78,7 @@ export function createCLI(): Command {
       // foreman is told about all of them rather than about a chosen few. Not awaited: a client
       // waiting on its own submission has no reason to wait for a printer to take a different job.
       const lookForWork = (): void => {
-        void foreman.considerStarting().catch((failure: unknown) => log.failed('could not look for work', { why: (failure as Error).message }));
+        void foreman.considerStarting().catch((failure: unknown) => log.error('could not look for work', { why: (failure as Error).message }));
       };
 
       // AIDEV-NOTE: stopping the listener is what makes the process end - nothing else here holds
@@ -98,7 +98,7 @@ export function createCLI(): Command {
         releaseSpool();
 
         void foreman.watchersSettled().then(() => {
-          log.happened('the shop has stopped');
+          log.info('the shop has stopped');
           say(['3d-print-shop has stopped']);
         });
       };
@@ -123,13 +123,13 @@ export function createCLI(): Command {
       // AIDEV-NOTE: which spool and which credentials, because a process that outlives the run that
       // started it is a process somebody has to identify later - and argv alone was not enough to do
       // that for two shops found still listening, one of them 14 hours old.
-      log.happened('the shop is listening', { address: bound.address, port: bound.port, callers: callers.size, spool, etc });
+      log.info('the shop is listening', { address: bound.address, port: bound.port, callers: callers.size, spool, etc });
       say([`3d-print-shop is listening on ${bound.address}:${bound.port}`, `${callers.size} caller(s) may ask`]);
 
       // A restart does not stop a machine. Prints that were already running are picked up first,
       // then anything that could start now - nothing else will wake this up until a change arrives.
       const pickedUp = await foreman.resumeWatching();
-      if (pickedUp.length > 0) log.happened('prints picked up after a restart', { printers: pickedUp });
+      if (pickedUp.length > 0) log.info('prints picked up after a restart', { printers: pickedUp });
 
       lookForWork();
     });

@@ -90,7 +90,7 @@ describe('the foreman', () => {
 
       await watched.considerStarting();
 
-      expect(lines.join('\n')).toContain(`note  started printing printer=mk4 job=${id} displayName="Job 1" gcodeBytes=9`);
+      expect(lines.join('\n')).toContain(`INFO  started printing printer=mk4 job=${id} displayName="Job 1" gcodeBytes=9`);
     });
 
     it('says why it could not send one, which is the reason an operator has to act on', async () => {
@@ -99,7 +99,7 @@ describe('the foreman', () => {
 
       await watched.considerStarting();
 
-      expect(lines.join('\n')).toContain('fault could not send a job to the printer printer=mk4 job=1 why="octopi.local refused the connection"');
+      expect(lines.join('\n')).toContain('ERROR could not send a job to the printer printer=mk4 job=1 why="octopi.local refused the connection"');
     });
 
     it('says what the printer made of a print when it ended', async () => {
@@ -109,7 +109,7 @@ describe('the foreman', () => {
       await watched.considerStarting();
       await until(jobIs(id, 'awaiting-approval'));
 
-      expect(lines.join('\n')).toContain('note  print ended printer=mk4 outcome=failed');
+      expect(lines.join('\n')).toContain('INFO  print ended printer=mk4 outcome=failed');
     });
   });
 

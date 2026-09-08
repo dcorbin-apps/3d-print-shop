@@ -1,22 +1,23 @@
 /** What a line says besides its message. Values are rendered as `key=value`; nothing is read back. */
 export type About = Record<string, unknown>;
 
-// AIDEV-NOTE: two levels, not five. `note` is what an operator needs to see happened; `fault` is why
+// AIDEV-NOTE: two levels, not five. INFO is what an operator needs to see happened; ERROR is why
 // something did not work. A shop that ran for eight hours has to be readable in one pass, and every
 // level past these two is a decision at each call site that somebody eventually gets wrong.
 export interface Log {
-  happened(message: string, about?: About): void;
-  failed(message: string, about?: About): void;
+  info(message: string, about?: About): void;
+  error(message: string, about?: About): void;
 }
 
 // AIDEV-NOTE: the default everywhere, so a unit test is silent without saying so and a component
 // handed no log still runs. Silence is a decision the CALLER makes by not passing one.
 export const silent: Log = {
-  happened: () => undefined,
-  failed: () => undefined,
+  info: () => undefined,
+  error: () => undefined,
 };
 
-const LEVELS = { note: 'note ', fault: 'fault' };
+// Padded to one width so a run reads down the page as columns rather than as ragged text.
+const LEVELS = { info: 'INFO ', error: 'ERROR' };
 
 /**
  * One line per event: `<when> <level> <message>`, then whatever the line was about as `key=value`.
@@ -31,7 +32,7 @@ export function toStdout(now: () => Date = () => new Date(), write: (line: strin
     (message: string, about: About = {}): void =>
       write(`${now().toISOString()} ${LEVELS[level]} ${message}${saying(about)}`);
 
-  return { happened: at('note'), failed: at('fault') };
+  return { info: at('info'), error: at('error') };
 }
 
 // `key=value`, and quoted only when it would otherwise run into the next one. A value a person can
@@ -71,7 +72,7 @@ export function redacting(log: Log, secrets: Iterable<string>): Log {
   const scrubbed = (about: About = {}): About => JSON.parse(scrub(JSON.stringify(about))) as About;
 
   return {
-    happened: (message, about) => log.happened(scrub(message), scrubbed(about)),
-    failed: (message, about) => log.failed(scrub(message), scrubbed(about)),
+    info: (message, about) => log.info(scrub(message), scrubbed(about)),
+    error: (message, about) => log.error(scrub(message), scrubbed(about)),
   };
 }

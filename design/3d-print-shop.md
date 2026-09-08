@@ -365,8 +365,9 @@ objects is not a log anybody skims. The date leads so a run sorts and greps by t
 are the same width so it reads down the page as columns, and only a value that would run into the
 next one is quoted.
 
-**Two levels, not five.** `note` is what an operator needs to know happened; `fault` is why something
-did not work. Eight hours of a running shop has to be readable in one pass, and every level past
+**Two levels, not five.** `INFO` is what an operator needs to know happened; `ERROR` is why something
+did not work. The two words everybody already knows, rather than a private vocabulary somebody has to
+learn before they can grep. Eight hours of a running shop has to be readable in one pass, and every level past
 those two is a decision at each call site that somebody eventually gets wrong.
 
 **A port the CLI supplies**, injected the way `Machines` is, and defaulting to a silent one. A unit

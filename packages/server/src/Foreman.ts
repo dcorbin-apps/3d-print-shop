@@ -76,7 +76,7 @@ export class Foreman {
         // AIDEV-NOTE: invisible until now. A shop that came back up and picked a print back up said
         // nothing about it, so the one moment an operator would want confirmation - did it lose my
         // eight-hour print? - was the one the shop had no answer for.
-        this.log.happened('picked up a print already running', { printer: printer.name, job: printer.holding.job });
+        this.log.info('picked up a print already running', { printer: printer.name, job: printer.holding.job });
         picked.push(printer.name);
       }
     }
@@ -98,7 +98,7 @@ export class Foreman {
       const attempt = await startNextPrint(this.shop, () => this.machines(printer), printer.name);
 
       if (attempt.did === 'started') {
-        this.log.happened('started printing', {
+        this.log.info('started printing', {
           printer: printer.name,
           job: attempt.job.id,
           displayName: attempt.job.displayName,
@@ -108,7 +108,7 @@ export class Foreman {
       }
 
       if (attempt.did === 'could-not-start') {
-        this.log.failed('could not send a job to the printer', {
+        this.log.error('could not send a job to the printer', {
           printer: printer.name,
           job: attempt.job.id,
           why: attempt.failure.message,
@@ -119,7 +119,7 @@ export class Foreman {
       // would otherwise be tried again on every single change, one failure per change. It stops for
       // the same reason a failed upload stops it: the next attempt will fail the same way.
       const why = `could not start anything on ${printer.name}: ${(failure as Error).message}`;
-      this.log.failed('printer stopped', { printer: printer.name, why });
+      this.log.error('printer stopped', { printer: printer.name, why });
       await this.shop.pause(printer.name, why);
     }
   }
@@ -147,7 +147,7 @@ export class Foreman {
 
       // What the PRINTER said, which is not a verdict - the bed is still held until a person judges
       // what came off it.
-      this.log.happened('print ended', { printer: name, outcome });
+      this.log.info('print ended', { printer: name, outcome });
     } catch (failure) {
       // On the way out this is expected, and stopping every printer on a shutdown would leave a
       // shop that comes back up refusing to print for a reason nobody caused.
@@ -156,7 +156,7 @@ export class Foreman {
       // Losing track leaves a job that says it is printing and a machine nobody is listening to.
       // Stopping the printer is what puts that in front of an operator instead of leaving it.
       const why = `lost track of the print on ${name}: ${(failure as Error).message}`;
-      this.log.failed('printer stopped', { printer: name, why });
+      this.log.error('printer stopped', { printer: name, why });
       await this.shop.pause(name, why).catch(() => undefined);
     }
   }

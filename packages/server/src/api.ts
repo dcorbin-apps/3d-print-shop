@@ -154,8 +154,8 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
         caller: request.caller?.name,
       };
 
-      if (response.statusCode >= 500) log.failed('request failed', about);
-      else log.happened('request', about);
+      if (response.statusCode >= 500) log.error('request failed', about);
+      else log.info('request', about);
     });
 
     next();
@@ -205,7 +205,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   api.post('/jobs', async (request, response) => {
     const job = await submission(shop, request, request.caller.id);
 
-    log.happened('job submitted', {
+    log.info('job submitted', {
       job: job.id,
       displayName: job.displayName,
       filaments: job.filaments,
@@ -255,7 +255,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     // AIDEV-NOTE: the one place a verdict is recorded at all. The job leaves the shop when it is
     // approved and the store keeps no history, so without this line nothing afterwards can say what
     // was decided about job 7 - or that an ADMIN decided it rather than the person who asked for it.
-    log.happened('verdict given', { job: id, verdict, by: request.caller.name, owner: judging.owner });
+    log.info('verdict given', { job: id, verdict, by: request.caller.name, owner: judging.owner });
 
     if (verdict === 'rejected') {
       response.json(await shop.reject(id));
@@ -322,7 +322,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     }
 
     const printer = await shop.load(request.params.name, loaded as string[]);
-    log.happened('filament loaded', { printer: printer.name, loaded: printer.loaded });
+    log.info('filament loaded', { printer: printer.name, loaded: printer.loaded });
 
     response.json(printer);
   });
@@ -335,10 +335,10 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
         throw new UnusableRequest('stopping a printer needs a reason an operator can act on');
       }
       await shop.pause(request.params.name, reason);
-      log.happened('printer stopped', { printer: request.params.name, why: reason, by: request.caller.name });
+      log.info('printer stopped', { printer: request.params.name, why: reason, by: request.caller.name });
     } else if (stopped === false) {
       await shop.resume(request.params.name);
-      log.happened('printer started', { printer: request.params.name, by: request.caller.name });
+      log.info('printer started', { printer: request.params.name, by: request.caller.name });
     } else {
       throw new UnusableRequest('a printer status says stopped true or false');
     }
@@ -534,7 +534,7 @@ function explainRefusal(log: Log, error: unknown, _request: Request, response: R
   if (status === 500) {
     // The one the shop did NOT mean, so the whole of what broke goes down - and the client is told
     // nothing but where to look, because a message written by node carries paths and arguments.
-    log.failed('the shop could not answer a request', { why: (error as Error).stack ?? (error as Error).message });
+    log.error('the shop could not answer a request', { why: (error as Error).stack ?? (error as Error).message });
     response.status(500).json({ error: 'the shop could not do that, and why is in its log' });
 
     return;

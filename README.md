@@ -122,13 +122,13 @@ so a shop nobody gives verdicts to prints one thing per machine and then stops.
 and then `key=value` for the rest:
 
 ```
-2026-09-08T14:27:59.056Z note  job submitted job=1 displayName="Player Box" filaments=["PLA-Red"] owner=dave
-2026-09-08T14:27:59.067Z fault printer stopped printer=mk4 why="could not start anything on mk4: fetch failed"
+2026-09-08T14:27:59.056Z INFO  job submitted job=1 displayName="Player Box" filaments=["PLA-Red"] owner=dave
+2026-09-08T14:27:59.067Z ERROR printer stopped printer=mk4 why="could not start anything on mk4: fetch failed"
 ```
 
 What was submitted, what started on which printer, how each print ended, every verdict and who gave
 it, and every reason a printer was stopped. `launchd` and `systemd` both capture stdout, so there is no file for the shop to
-rotate. Two levels: `note` for what happened, `fault` for why something did not. A printer's key and
+rotate. Two levels: `INFO` for what happened, `ERROR` for why something did not. A printer's key and
 a caller's token are never written, whatever a failure was carrying when it arrived.
 
 **A printer's API key never reaches the command line**, where it would be in shell history and in
