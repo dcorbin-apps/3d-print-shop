@@ -1,14 +1,10 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Readable } from 'node:stream';
 import { OctoPrint, reconnectAfter, reconnectDelayMs, whyUnreachable } from '../src';
-import type { HttpClient, OctoPrintConfig, ReconnectDelay, WebSocketFactory } from '../src';
+import type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from '../src';
 
-interface MockWebSocket {
-  onopen: ((event: Event) => void) | null;
-  onmessage: ((event: MessageEvent) => void) | null;
-  onerror: ((event: Event) => void) | null;
-  onclose: ((event: Event) => void) | null;
-  send: jest.Mock<(data: string) => void>;
+interface MockPushSocket extends PushSocket {
+  send: jest.Mock<(frame: string) => void>;
   close: jest.Mock<() => void>;
 }
 
@@ -63,8 +59,8 @@ describe('why a machine could not be reached', () => {
 
 describe('OctoPrint', () => {
   let mockHttpClient: jest.Mock<HttpClient>;
-  let mockWs: MockWebSocket;
-  let mockWsFactory: jest.Mock<WebSocketFactory>;
+  let mockWs: MockPushSocket;
+  let mockWsFactory: jest.Mock<PushSocketFactory>;
   let mockReconnectDelay: jest.Mock<ReconnectDelay>;
   let adapter: OctoPrint;
 
@@ -76,13 +72,13 @@ describe('OctoPrint', () => {
   const REMOTE_PATH = 'gamebox/tray.gcode';
   const gcode = (): Readable => Readable.from(['G1 X0 Y0\n']);
 
-  function makeMockWs(): MockWebSocket {
+  function makeMockWs(): MockPushSocket {
     return {
       onopen: null,
       onmessage: null,
       onerror: null,
       onclose: null,
-      send: jest.fn<(data: string) => void>(),
+      send: jest.fn<(frame: string) => void>(),
       close: jest.fn<() => void>(),
     };
   }
@@ -103,8 +99,8 @@ describe('OctoPrint', () => {
     } as unknown as Response;
   }
 
-  function sendEvent(type: string, path: string = 'gamebox/tray.gcode', ws: MockWebSocket = mockWs): void {
-    ws.onmessage!(new MessageEvent('message', { data: JSON.stringify({ event: { type, payload: { path } } }) }));
+  function sendEvent(type: string, path: string = 'gamebox/tray.gcode', ws: MockPushSocket = mockWs): void {
+    ws.onmessage!(JSON.stringify({ event: { type, payload: { path } } }));
   }
 
   // AIDEV-NOTE: a tick is needed between connect() and onopen - the socket is not created until
@@ -113,7 +109,7 @@ describe('OctoPrint', () => {
   async function connectAdapter(): Promise<void> {
     const connectPromise = adapter.connect();
     await settle();
-    mockWs.onopen!(new Event('open'));
+    mockWs.onopen!();
     await connectPromise;
   }
 
@@ -139,14 +135,14 @@ describe('OctoPrint', () => {
     mockHttpClient = jest.fn<HttpClient>();
     mockHttpClient.mockResolvedValue(makeOkResponse({ name: 'gamebox', session: 'sess-1' }));
     mockWs = makeMockWs();
-    mockWsFactory = jest.fn<WebSocketFactory>().mockReturnValue(mockWs as unknown as WebSocket);
+    mockWsFactory = jest.fn<PushSocketFactory>().mockReturnValue(mockWs);
     mockReconnectDelay = jest.fn<ReconnectDelay>().mockResolvedValue(undefined);
 
     adapter = new OctoPrint(config, mockHttpClient, mockWsFactory, mockReconnectDelay);
   });
 
   describe('connect()', () => {
-    it('connects to the OctoPrint WebSocket endpoint', async () => {
+    it('connects to the OctoPrint push socket endpoint', async () => {
       void adapter.connect();
       await settle();
 
@@ -210,14 +206,27 @@ describe('OctoPrint', () => {
     it('rejects if the initial connection closes before opening', async () => {
       const promise = adapter.connect();
       await settle();
-      mockWs.onclose!(new Event('close'));
-      await expect(promise).rejects.toThrow('OctoPrint WebSocket closed before connection was established');
+      mockWs.onclose!();
+      await expect(promise).rejects.toThrow('the push socket to http://octoprint.local closed before it opened');
+    });
+
+    // The reason is offered on the error event and nowhere else - a close carries none - so a
+    // socket that reported one and a socket that just went away must not read the same.
+    it('says why the initial connection failed, when the socket said why', async () => {
+      const promise = adapter.connect();
+      await settle();
+      mockWs.onerror!(Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:80'), { code: 'ECONNREFUSED' }));
+      mockWs.onclose!();
+
+      await expect(promise).rejects.toThrow(
+        'the push socket to http://octoprint.local closed before it opened: nothing is listening at http://octoprint.local (ECONNREFUSED)'
+      );
     });
 
     it('does not attempt to reconnect after the initial connection fails', async () => {
       const promise = adapter.connect();
       await settle();
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       await expect(promise).rejects.toThrow();
       await Promise.resolve();
       expect(mockReconnectDelay).not.toHaveBeenCalled();
@@ -225,7 +234,7 @@ describe('OctoPrint', () => {
   });
 
   describe('disconnect()', () => {
-    it('closes the underlying WebSocket', async () => {
+    it('closes the underlying socket', async () => {
       await connectAdapter();
       adapter.disconnect();
       expect(mockWs.close).toHaveBeenCalled();
@@ -234,7 +243,7 @@ describe('OctoPrint', () => {
     it('prevents a subsequent close from triggering a reconnect', async () => {
       await connectAdapter();
       adapter.disconnect();
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       await Promise.resolve();
       expect(mockReconnectDelay).not.toHaveBeenCalled();
       expect(mockWsFactory).toHaveBeenCalledTimes(1);
@@ -251,7 +260,7 @@ describe('OctoPrint', () => {
     // shop told to stop mid-outage would sit out the delay before exiting.
     it('tells a backoff that is already waiting to stop waiting', async () => {
       await connectAdapter();
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
 
       const [, cancelled] = mockReconnectDelay.mock.calls[0];
       expect(cancelled.aborted).toBe(false);
@@ -268,7 +277,7 @@ describe('OctoPrint', () => {
       adapter.disconnect();
 
       await connectAdapter();
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
 
       const [, cancelled] = mockReconnectDelay.mock.calls[0];
       expect(cancelled.aborted).toBe(false);
@@ -414,15 +423,15 @@ describe('OctoPrint', () => {
 
     it('reconnects instead of failing on an unexpected close', async () => {
       const secondWs = makeMockWs();
-      mockWsFactory.mockReturnValueOnce(secondWs as unknown as WebSocket);
+      mockWsFactory.mockReturnValueOnce(secondWs);
 
       const promise = adapter.awaitOutcome('gamebox/tray.gcode');
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       await settle();
 
       expect(mockWsFactory).toHaveBeenCalledTimes(2);
 
-      secondWs.onopen!(new Event('open'));
+      secondWs.onopen!();
       sendEvent('PrintDone', 'gamebox/tray.gcode', secondWs);
       await expect(promise).resolves.toBe('finished');
     });
@@ -431,23 +440,23 @@ describe('OctoPrint', () => {
     // outage is not reused.
     it('re-authenticates with a fresh session after reconnecting', async () => {
       const secondWs = makeMockWs();
-      mockWsFactory.mockReturnValueOnce(secondWs as unknown as WebSocket);
+      mockWsFactory.mockReturnValueOnce(secondWs);
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       await settle();
 
-      secondWs.onopen!(new Event('open'));
+      secondWs.onopen!();
       expect(secondWs.send).toHaveBeenCalledWith(JSON.stringify({ auth: 'gamebox:sess-1' }));
     });
 
     it('keeps retrying with increasing attempt numbers across repeated closes', async () => {
       const secondWs = makeMockWs();
       const thirdWs = makeMockWs();
-      mockWsFactory.mockReturnValueOnce(secondWs as unknown as WebSocket).mockReturnValueOnce(thirdWs as unknown as WebSocket);
+      mockWsFactory.mockReturnValueOnce(secondWs).mockReturnValueOnce(thirdWs);
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       await settle();
-      secondWs.onclose!(new Event('close'));
+      secondWs.onclose!();
       await settle();
 
       expect(mockReconnectDelay).toHaveBeenNthCalledWith(1, 1, expect.any(AbortSignal));
@@ -457,13 +466,13 @@ describe('OctoPrint', () => {
 
     it('resets the attempt count after a successful reconnect', async () => {
       const secondWs = makeMockWs();
-      mockWsFactory.mockReturnValueOnce(secondWs as unknown as WebSocket);
+      mockWsFactory.mockReturnValueOnce(secondWs);
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       await settle();
-      secondWs.onopen!(new Event('open'));
+      secondWs.onopen!();
 
-      secondWs.onclose!(new Event('close'));
+      secondWs.onclose!();
       await settle();
 
       expect(mockReconnectDelay).toHaveBeenNthCalledWith(2, 1, expect.any(AbortSignal));
@@ -543,7 +552,7 @@ describe('OctoPrint', () => {
     it('retries after a reconnect attempt is refused', async () => {
       mockHttpClient.mockResolvedValueOnce(makeErrorResponse(503, 'Service Unavailable'));
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       await settle();
 
       expect(mockReconnectDelay).toHaveBeenNthCalledWith(2, 2, expect.any(AbortSignal));
@@ -575,17 +584,17 @@ describe('OctoPrint', () => {
       );
     }
 
-    function sendStatus(ws: MockWebSocket, status: unknown, key: 'history' | 'current' = 'history'): void {
-      ws.onmessage!(new MessageEvent('message', { data: JSON.stringify({ [key]: status }) }));
+    function sendStatus(ws: MockPushSocket, status: unknown, key: 'history' | 'current' = 'history'): void {
+      ws.onmessage!(JSON.stringify({ [key]: status }));
     }
 
-    async function reconnectReporting(status: unknown): Promise<MockWebSocket> {
+    async function reconnectReporting(status: unknown): Promise<MockPushSocket> {
       const nextWs = makeMockWs();
-      mockWsFactory.mockReturnValueOnce(nextWs as unknown as WebSocket);
+      mockWsFactory.mockReturnValueOnce(nextWs);
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       await settle();
-      nextWs.onopen!(new Event('open'));
+      nextWs.onopen!();
       await settle();
       sendStatus(nextWs, status);
       await settle();
@@ -693,10 +702,10 @@ describe('OctoPrint', () => {
       respondTo({ [TRAY_FILE_URL]: makeOkResponse({ prints: { last: { success: true } } }) });
 
       const nextWs = makeMockWs();
-      mockWsFactory.mockReturnValueOnce(nextWs as unknown as WebSocket);
-      mockWs.onclose!(new Event('close'));
+      mockWsFactory.mockReturnValueOnce(nextWs);
+      mockWs.onclose!();
       await settle();
-      nextWs.onopen!(new Event('open'));
+      nextWs.onopen!();
       await settle();
       sendStatus(nextWs, idleStatus(), 'current');
       await settle();
@@ -725,9 +734,9 @@ describe('OctoPrint', () => {
     const TRAY_FILE_URL = 'http://octoprint.local/api/files/local/gamebox/tray.gcode';
     let currentTimeMs: number;
 
-    function sendStatus(ws: MockWebSocket): void {
+    function sendStatus(ws: MockPushSocket): void {
       const status = { state: { flags: { printing: false, paused: false, pausing: false, cancelling: false } }, job: { file: { path: 'gamebox/tray.gcode' } } };
-      ws.onmessage!(new MessageEvent('message', { data: JSON.stringify({ history: status }) }));
+      ws.onmessage!(JSON.stringify({ history: status }));
     }
 
     beforeEach(async () => {
@@ -745,7 +754,7 @@ describe('OctoPrint', () => {
     it('tells the caller the print outcome is unknown rather than waiting forever', async () => {
       const promise = adapter.awaitOutcome('gamebox/tray.gcode');
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       currentTimeMs = 60_000;
 
       await expect(promise).rejects.toThrow('Lost contact with OctoPrint at http://octoprint.local for 60s');
@@ -754,7 +763,7 @@ describe('OctoPrint', () => {
     it('keeps waiting while contact has been lost for less than the timeout', async () => {
       const promise = adapter.awaitOutcome('gamebox/tray.gcode');
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       currentTimeMs = 59_000;
 
       await expectPending(promise);
@@ -772,7 +781,7 @@ describe('OctoPrint', () => {
         .mockResolvedValueOnce(makeErrorResponse(503, 'Service Unavailable'))
         .mockResolvedValueOnce(makeErrorResponse(503, 'Service Unavailable'));
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
 
       await expect(promise).rejects.toThrow('for 70s');
     });
@@ -782,14 +791,14 @@ describe('OctoPrint', () => {
     it('keeps counting the outage when a reconnected socket opens but says nothing', async () => {
       const promise = adapter.awaitOutcome('gamebox/tray.gcode');
       const secondWs = makeMockWs();
-      mockWsFactory.mockReturnValueOnce(secondWs as unknown as WebSocket);
+      mockWsFactory.mockReturnValueOnce(secondWs);
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       await settle();
-      secondWs.onopen!(new Event('open'));
+      secondWs.onopen!();
       await settle();
 
-      secondWs.onclose!(new Event('close'));
+      secondWs.onclose!();
       currentTimeMs = 60_000;
 
       await expect(promise).rejects.toThrow('Lost contact with OctoPrint');
@@ -798,17 +807,17 @@ describe('OctoPrint', () => {
     it('restarts the outage clock once a reconnected socket sends a frame', async () => {
       const promise = adapter.awaitOutcome('gamebox/tray.gcode');
       const secondWs = makeMockWs();
-      mockWsFactory.mockReturnValueOnce(secondWs as unknown as WebSocket);
+      mockWsFactory.mockReturnValueOnce(secondWs);
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       currentTimeMs = 55_000;
       await settle();
-      secondWs.onopen!(new Event('open'));
+      secondWs.onopen!();
       await settle();
       sendStatus(secondWs);
       await settle();
 
-      secondWs.onclose!(new Event('close'));
+      secondWs.onclose!();
       currentTimeMs = 100_000;
 
       await expectPending(promise);
@@ -817,14 +826,14 @@ describe('OctoPrint', () => {
     it('stops asking OctoPrint about a job it has given up on', async () => {
       const promise = adapter.awaitOutcome('gamebox/tray.gcode');
       const secondWs = makeMockWs();
-      mockWsFactory.mockReturnValueOnce(secondWs as unknown as WebSocket);
+      mockWsFactory.mockReturnValueOnce(secondWs);
 
-      mockWs.onclose!(new Event('close'));
+      mockWs.onclose!();
       currentTimeMs = 60_000;
       await expect(promise).rejects.toThrow('Lost contact');
 
       await settle();
-      secondWs.onopen!(new Event('open'));
+      secondWs.onopen!();
       await settle();
       sendStatus(secondWs);
       await settle();
@@ -843,7 +852,7 @@ describe('OctoPrint', () => {
     it('survives a frame that is not JSON and still handles later events', async () => {
       const promise = adapter.awaitOutcome('gamebox/tray.gcode');
 
-      expect(() => mockWs.onmessage!(new MessageEvent('message', { data: '<html>gateway timeout</html>' }))).not.toThrow();
+      expect(() => mockWs.onmessage!('<html>gateway timeout</html>')).not.toThrow();
 
       sendEvent('PrintDone');
       await expect(promise).resolves.toBe('finished');
@@ -852,7 +861,7 @@ describe('OctoPrint', () => {
     it('survives a binary frame and still handles later events', async () => {
       const promise = adapter.awaitOutcome('gamebox/tray.gcode');
 
-      expect(() => mockWs.onmessage!(new MessageEvent('message', { data: new ArrayBuffer(8) }))).not.toThrow();
+      expect(() => mockWs.onmessage!(new ArrayBuffer(8))).not.toThrow();
 
       sendEvent('PrintDone');
       await expect(promise).resolves.toBe('finished');

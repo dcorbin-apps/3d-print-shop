@@ -37,10 +37,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### What an operator can see
 
-- [ ] The push socket says as little as node's fetch used to. "OctoPrint WebSocket closed before
-  connection was established" names no address and no reason, and it reaches an operator the same
-  way - `ws` reports the cause on the error event, which `onerror` currently throws away
-
 - [ ] `job waiting` answers for the SHOP, not for a machine. A job that names another printer, or
   that no printer but the big one could take, is counted all the same - so an operator at the mini
   can be told to load a filament nothing there could use. `printableNow` filters on `canTake` and

@@ -21,8 +21,8 @@ export type { BuildVolume, Job, JobDetails, JobPhase, JobRecord, JobState, Print
 export { InvalidSubmission, generatedDisplayName, validateDetails } from './Job.js';
 export { JobStore, MAX_GCODE_ENV, defaultMaxGcodeBytes, NoPrinterCanTakeIt, NoSuchJob, NoSuchPrinter, SpoolUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
 export type { SpoolLimits } from './JobStore.js';
-export type { HttpClient, OctoPrintConfig, ReconnectDelay, WebSocketFactory } from './OctoPrint.js';
-export { OctoPrint, reconnectAfter, reconnectDelayMs, whyUnreachable } from './OctoPrint.js';
+export type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from './OctoPrint.js';
+export { OctoPrint, pushSocket, reconnectAfter, reconnectDelayMs, whySocketFailed, whyUnreachable } from './OctoPrint.js';
 export type { Holding, PrinterApi, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
 export { canTake, fitsInside } from './Printer.js';
 export { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';

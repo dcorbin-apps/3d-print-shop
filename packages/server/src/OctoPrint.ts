@@ -1,5 +1,6 @@
 import { basename, dirname } from 'node:path';
 import type { Readable } from 'node:stream';
+import { WebSocket as WsWebSocket, type RawData } from 'ws';
 import type { PrinterOutcome } from './Job.js';
 import type { Printer } from './printing.js';
 
@@ -16,9 +17,47 @@ export interface OctoPrintConfig {
 
 export type HttpClient = (url: string, init?: RequestInit) => Promise<Response>;
 
-// AIDEV-NOTE: OctoPrint uses SockJS; this URL works for direct WS transport but may need
-// SockJS path format (/<3digits>/<sessionid>/websocket) for some deployments.
-export type WebSocketFactory = (url: string) => WebSocket;
+/**
+ * What this adapter needs of a socket, said in the shop's terms rather than the DOM's: the payload
+ * of a frame, and the failure underneath a close - which is the only thing that says why a printer
+ * went quiet.
+ */
+export interface PushSocket {
+  onopen: (() => void) | null;
+  onmessage: ((frame: unknown) => void) | null;
+  onerror: ((failure: unknown) => void) | null;
+  onclose: (() => void) | null;
+  send(frame: string): void;
+  close(): void;
+}
+
+export type PushSocketFactory = (url: string) => PushSocket;
+
+// AIDEV-NOTE: `ws`, not node's built-in WebSocket. The built-in reports every failure as the same
+// sentence - "Received network error or non-101 status code." - with no code and no cause, so a
+// refused connection, a name that does not resolve and a 404 handshake are one thing to an
+// operator. `ws` hands over the error libuv raised, which is what whyUnreachable() has words for.
+export const pushSocket: PushSocketFactory = (url) => {
+  const socket = new WsWebSocket(url);
+  const port: PushSocket = {
+    onopen: null,
+    onmessage: null,
+    onerror: null,
+    onclose: null,
+    send: (frame) => socket.send(frame),
+    close: () => socket.close(),
+  };
+
+  socket.on('open', () => port.onopen?.());
+  // A text frame arrives here as a Buffer where the DOM gives a string. A binary one is passed on
+  // as it came, so a frame this adapter cannot read stays unreadable rather than becoming
+  // plausible nonsense.
+  socket.on('message', (data: RawData, isBinary: boolean) => port.onmessage?.(isBinary ? data : data.toString()));
+  socket.on('error', (failure: Error) => port.onerror?.(failure));
+  socket.on('close', () => port.onclose?.());
+
+  return port;
+};
 
 /**
   * Waits out the backoff before attempt `n`. Settles early when `cancelled` fires, and must let go
@@ -94,6 +133,17 @@ function hostIn(where: string): string {
   } catch {
     return where;
   }
+}
+
+/**
+ * Why a push socket closed without ever opening. The reason reaches an operator as
+ * `printer.paused.reason`, so it says the same things a failed request says; a close with no error
+ * before it has nothing to add, which is what a machine that answered and then hung up looks like.
+ */
+export function whySocketFailed(failure: unknown, where: string): string {
+  const closed = `the push socket to ${where} closed before it opened`;
+
+  return failure === null || failure === undefined ? closed : `${closed}: ${whyUnreachable(failure, where)}`;
 }
 
 /** Why a machine could not be reached, in words an operator can act on, and the code to search for. */
@@ -183,7 +233,7 @@ export class OctoPrint implements Printer {
   // waitForCompletion() is already waiting and the event hasn't arrived yet.
   private readonly pendingCompletions = new Map<string, CompletionWaiter>();
   private readonly arrivedCompletions = new Map<string, PrinterOutcome>();
-  private ws: WebSocket | null = null;
+  private socket: PushSocket | null = null;
   private connected = false;
   private disconnectRequested = false;
   private reconnectAttempt = 0;
@@ -197,7 +247,7 @@ export class OctoPrint implements Printer {
   constructor(
     private readonly config: OctoPrintConfig,
     private readonly httpClient: HttpClient = globalThis.fetch.bind(globalThis),
-    private readonly wsFactory: WebSocketFactory = (url) => new WebSocket(url),
+    private readonly socketFactory: PushSocketFactory = pushSocket,
     private readonly reconnectDelay: ReconnectDelay = reconnectAfter,
     private readonly now: () => number = Date.now
   ) {}
@@ -262,8 +312,8 @@ export class OctoPrint implements Printer {
     this.connected = false;
     this.lostContactAt = null;
     this.reconcileOnNextStatus = false;
-    this.ws?.close();
-    this.ws = null;
+    this.socket?.close();
+    this.socket = null;
 
     for (const waiter of this.pendingCompletions.values()) {
       waiter.reject(new Error('OctoPrint connection was closed before print completion'));
@@ -332,37 +382,43 @@ export class OctoPrint implements Printer {
   // a reconnect re-enters its backoff loop - which is why nothing here reconnects on its own.
   private async openSocket(): Promise<void> {
     const { name, session } = await this.passiveLogin();
+    // AIDEV-NOTE: OctoPrint uses SockJS; this URL works for direct WS transport but may need
+    // SockJS path format (/<3digits>/<sessionid>/websocket) for some deployments.
     const wsUrl = `${this.config.baseUrl.replace(/^http/, 'ws')}/sockjs/websocket`;
 
     return new Promise<void>((resolve, reject) => {
-      const ws = this.wsFactory(wsUrl);
-      this.ws = ws;
+      const socket = this.socketFactory(wsUrl);
+      this.socket = socket;
       let opened = false;
+      let failure: unknown = null;
 
-      ws.onopen = () => {
+      socket.onopen = () => {
         opened = true;
         this.connected = true;
         this.reconnectAttempt = 0;
-        ws.send(JSON.stringify({ auth: `${name}:${session}` }));
+        socket.send(JSON.stringify({ auth: `${name}:${session}` }));
         resolve();
       };
 
-      ws.onmessage = (event: MessageEvent) => this.handleMessage(event);
+      socket.onmessage = (frame) => this.handleMessage(frame);
 
-      // AIDEV-NOTE: onerror is always followed by onclose on both browser and ws-in-node
-      // implementations, so reconnect handling lives in onclose - not duplicated here.
-      ws.onerror = () => {};
+      // AIDEV-NOTE: onerror never reconnects - an error is always followed by a close, on both
+      // browser and ws-in-node implementations, and that is where the decision lives. What it is
+      // for is the reason: this is the only place the cause is offered, and a close carries none.
+      socket.onerror = (thrown) => {
+        failure = thrown;
+      };
 
       // AIDEV-NOTE: a close here doesn't mean any print stopped - OctoPrint keeps printing
       // independently of who's listening. Reconnect indefinitely (backoff capped at
       // MAX_RECONNECT_DELAY_MS) instead of giving up, since jobs already in flight have no
       // other way to learn their outcome.
-      ws.onclose = () => {
+      socket.onclose = () => {
         this.connected = false;
         if (this.disconnectRequested) return;
 
         if (!opened) {
-          reject(new Error('OctoPrint WebSocket closed before connection was established'));
+          reject(new Error(whySocketFailed(failure, this.config.baseUrl)));
           return;
         }
 
@@ -455,8 +511,8 @@ export class OctoPrint implements Printer {
   // AIDEV-NOTE: OctoPrint pushes plenty of frames this adapter has no interest in, and a malformed
   // or binary one must not escape the handler - a throw here bypasses the socket's own
   // close/reconnect handling and can take the CLI process down mid-print.
-  private handleMessage(event: MessageEvent): void {
-    const message = parsePushMessage(event.data);
+  private handleMessage(frame: unknown): void {
+    const message = parsePushMessage(frame);
     if (!message) return;
 
     // Any frame OctoPrint sends us is proof the socket is live AND authorized - an unauthenticated

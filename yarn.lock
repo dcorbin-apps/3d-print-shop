@@ -54,6 +54,7 @@ __metadata:
     "@3d-print-shop/octoprint-sim": "workspace:*"
     "@types/busboy": "npm:^1"
     "@types/express": "npm:^5"
+    "@types/ws": "npm:^8"
     busboy: "npm:^1.6.0"
     commander: "npm:^14.0.2"
     express: "npm:^5.2.1"
