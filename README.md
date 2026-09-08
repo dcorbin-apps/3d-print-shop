@@ -43,6 +43,10 @@ install time and owned by the service's user, and this is the same: a missing ro
 was never set up, so the shop refuses to start rather than putting its work somewhere nobody is
 looking. `PRINT_SHOP_SPOOL` overrides the path, for an install that would rather not involve root.
 
+It must not be writable by its group or by anybody else, or the shop refuses to start: everything
+below it is 0700 and 0600, and none of that stops a job directory being renamed out of a root others
+can write. Being readable is allowed - 0750 for an operators' group is a working install.
+
 One shop to a spool. `serve` claims it by listening on a socket inside it, so a second shop over the
 same spool is refused and a crash leaves nothing to clean up.
 

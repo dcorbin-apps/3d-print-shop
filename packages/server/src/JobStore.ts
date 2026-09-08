@@ -45,7 +45,7 @@ async function spaceFreeOn(root: string): Promise<number> {
 // AIDEV-NOTE: the spool is the shop's alone, and integrity is the reason before secrecy. A spool
 // another user can WRITE is one where a job's gcode can be swapped for different gcode, and the shop
 // sends whatever is there to a printer without question. The ROOT's own mode is the installer's to
-// set - these are the entries the shop creates itself.
+// set and `ready()`'s to refuse - these are the entries the shop creates itself.
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
 
@@ -156,6 +156,7 @@ export class JobStore {
   /** Answers when the spool is usable, so a service can refuse to start rather than to serve. */
   async ready(): Promise<void> {
     await this.requireSpool();
+    await this.requireNobodyElseCanWriteIt();
   }
 
   /** Everything outstanding. Order is not meaningful - what to print next is decided elsewhere. */
@@ -393,6 +394,27 @@ export class JobStore {
     );
     if (!usable) {
       throw new SpoolUnavailable(`${this.root} is not there - it is created when the shop is installed`);
+    }
+  }
+
+  // AIDEV-NOTE: asked at ready() rather than in requireSpool(), which every call already goes
+  // through. A mode is set when the machine is installed and does not change under a running shop,
+  // so this is a question about the install - and a stat per request to keep asking it would be a
+  // cost paid for nothing.
+  //
+  // WRITE, and deliberately not read. What a wide root defeats is the 0700 the shop puts on
+  // everything it creates: a whole job directory can be renamed away, or a new one put in its place,
+  // whatever the modes inside it are. A root somebody else can READ gives up the ids of the jobs
+  // held and no more - every record and every gcode is 0600 - and refusing that would stop a shop
+  // installed 0750 for an operators' group, which is a working install rather than a fault.
+  private async requireNobodyElseCanWriteIt(): Promise<void> {
+    const found = await stat(this.root);
+
+    if ((found.mode & 0o022) !== 0) {
+      throw new SpoolUnavailable(
+        `${this.root} can be written by somebody other than its owner (mode ${(found.mode & 0o777).toString(8)}) - ` +
+          'a job could be swapped or taken out of it, so it may not be writable by its group or by anybody else'
+      );
     }
   }
 

@@ -544,6 +544,40 @@ describe('JobStore', () => {
       await expect(fs.stat(path.join(tmpdir(), 'print-shop-that-was-never-installed'))).rejects.toThrow();
     });
   });
+
+  // AIDEV-NOTE: the root's own mode, which the installer sets and the shop only checks. Everything
+  // the shop creates below it is already 0700 and 0600, and none of that survives a root out of
+  // which a whole job directory can be renamed.
+  describe('when the spool is one somebody else could write', () => {
+    it.each([
+      ['anybody', 0o777],
+      ['its group', 0o770],
+      ['anybody, without letting them look', 0o722],
+    ])('refuses to start when %s could write it', async (_who, mode) => {
+      await fs.chmod(spool, mode);
+
+      await expect(shop.ready()).rejects.toThrow(SpoolUnavailable);
+    });
+
+    it('says the mode it found, which is what the operator has to change', async () => {
+      await fs.chmod(spool, 0o777);
+
+      await expect(shop.ready()).rejects.toThrow('(mode 777)');
+    });
+
+    // Reading gives up the ids of the jobs held and nothing else, since every record and every gcode
+    // is 0600 - and refusing it would stop a shop installed 0750 for an operators' group, which is a
+    // working install rather than a fault.
+    it.each([
+      ['nobody else', 0o700],
+      ['a group that may read it', 0o750],
+      ['anybody who may read it', 0o755],
+    ])('starts over one %s could write', async (_who, mode) => {
+      await fs.chmod(spool, mode);
+
+      await expect(shop.ready()).resolves.toBeUndefined();
+    });
+  });
 });
 
 describe('the largest gcode a shop takes', () => {

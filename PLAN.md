@@ -65,20 +65,19 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   Decided: an admin may point the shop anywhere, because that is close to what admin means, and a
   range check here would be defeated by a hostname resolving at connect time. What is left is
   whether a leaked admin token should be able to redirect a key without also holding the key
-- [ ] The 503s still name the spool - "<path> is not there", "<path> has N bytes free". Deliberate
-  and tested, and arguably fine for a caller the shop has named, but the same path a 500 no longer
-  gives away. Decide whether an authenticated caller may know where the spool is
-- [ ] The spool ROOT's own mode is nobody's job. The shop sets 0700/0600 on what it creates, but a
-  root anybody can write is one where a whole job directory can be renamed away regardless. The
-  installer makes the root, so either it sets the mode or `ready()` refuses a wide one
+- [ ] The 503s still name the spool - "<path> is not there", "<path> has N bytes free", "<path> can
+  be written by somebody other than its owner". Deliberate and tested, and arguably fine for a
+  caller the shop has named, but the same path a 500 no longer gives away. Decide whether an
+  authenticated caller may know where the spool is
 - [ ] Anything already in a spool keeps the mode it was written with - a record is written once and
   never rewritten, so an existing install stays as it was until every job has left
 
 ### Installation
 
 - [ ] The spool root is created by the installer and owned by the service's user, the way
-  `/var/spool/cups` is. The store refuses a missing one rather than creating it, so the packaging is
-  what has to exist: a `launchd` plist, a `systemd` unit, and whatever makes the directory
+  `/var/spool/cups` is. The store refuses a missing one, and one its group or anybody else can
+  write, rather than creating or fixing either - so the packaging is what has to exist: a `launchd`
+  plist, a `systemd` unit, and whatever makes the directory 0700 (or 0750) and owns it
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this
   repository sitting beside it — gamebox_v3 reaches it as `portal:../3d-print-shop/packages/client`,
   which cannot survive a fresh clone that has no shop next door

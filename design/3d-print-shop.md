@@ -71,6 +71,14 @@ service does not run as whoever submitted the job.
 machine that was never set up, so the store refuses rather than creating one, which would put the
 shop's work somewhere nobody is looking.
 
+**And `ready()` refuses a root somebody else could write.** The shop puts 0700 on every directory it
+creates and 0600 on every file, and none of that survives a root out of which a whole job directory
+can be renamed away or a new one put in its place - so the one mode the installer sets is the one
+the shop cannot set for itself, and the only one worth checking. Write, and deliberately not read: a
+root others may read gives up the ids of the jobs held and no more, and refusing that would stop a
+shop installed 0750 for an operators' group. `/var/spool/cups` is `drwx--x---` for the same reason -
+the group is let in to traverse, never to change what is there.
+
 ```
 /var/spool/3d-print-shop/
   next-id                     the id counter

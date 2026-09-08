@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -243,6 +243,14 @@ describe('the shop, running as its own process', () => {
   // machine that was never set up - and it is worth finding out before anything is served.
   it('will not start over a spool that is not there', async () => {
     await expect(startShopOver(path.join(spool, 'never-made'))).rejects.toThrow('is not there');
+  }, 30_000);
+
+  // The other half of the same question: a spool that IS there, and that anybody could rename a job
+  // directory out of. The shop sets 0700 on everything below it, and none of that survives this.
+  it('will not start over a spool somebody else could write', async () => {
+    await chmod(spool, 0o777);
+
+    await expect(startShop()).rejects.toThrow('may not be writable');
   }, 30_000);
 
   // AIDEV-NOTE: the verdict is what frees a printer's bed, so without a way to give one a shop
