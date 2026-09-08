@@ -1,4 +1,4 @@
-import type { Job, JobDetails, JobsHeld, Verdict } from './Job.js';
+import type { FilamentDemand, Job, JobDetails, JobsHeld, Verdict } from './Job.js';
 import type { PrinterRecord, RegisteredPrinter } from './Printer.js';
 import type { PrinterAdded, Shop } from './Shop.js';
 import { defaultToken } from './token.js';
@@ -46,6 +46,10 @@ export class HttpShop implements Shop {
     const answer = (await this.answered('PUT', `/jobs/${id}/verdict`, { verdict })) as WireJob | undefined;
 
     return answer && asJob(answer);
+  }
+
+  async waitingOn(): Promise<FilamentDemand[]> {
+    return (await this.answered('GET', '/filaments')) as FilamentDemand[];
   }
 
   async printers(): Promise<RegisteredPrinter[]> {

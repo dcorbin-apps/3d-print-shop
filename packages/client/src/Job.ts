@@ -43,6 +43,16 @@ export interface JobsHeld {
   totalJobs: number;
 }
 
+/**
+ * What queued work is waiting for, and how much of it there is - the answer to "what should I load
+ * next". Counted by the filament each job STARTS with, because that is the one that has to be on the
+ * machine before it can begin.
+ */
+export interface FilamentDemand {
+  filament: string;
+  jobs: number;
+}
+
 /** Where a job is. Derived by the shop from what its printers are holding. */
 export type JobState = 'queued' | 'printing' | 'awaiting-approval';
 

@@ -205,6 +205,17 @@ describe('the shop, running as its own process', () => {
     expect(stdout.trim()).toBe('1  Player Box  PLA-SpaceGray  queued');
   }, 30_000);
 
+  // The other half of `job list`, and the one an operator asks standing at the machine.
+  it('tells the operator what to load next', async () => {
+    const shop = await shopIsRunning();
+    await addMk4(shop);
+    await submitPlayerBox(shop);
+
+    const { stdout } = await runCommandSaying(['job', '--shop-url', shop.url, 'waiting']);
+
+    expect(stdout.trim()).toBe('PLA-SpaceGray  1 job waiting');
+  }, 30_000);
+
   // AIDEV-NOTE: two shops over one spool would both read `next-id` as 7 and both hand out 7, the
   // second overwriting the first job's gcode with no error anywhere. A second `serve` on the same
   // PORT already fails to listen; this is the case only the spool's own claim catches.

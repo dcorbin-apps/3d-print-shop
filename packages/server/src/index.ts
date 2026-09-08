@@ -23,7 +23,7 @@ export type { HttpClient, OctoPrintConfig, ReconnectDelay, WebSocketFactory } fr
 export { OctoPrint, reconnectAfter, reconnectDelayMs } from './OctoPrint.js';
 export type { Holding, PrinterApi, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
 export { canTake, fitsInside } from './Printer.js';
-export { judgeJob, listJobs } from './jobAdmin.js';
+export { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 export { initialiseShop } from './shopAdmin.js';
 export {
   UnreadableVolume,

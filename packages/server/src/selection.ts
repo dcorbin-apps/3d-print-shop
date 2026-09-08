@@ -1,15 +1,10 @@
+import type { FilamentDemand } from '@3d-print-shop/client';
 import type { Job } from './Job.js';
 import { canTake } from './Printer.js';
 import type { RegisteredPrinter } from './Printer.js';
 
-/**
- * What is waiting on one filament, and how much of it there is. What an operator needs in order to
- * answer "what should I load next".
- */
-export interface FilamentDemand {
-  filament: string;
-  jobs: number;
-}
+// The wire contract, so the shop and everything that talks to it cannot drift apart.
+export type { FilamentDemand } from '@3d-print-shop/client';
 
 // AIDEV-NOTE: every printer here has ONE extruder, so what a job waits for is the filament it
 // STARTS with. A job may name more - a single head sliced for several virtual extruders swaps the

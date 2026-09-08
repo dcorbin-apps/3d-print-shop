@@ -566,6 +566,28 @@ describe('the shop over HTTP', () => {
 
   // express.json() leaves the body undefined when there was none, and destructuring that threw a
   // TypeError the client saw as a 500 - a client's mistake reported as the shop's fault.
+  // AIDEV-NOTE: the other half of the queue - what is waiting on each filament, which is what an
+  // operator standing at the machine is actually asking. `nextToPrint` is the shop's own question;
+  // this is theirs.
+  describe('what to load next', () => {
+    it('answers what the queued work is waiting for, busiest first', async () => {
+      await submit({ filaments: ['PLA-Red'] });
+      await submit({ filaments: ['PLA-Red'] });
+      await submit(playerBox);
+
+      expect(await (await ask('/filaments')).json()).toEqual([
+        { filament: 'PLA-Red', jobs: 2 },
+        { filament: 'PLA-SpaceGray', jobs: 1 },
+      ]);
+    });
+
+    // It counts everybody's work, which is more than the bare total a caller who owns none of it may
+    // learn - and loading a machine is already an admin's to do.
+    it('is an admin\'s to ask, because it counts work that is not the caller\'s', async () => {
+      expect((await as(USER, 'GET', '/filaments')).status).toBe(403);
+    });
+  });
+
   describe('a request that brought no body', () => {
     it.each([
       ['PUT', '/jobs/1/verdict', 'a verdict is approved, rejected or abandoned'],

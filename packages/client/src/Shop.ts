@@ -1,4 +1,4 @@
-import type { Job, JobDetails, JobsHeld, Verdict } from './Job.js';
+import type { FilamentDemand, Job, JobDetails, JobsHeld, Verdict } from './Job.js';
 import type { PrinterRecord, RegisteredPrinter } from './Printer.js';
 
 /** Whether the shop had this printer already, which is the difference between adding and changing. */
@@ -29,6 +29,12 @@ export interface Shop {
    * with nothing when it has left the shop.
    */
   verdict(id: number, verdict: Verdict): Promise<Job | undefined>;
+
+  /**
+   * What the queued work is waiting for, busiest first - the operator's question rather than the
+   * shop's. It counts every job the shop holds, so it is not a caller's own view of the queue.
+   */
+  waitingOn(): Promise<FilamentDemand[]>;
 
   printers(): Promise<RegisteredPrinter[]>;
   addPrinter(record: PrinterRecord): Promise<PrinterAdded>;

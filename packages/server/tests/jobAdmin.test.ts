@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import type { Job, Shop } from '@3d-print-shop/client';
-import { judgeJob, listJobs } from '../src/jobAdmin';
+import { judgeJob, listJobs, whatToLoadNext } from '../src/jobAdmin';
 
 // The shop is a CLIENT here, not a store - these commands go through the API like every other
 // client, so what they are given is an interface. What the shop does with each call is its own suite.
 describe('minding the work', () => {
   const mockJobs = jest.fn<Shop['jobs']>();
   const mockVerdict = jest.fn<Shop['verdict']>();
+  const mockWaitingOn = jest.fn<Shop['waitingOn']>();
 
-  const shop = { jobs: mockJobs, verdict: mockVerdict } as unknown as Shop;
+  const shop = { jobs: mockJobs, verdict: mockVerdict, waitingOn: mockWaitingOn } as unknown as Shop;
 
   function job(overrides: Partial<Job> = {}): Job {
     return {
@@ -30,6 +31,7 @@ describe('minding the work', () => {
 
   beforeEach(() => {
     mockJobs.mockResolvedValue(holding([]));
+    mockWaitingOn.mockResolvedValue([]);
     mockVerdict.mockResolvedValue(undefined);
   });
 
@@ -73,6 +75,23 @@ describe('minding the work', () => {
       mockJobs.mockResolvedValue(holding([job({ state: 'awaiting-approval', heldBy: 'mk4', lastPrinterOutcome: 'failed' })]));
 
       expect(await listJobs(shop)).toEqual(['1  Player Box  PLA-SpaceGray  printed on mk4, failed - waiting for a verdict']);
+    });
+  });
+
+  describe('what to load next', () => {
+    it('says what is waiting, and how much of it is', async () => {
+      mockWaitingOn.mockResolvedValue([
+        { filament: 'PLA-Red', jobs: 3 },
+        { filament: 'PLA-White', jobs: 1 },
+      ]);
+
+      expect(await whatToLoadNext(shop)).toEqual(['PLA-Red    3 jobs waiting', 'PLA-White  1 job waiting']);
+    });
+
+    it('says when nothing is waiting on anything', async () => {
+      mockWaitingOn.mockResolvedValue([]);
+
+      expect(await whatToLoadNext(shop)).toEqual(['nothing queued - nothing is waiting on any filament']);
     });
   });
 

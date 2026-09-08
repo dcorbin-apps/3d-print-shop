@@ -248,6 +248,7 @@ POST   /jobs                    submit
 GET    /jobs                    what this caller may see, and how many there are altogether
 GET    /jobs/{id}
 PUT    /jobs/{id}/verdict       approved | rejected | abandoned
+GET    /filaments               what the queued work is waiting for, busiest first
 GET    /printers
 POST   /printers                add one, or change what the shop knows about one already here
 DELETE /printers/{name}
@@ -411,7 +412,16 @@ for another machine on the strength of the caller not saying who it was would be
 answering with nothing.
 
 **What should I load next** is the other half, and the more useful one: everything queued, grouped
-by what it needs, busiest first. Ranking by job COUNT is admittedly the wrong measure - four quick
+by what it needs, busiest first. It is `GET /filaments` - a resource of its own rather than anything
+under `/jobs`, which would collide with `/jobs/{id}` and be settled by whichever route express saw
+first. An admin's to ask, because it counts everybody's work, which is more than the bare total a
+caller who owns none of it may learn.
+
+It answers for the SHOP and not for a machine, which is a gap worth knowing about: a job may name a
+printer or be too big for one, and this counts it either way - so an operator at the smaller machine
+can be told to load a filament that nothing there could use. `printableNow` filters on `canTake` and
+this does not. With one printer that costs nothing, and it is the first thing to fix when a second
+machine is real. Ranking by job COUNT is admittedly the wrong measure - four quick
 jobs outrank one long one, where "load red, it is six hours of work" is the answer an operator
 actually wants. A job carries no duration yet. When one is added it has to be a field of its own and
 not the `metadata` bag, because ranking by something inside metadata would break the promise never

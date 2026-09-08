@@ -65,6 +65,15 @@ describe('the shop over HTTP', () => {
       expect(job.submittedAt.toISOString()).toBe('2026-09-06T11:22:04.177Z');
     });
 
+    // The operator's question rather than the shop's, and a route of its own: anything under /jobs
+    // would collide with /jobs/{id}.
+    it('asks what the queue is waiting for', async () => {
+      answers = { status: 200, body: [{ filament: 'PLA-Red', jobs: 2 }] };
+
+      expect(await shop.waitingOn()).toEqual([{ filament: 'PLA-Red', jobs: 2 }]);
+      expect(asked).toMatchObject([{ method: 'GET', url: '/filaments' }]);
+    });
+
     it('asks for one by id', async () => {
       answers = { status: 200, body: { ...aJob, submittedAt: '2026-09-06T11:22:04.177Z' } };
 

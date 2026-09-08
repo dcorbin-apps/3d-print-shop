@@ -1,4 +1,4 @@
-import type { Job, Shop, Verdict } from '@3d-print-shop/client';
+import type { FilamentDemand, Job, Shop, Verdict } from '@3d-print-shop/client';
 
 // AIDEV-NOTE: the operator's half of the JOBS, kept apart from the command line that calls it -
 // answering with LINES rather than printing, so it can be tested without a process and so a GUI is
@@ -16,6 +16,22 @@ export async function listJobs(shop: Shop): Promise<string[]> {
   // own work would read as the whole queue - and "what is this shop busy with" is the question an
   // operator asks it. What is not theirs is a number and nothing else.
   return others === 0 ? lines : [...lines, `and ${others} more this shop is holding, which are not yours`];
+}
+
+// AIDEV-NOTE: the other half of `list`, and the more useful one at the machine - "what should I
+// load next" rather than "what is here". It counts every queued job the shop holds, which is why it
+// is an admin's to ask: a caller who owns none of that work may learn only how much there is.
+export async function whatToLoadNext(shop: Shop): Promise<string[]> {
+  const waiting = await shop.waitingOn();
+  if (waiting.length === 0) return ['nothing queued - nothing is waiting on any filament'];
+
+  const widest = Math.max(...waiting.map((demand) => demand.filament.length));
+
+  return waiting.map((demand) => `${demand.filament.padEnd(widest)}  ${jobsWaiting(demand)}`);
+}
+
+function jobsWaiting({ jobs }: FilamentDemand): string {
+  return jobs === 1 ? '1 job waiting' : `${jobs} jobs waiting`;
 }
 
 // AIDEV-NOTE: the verdict is what frees the PRINTER, not just the job - a printer holds its bed

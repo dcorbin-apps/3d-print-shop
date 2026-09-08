@@ -56,6 +56,7 @@ describe('minding the printers', () => {
     load: mockLoad,
     shutDown: mockShutDown,
     jobs: jest.fn<Shop['jobs']>(),
+    waitingOn: jest.fn<Shop['waitingOn']>(),
     job: jest.fn<Shop['job']>(),
     submit: jest.fn<Shop['submit']>(),
     verdict: jest.fn<Shop['verdict']>(),

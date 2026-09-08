@@ -8,6 +8,7 @@ import { NoSuchJob, NoSuchPrinter, SpoolUnavailable, TooMuchToTake, WrongState }
 import type { Caller } from './credentials.js';
 import type { JobStore } from './JobStore.js';
 import type { PrinterRecord } from './Printer.js';
+import { waitingOn } from './selection.js';
 
 /** The request was not one the shop could act on - as opposed to one it could and would not. */
 export class UnusableRequest extends Error {}
@@ -231,6 +232,17 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   api.use('/printers/:name', (request, _response, next) => {
     requireUsablePrinterName(request.params.name);
     next();
+  });
+
+  // AIDEV-NOTE: a top-level resource rather than anything under /jobs, which would collide with
+  // GET /jobs/{id} and be resolved by whichever route express happened to see first - a trap that
+  // moves the moment somebody reorders these. It is what the QUEUE is waiting for, seen by filament.
+  //
+  // Admin, by not being on the open list above: it is an aggregate over everybody's work, which is
+  // more than the bare total a caller who owns none of it may learn - and the person who acts on it
+  // is the one who loads the machine, which is already an admin's to do.
+  api.get('/filaments', async (_request, response) => {
+    response.json(waitingOn(await shop.all()));
   });
 
   api.get('/printers', async (_request, response) => {

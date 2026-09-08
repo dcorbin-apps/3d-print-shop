@@ -8,7 +8,7 @@ import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
 import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
 import { ETC_ENV, callersIn, defaultEtc, printerKeysIn } from './credentials.js';
-import { judgeJob, listJobs } from './jobAdmin.js';
+import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { claimSpool } from './spoolLock.js';
@@ -133,6 +133,11 @@ export function createCLI(): Command {
     .command('list')
     .description('What the shop is holding, and where each of it has got to')
     .action(async () => say(await listJobs(shop(job.opts()))));
+
+  job
+    .command('waiting')
+    .description('What the queued work is waiting for, busiest first - what to load next')
+    .action(async () => say(await whatToLoadNext(shop(job.opts()))));
 
   job
     .command('approve')
