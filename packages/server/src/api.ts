@@ -359,6 +359,38 @@ export function requireUsablePrinterName(name: string): void {
   }
 }
 
+// AIDEV-NOTE: the shop UPLOADS to this address, with that printer's API key attached, so what it is
+// pointed at decides where a key and a plate's gcode end up. What is checked here is the shape: a
+// URL it can actually build requests from, over a protocol it speaks, carrying nothing that has no
+// business in a base URL.
+//
+// What is NOT checked is where the address points. A printer reached over a VPN is legitimate, a
+// hostname resolves at connect time rather than here so an add-time range check is defeated by
+// rebinding, and only an admin may add a printer at all - which is close to what admin means. The
+// residual risk is written down in PLAN.md rather than half-answered here.
+//
+// Credentials and a query are refused rather than dropped: silently ignoring half of what an
+// operator typed is how a shop ends up talking to something other than what they meant.
+function addressIn(address: string): string {
+  const refuse = (why: string): never => {
+    throw new UnusableRequest(`${JSON.stringify(address)} is not an address this shop can reach a printer at: ${why}`);
+  };
+
+  let reached;
+  try {
+    reached = new URL(address);
+  } catch {
+    return refuse('it is not a URL - it needs a scheme, as in http://octopi.local');
+  }
+
+  if (reached.protocol !== 'http:' && reached.protocol !== 'https:') refuse(`this shop speaks http and https, not ${reached.protocol.replace(':', '')}`);
+  if (reached.username !== '' || reached.password !== '') refuse('it carries a username and password, and a printer is reached with its API key');
+  if (reached.search !== '' || reached.hash !== '') refuse('a printer is a host and a path, with nothing after them');
+
+  // Every request appends its own path, so a trailing slash here would double the separator.
+  return address.replace(/\/+$/, '');
+}
+
 function printerIn(body: unknown): PrinterRecord {
   const { name, buildVolume, address, api } = (body ?? {}) as {
     name?: unknown;
@@ -369,6 +401,7 @@ function printerIn(body: unknown): PrinterRecord {
   if (typeof name !== 'string' || name.trim() === '') throw new UnusableRequest('a printer needs a name');
   requireUsablePrinterName(name);
   if (typeof address !== 'string' || address.trim() === '') throw new UnusableRequest('a printer needs an address to be reached at');
+  const reachedAt = addressIn(address.trim());
   if (api !== undefined && api !== 'octoprint') throw new UnusableRequest(`${JSON.stringify(api)} is not a protocol this shop speaks`);
 
   const { x, y, z } = (buildVolume ?? {}) as { x?: unknown; y?: unknown; z?: unknown };
@@ -376,7 +409,7 @@ function printerIn(body: unknown): PrinterRecord {
     throw new UnusableRequest('a build volume is x, y and z in mm, each greater than zero');
   }
 
-  return { name, buildVolume: { x, y, z } as BuildVolume, address, api: 'octoprint' };
+  return { name, buildVolume: { x, y, z } as BuildVolume, address: reachedAt, api: 'octoprint' };
 }
 
 // The message is the answer. Every refusal here is one a client can read and act on, and a stack

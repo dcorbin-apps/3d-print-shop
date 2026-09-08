@@ -447,6 +447,53 @@ describe('the shop over HTTP', () => {
     });
   });
 
+  // AIDEV-NOTE: the shop uploads to this address with that printer's key attached, so an address it
+  // cannot build a request from is a fault that would otherwise surface as a paused printer hours
+  // later. Refused at the point an operator can still fix it.
+  describe('where a printer may be pointed', () => {
+    async function add(address: string): Promise<Response> {
+      return send('POST', '/printers', { name: 'mini', buildVolume: MK4, address });
+    }
+
+    it.each([
+      ['octopi.local', 'it is not a URL'],
+      ['', 'a printer needs an address'],
+      ['   ', 'a printer needs an address'],
+      ['file:///etc/passwd', 'this shop speaks http and https, not file'],
+      ['ftp://octopi.local', 'this shop speaks http and https, not ftp'],
+      ['http://user:secret@octopi.local', 'it carries a username and password'],
+      ['http://octopi.local?key=abc', 'with nothing after them'],
+      ['http://octopi.local#top', 'with nothing after them'],
+    ])('refuses %p', async (address, complaint) => {
+      const response = await add(address);
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining(complaint) as unknown });
+    });
+
+    it.each([['http://octopi.local'], ['https://octopi.local'], ['http://127.0.0.1:5000'], ['http://octopi.local/prusa']])(
+      'takes %p',
+      async (address) => {
+        expect((await add(address)).status).toBe(201);
+      }
+    );
+
+    // Every request appends its own path, so a kept trailing slash would double the separator.
+    it('keeps the address without the trailing slash it was given', async () => {
+      await add('http://octopi.local/');
+
+      expect(await (await send('POST', '/printers', { name: 'mini', buildVolume: MK4, address: 'http://octopi.local/' })).json()).toMatchObject({
+        address: 'http://octopi.local',
+      });
+    });
+
+    // Not checked, and deliberately: a printer over a VPN is legitimate, and only an admin may add
+    // one. See PLAN.md.
+    it('does not care whether the address is on this network', async () => {
+      expect((await add('http://198.51.100.7')).status).toBe(201);
+    });
+  });
+
   // AIDEV-NOTE: a name reaches the spool as a directory, and DELETE removes that directory
   // recursively - so what a client may call a printer is a boundary, not a nicety. Driven over real
   // HTTP with the encoding a client would actually send: express decodes %2F before a handler sees

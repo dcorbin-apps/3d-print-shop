@@ -58,8 +58,11 @@ and refuses `--listen` past loopback with nobody named. What is left is what a t
   rule in `validateDetails` was written from the API docs and pathvalidate's, not from a machine.
   The one known gap: the docs show `20mm-ümläut-böx.gcode` stored as `20mm-umlaut-box.gcode`
   without saying what transliterates it, so a non-ASCII name may be accepted here and renamed there
-- [ ] Decide what `printer add` may be pointed at. The shop uploads megabytes to that address with
-  the printer's API key attached, so whoever can add a printer can point the shop anywhere
+- [ ] `add` doubles as `change`, and a printer's key is keyed by its NAME - so re-pointing an
+  existing printer's address sends that printer's key, and a plate's gcode, wherever it was pointed.
+  Decided: an admin may point the shop anywhere, because that is close to what admin means, and a
+  range check here would be defeated by a hostname resolving at connect time. What is left is
+  whether a leaked admin token should be able to redirect a key without also holding the key
 - [ ] The 503s still name the spool - "<path> is not there", "<path> has N bytes free". Deliberate
   and tested, and arguably fine for a caller the shop has named, but the same path a 500 no longer
   gives away. Decide whether an authenticated caller may know where the spool is
