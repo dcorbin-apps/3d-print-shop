@@ -159,6 +159,12 @@ describe('the shop over HTTP', () => {
       expect((await shop.printers())[0].unreachable?.since).toBeInstanceOf(Date);
     });
 
+    it('hands back the time a machine refused a file as a time', async () => {
+      answers = { status: 200, body: [{ ...MK4, loaded: [], refused: { reason: 'upload failed: 400', since: '2026-09-06T11:22:04.177Z' } }] };
+
+      expect((await shop.printers())[0].refused?.since).toBeInstanceOf(Date);
+    });
+
     // 201 or 200 is the whole difference between adding a printer and changing one, and it lives
     // only on the wire.
     it.each([

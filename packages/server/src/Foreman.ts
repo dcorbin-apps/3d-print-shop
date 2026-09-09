@@ -2,18 +2,11 @@ import type { JobStore } from './JobStore.js';
 import { silent } from './log.js';
 import type { Log } from './log.js';
 import type { Printer } from './printing.js';
-import { recordOutcome, startNextPrint } from './printing.js';
+import { CouldNotReach, recordOutcome, startNextPrint } from './printing.js';
 import type { RegisteredPrinter } from './Printer.js';
 
 /** How a registration becomes something that can actually be talked to. */
 export type Machines = (printer: RegisteredPrinter) => Promise<Printer>;
-
-// AIDEV-NOTE: what tells "I could not get to that machine" apart from everything else that can go
-// wrong while starting a print. Only this stops a printer, because only this is about the printer:
-// a store or spool fault is the shop's own, and stopping a machine over one puts a person in front
-// of a message that names the wrong thing.
-/** The machine could not be got to at all - nothing listening, no key, a login it would not grant. */
-export class CouldNotReach extends Error {}
 
 /** How often the shop reaches for the machines it could not get to. Each printer waits its own turn. */
 export const RETRY_TICK_MS = 30_000;
@@ -164,7 +157,7 @@ export class Foreman {
   private async startWhatCanBeStarted(): Promise<void> {
     for (const printer of await this.shop.printers()) {
       // Holding anything at all means the bed is not clear, verdict or no verdict.
-      if (printer.paused || printer.unreachable || printer.holding) continue;
+      if (printer.paused || printer.unreachable || printer.refused || printer.holding) continue;
 
       await this.start(printer);
     }
@@ -189,16 +182,25 @@ export class Foreman {
         // nothing here an operator has to act on.
         if (this.stopping) return;
 
+        // The machine went away part way through rather than answering. That is the same fact as a
+        // login that could not be made, and it earns the same retry: one login, not another plate.
+        if (attempt.failure instanceof CouldNotReach) {
+          await this.cannotGetTo(printer.name, attempt.failure.message);
+
+          return;
+        }
+
         this.log.error('could not send a job to the printer', {
           printer: printer.name,
           job: attempt.job.id,
           why: attempt.failure.message,
         });
 
-        // AIDEV-NOTE: THIS printer stops - whatever stopped the upload will stop the next one, and
-        // a fault worth one message would otherwise produce one per job held. Only this one:
-        // another printer that is working has no reason to stand idle.
-        await this.shop.pause(printer.name, `could not send ${attempt.remotePath} to the printer: ${attempt.failure.message}`);
+        // AIDEV-NOTE: THIS printer takes nothing more - the machine ANSWERED, and the next plate
+        // gets the same answer for another upload's cost. A fault worth one message would otherwise
+        // produce one per job held. Only this one: another printer that is working has no reason to
+        // stand idle.
+        await this.shop.wouldNotTake(printer.name, `${attempt.remotePath} - ${attempt.failure.message}`);
       }
     } catch (failure) {
       // AIDEV-NOTE: on the way out this is expected and must not stop anything - the same rule
@@ -221,13 +223,17 @@ export class Foreman {
       // would otherwise be tried again on every single change, one failure per change. Written down
       // so the next look leaves it alone, and NOT as a stop: nothing about the room changed, and an
       // operator asked to clear it would be confirming something they cannot see.
-      this.log.error('could not reach the printer', { printer: printer.name, why: failure.message });
-      await this.shop.couldNotReach(printer.name, failure.message);
-
-      // From the start, whatever this printer's last spell out of reach cost: it was reachable a
-      // moment ago, so this is a new fault rather than the continuation of an old one.
-      this.waitBeforeTrying(printer.name, 1);
+      await this.cannotGetTo(printer.name, failure.message);
     }
+  }
+
+  private async cannotGetTo(name: string, why: string): Promise<void> {
+    this.log.error('could not reach the printer', { printer: name, why });
+    await this.shop.couldNotReach(name, why);
+
+    // From the start, whatever this printer's last spell out of reach cost: it was reachable a
+    // moment ago, so this is a new fault rather than the continuation of an old one.
+    this.waitBeforeTrying(name, 1);
   }
 
   private async reach(printer: RegisteredPrinter): Promise<Printer> {

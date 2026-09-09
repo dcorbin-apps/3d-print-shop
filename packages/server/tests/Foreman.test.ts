@@ -8,6 +8,7 @@ import { silent, toStdout } from '../src/log';
 import type { Machines } from '../src/Foreman';
 import { JobStore } from '../src/JobStore';
 import type { PrinterOutcome } from '../src/Job';
+import { CouldNotReach } from '../src/printing';
 import type { Printer } from '../src/printing';
 import type { RegisteredPrinter } from '../src/Printer';
 
@@ -95,11 +96,11 @@ describe('the foreman', () => {
 
     it('says why it could not send one, which is the reason an operator has to act on', async () => {
       await submit();
-      mockSend.mockRejectedValue(new Error('octopi.local refused the connection'));
+      mockSend.mockRejectedValue(new Error('OctoPrint upload failed: 400 Bad Request'));
 
       await watched.considerStarting();
 
-      expect(lines.join('\n')).toContain('ERROR could not send a job to the printer printer=mk4 job=1 why="octopi.local refused the connection"');
+      expect(lines.join('\n')).toContain('ERROR could not send a job to the printer printer=mk4 job=1 why="OctoPrint upload failed: 400 Bad Request"');
     });
 
     // AIDEV-NOTE: waits for the LINE, not for the job's state. The outcome is written to the store
@@ -311,7 +312,7 @@ describe('the foreman', () => {
     // AIDEV-NOTE: the send is in flight when the shutdown arrives, and closing the shop is what
     // breaks it. `startNextPrint` no longer stops the printer over a failed send for exactly this
     // reason - it says it could not start, and the foreman, which knows the shop is closing, decides.
-    it('does not stop a printer whose upload failed on the way out', async () => {
+    it('writes nothing against a printer whose upload failed on the way out', async () => {
       await submit();
       let uploadFailed: (failure: Error) => void = () => undefined;
       mockSend.mockReturnValue(new Promise((_resolve, reject) => (uploadFailed = reject)));
@@ -323,7 +324,7 @@ describe('the foreman', () => {
       uploadFailed(new Error('socket hang up'));
       await looking;
 
-      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
+      expect(await shop.printerNamed('mk4')).toMatchObject({ paused: undefined, refused: undefined, unreachable: undefined });
     });
 
     // Otherwise a shop would come back up with every printer stopped, for a fault nobody caused.
@@ -343,22 +344,44 @@ describe('the foreman', () => {
     });
   });
 
-  // AIDEV-NOTE: the machine answered, so it is reachable - it just would not take the file. The
-  // stopping is the foreman's: `startNextPrint` only reports, because a send that fails during a
+  // AIDEV-NOTE: the machine ANSWERED - it is reachable, it just would not take the file. Deciding
+  // that is the foreman's: `startNextPrint` only reports, because a send that fails during a
   // shutdown is not the printer's fault and only the loop's owner knows that is what happened.
   describe('when a printer will not take a job', () => {
     beforeEach(() => {
-      mockSend.mockRejectedValue(new Error('octopi.local refused the connection'));
+      mockSend.mockRejectedValue(new Error('OctoPrint upload failed: 400 Bad Request'));
     });
 
-    it('stops the printer, naming the file and what went wrong', async () => {
+    it('records what it would not take, and what it said', async () => {
       await submit();
 
       await foreman.considerStarting();
 
-      expect((await shop.printerNamed('mk4')).paused).toMatchObject({
-        reason: 'could not send 3d-print-shop/job-1.gcode to the printer: octopi.local refused the connection',
+      expect((await shop.printerNamed('mk4')).refused).toMatchObject({
+        reason: '3d-print-shop/job-1.gcode - OctoPrint upload failed: 400 Bad Request',
       });
+    });
+
+    // AIDEV-NOTE: the whole reason a refusal is kept apart from being out of reach. The machine has
+    // given its answer, and asking again costs a whole plate to be told the same thing.
+    it('does not reach for it again on the clock', async () => {
+      await submit();
+      const patient = new Foreman(shop, mockReach, silent, () => new Date('2026-09-09T23:00:00.000Z'));
+      await patient.considerStarting();
+      mockReach.mockClear();
+
+      await patient.retryUnreachable();
+
+      expect(mockReach).not.toHaveBeenCalled();
+    });
+
+    // Nobody stopped anything, so nothing reads as though somebody had.
+    it('does not stop the printer', async () => {
+      await submit();
+
+      await foreman.considerStarting();
+
+      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
     });
 
     // Otherwise one fault against one machine produces one failed upload per job held.
@@ -370,6 +393,40 @@ describe('the foreman', () => {
       await foreman.considerStarting();
 
       expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // AIDEV-NOTE: the machine went away part way through the upload rather than answering it. That is
+  // the same fact as a login that could not be made, and it earns the same retry - one login rather
+  // than another plate - which is why the port says which of the two happened.
+  describe('when a machine goes away part way through an upload', () => {
+    beforeEach(() => {
+      mockSend.mockRejectedValue(new CouldNotReach('octopi.local closed the connection'));
+    });
+
+    it('takes it as being out of reach rather than as a refusal', async () => {
+      await submit();
+
+      await foreman.considerStarting();
+
+      const printer = await shop.printerNamed('mk4');
+      expect(printer.unreachable).toMatchObject({ reason: 'octopi.local closed the connection' });
+      expect(printer.refused).toBeUndefined();
+    });
+
+    it('reaches for it again once it has waited', async () => {
+      await submit();
+      let clock = new Date('2026-09-09T23:00:00.000Z');
+      const patient = new Foreman(shop, mockReach, silent, () => clock);
+      await patient.considerStarting();
+      mockReach.mockClear();
+
+      clock = new Date(clock.getTime() + 30_000);
+      await patient.retryUnreachable();
+
+      // Not a count: reaching the machine is what the retry IS, and what the shop does next with a
+      // machine that answers is the ordinary look's business.
+      expect(mockReach).toHaveBeenCalled();
     });
   });
 

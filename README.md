@@ -133,6 +133,12 @@ so a printer that was switched off or missing a key comes back by itself and the
 without anybody typing anything. `printer stop` is an operator's word and only `printer start` lifts
 it; that lifts the other too, for somebody who has just put a key right and wants to know now.
 
+**A machine that answers and says no is a different thing.** An upload the printer turned down - a
+path it will not store, a disk with no room - is written down as a refusal and left there, because
+the machine has given its answer and asking again re-sends the whole plate to be told the same
+thing. That one waits for a person, and `printer start` is how a person says they have dealt with
+it.
+
 **It writes down what it did**, one line of text per event, to stdout - `<when> <level> <message>`
 and then `key=value` for the rest:
 

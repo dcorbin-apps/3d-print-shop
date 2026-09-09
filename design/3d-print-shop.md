@@ -508,9 +508,9 @@ pushed to rather than on a job, so it knows nothing of the shop's model. OctoPri
 identifies a job by its path, so there is no separate handle to invent. A job that names no path is
 given one built from its id: ids are unique and safe in a path, display names are neither.
 
-`startNextPrint` is given a printer's NAME and looks it up, rather than being handed a registration. A
-registration is a snapshot, and whether a printer is stopped changes while the shop runs - including
-inside that call, which stops one when an upload fails.
+`startNextPrint` is given a printer's NAME and looks it up, rather than being handed a registration.
+A registration is a snapshot, and what a printer holds and what is written against it both change
+while the shop runs - including inside that call.
 
 ```ts
 send(remotePath, gcode: Readable)     // answers with where it FILED it, once it has taken it
@@ -557,10 +557,10 @@ anything.
 the printer lets go, and the job is queued again by no longer being held. Nothing about the job is
 written, because nothing about the job changed.
 
-**And the printer stops.** Whatever prevented one upload will prevent the next, so working down the
-queue would turn one fault into one failure per job held, and the operator would have to read the
-whole run to learn what the first line already said. It stays stopped until somebody says the
-trouble is over - a restart is not evidence of that, so the stop outlives one.
+**And the printer takes nothing more.** Whatever prevented one upload will prevent the next, so
+working down the queue would turn one fault into one failure per job held, and the operator would
+have to read the whole run to learn what the first line already said. Which fact is written depends
+on whether the machine answered - see `What state a printer is in` - and neither of them is a stop.
 
 **Closing the shop lets go of its machines, in that order:** take no more requests, start nothing
 more, then disconnect - which is what settles the watchers, since a client left connected reconnects
@@ -595,9 +595,8 @@ verdict is how the shop finds out that happened.
 **Stopped.** `paused`, carrying the reason and the time. It takes no work whatever is loaded and
 whether or not the bed is clear, and the stop outlives a restart - a restart is not evidence that
 the trouble is over. An operator's word, and an operator's alone: the reason a person gives is a
-fact about the room, no machine can contradict it, and only a person can say it is over. The
-exception still to be moved out is a refused upload, which stops the printer because whatever
-prevented one upload will prevent the next - it belongs with the fact below rather than here.
+fact about the room, no machine can contradict it, and only a person can say it is over. Nothing
+the shop works out for itself is written here.
 
 **Stopped per printer, not per shop.** A machine in trouble has no business idling a machine that is
 working. The reason and the time are recorded so an operator can see what happened without watching
@@ -619,6 +618,20 @@ and none of them announces itself, so the shop reaches for the machine again on 
 the fact the moment it answers. One login a try. `printer start` lifts it too, and lifts a stop with
 it: somebody who has just put a key right should not wait out a backoff to find out whether they
 got it.
+
+**Refused.** The machine answered, and would not take the file - a path it will not store, a disk
+with no room, a plain no. Recorded as `refused`, with what it said and which file, and it is the one
+thing the shop writes about a machine that waits for a person. Not a stop, because nobody stopped
+anything - and not retried either, because the machine has already given its answer and finding out
+that it still means it costs another whole plate. It stands until somebody says they have looked:
+`printer start` is that sentence, and a restart is not, so it outlives one.
+
+**Which of the two a failed upload is belongs to the port.** A send that fails because nothing is
+listening, or because the machine went away part way through, is the same fact as a login that could
+not be made - `CouldNotReach`, thrown by the adapter wherever it happens, and retried on the clock
+at one login a try. A send the machine ANSWERED, with any reply that is not ok, is a refusal. The
+whole difference is whether asking again costs a login or a plate, so the distinction lives where
+the answer is: beside the `Printer` port, not in the loop above it.
 
 **Unknown.** The shop is holding a print it can no longer hear about, recorded as `outOfContact`
 with the time and what was last seen. **This is not a stop.** As far as anyone knows the machine is

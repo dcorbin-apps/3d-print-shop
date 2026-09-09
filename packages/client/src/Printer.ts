@@ -44,6 +44,15 @@ export interface PrinterStatus {
    * reach the machine again.
    */
   unreachable?: { reason: string; since: Date };
+  /**
+   * The machine would not take the file, with what it said and when.
+   *
+   * Its own fact rather than a stop, because nobody stopped anything: the machine answered and gave
+   * a considered no. Nothing about that changes by asking again - and asking costs a whole plate -
+   * so this is the one thing the shop writes that waits for a person, and `printer start` is how a
+   * person says they have dealt with it.
+   */
+  refused?: { reason: string; since: Date };
   /** The job it has, or undefined when the bed is clear and it can take another. */
   holding?: Holding;
 }

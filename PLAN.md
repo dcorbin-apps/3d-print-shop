@@ -10,13 +10,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The service
 
-- [ ] A refused upload is the last thing left wearing `paused` that no operator said. It should be
-  its own fact the way `unreachable` is, and retried on the foreman's clock, which now exists. There
-  is no status to read here - the retry IS the test, and it is an ordinary start: the job went back
-  to the queue and nothing about it was written. What it needs beyond the clock is a way to tell an
-  unreachable machine from a refusal that will never stop being one - a bad path, a full disk -
-  because retrying the second re-sends a whole plate per attempt, for ever. Either back off to a
-  ceiling and stay there, or split what `send` throws so only the unreachable half is retried
 - [ ] A lost watch leaves the printer UNKNOWN rather than stopped, and picking the print back up is
   what clears it. Decided; the states are written down under `What state a printer is in` in the
   design. Two halves:

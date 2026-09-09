@@ -259,6 +259,14 @@ describe('printing the next job', () => {
       expect(await printOn('mk4', ['PLA-Red'])).toEqual({ did: 'nothing', because: 'unreachable' });
     });
 
+    // The machine already said no to a plate, and finding out that it still means it costs another.
+    it('will not print on a machine that would not take the last file', async () => {
+      await submit(['PLA-Red'], { printer: 'mk4' });
+      await shop.wouldNotTake('mk4', 'OctoPrint upload failed: 400 Bad Request');
+
+      expect(await printOn('mk4', ['PLA-Red'])).toEqual({ did: 'nothing', because: 'refused' });
+    });
+
     it('prints on a named machine while the unnamed one is stopped', async () => {
       await submit(['PLA-Red'], { printer: 'mk4' });
       await shop.pause('mini', 'nothing to do with mk4');

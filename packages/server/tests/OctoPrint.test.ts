@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Readable } from 'node:stream';
-import { OctoPrint, reconnectAfter, reconnectDelayMs, whyUnreachable } from '../src';
+import { CouldNotReach, OctoPrint, reconnectAfter, reconnectDelayMs, whyUnreachable } from '../src';
 import type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from '../src';
 
 interface MockPushSocket extends PushSocket {
@@ -180,6 +180,15 @@ describe('OctoPrint', () => {
       await expect(adapter.connect()).rejects.toThrow('did not return a usable session');
     });
 
+    // AIDEV-NOTE: what the shop branches on. A key the machine will not accept is ended by somebody
+    // correcting it, outside the shop and without announcing it - so it is the shop failing to GET
+    // to the machine, and worth asking again, rather than the machine refusing a job.
+    it('calls a login it would not grant being out of reach', async () => {
+      mockHttpClient.mockResolvedValue(makeErrorResponse(403, 'Forbidden'));
+
+      await expect(adapter.connect()).rejects.toThrow(CouldNotReach);
+    });
+
     // AIDEV-NOTE: the key must not appear in the URL - query strings are recorded by proxies and
     // servers, so a credential there leaks everywhere URLs are logged. It travels in the auth
     // frame's payload instead; see OctoPrint.openSocket().
@@ -291,6 +300,13 @@ describe('OctoPrint', () => {
 
       await expect(adapter.send(REMOTE_PATH, gcode())).rejects.toThrow('nothing is listening at http://octoprint.local (ECONNREFUSED)');
     });
+
+    // The difference between a retry costing one login and a retry costing a whole plate.
+    it('calls an upload that never arrived being out of reach', async () => {
+      mockHttpClient.mockRejectedValue(Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }));
+
+      await expect(adapter.send(REMOTE_PATH, gcode())).rejects.toThrow(CouldNotReach);
+    });
   });
 
   describe('submit()', () => {
@@ -395,6 +411,14 @@ describe('OctoPrint', () => {
       await expect(adapter.send(REMOTE_PATH, gcode())).rejects.toThrow(
         'OctoPrint upload failed: 500 Internal Server Error'
       );
+    });
+
+    // The machine ANSWERED. Asking again re-sends the plate to be told the same thing, so this is
+    // not the kind of failure the shop retries.
+    it('does not call an upload the machine turned down being out of reach', async () => {
+      mockHttpClient.mockResolvedValue(makeErrorResponse(400, 'Bad Request'));
+
+      await expect(adapter.send(REMOTE_PATH, gcode())).rejects.not.toBeInstanceOf(CouldNotReach);
     });
   });
 

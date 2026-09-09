@@ -57,8 +57,11 @@ export async function listPrinters(shop: Shop): Promise<string[]> {
     // work is owed the reason, and "the shop cannot get to it" is a different thing to go and look
     // at than "somebody stopped it".
     const outOfReach = printer.unreachable ? `  UNREACHABLE: ${printer.unreachable.reason}` : '';
+    // The one the shop writes that waits for a person, so it has to read like something to go and
+    // deal with rather than like something the shop is still working on.
+    const refused = printer.refused ? `  REFUSED: ${printer.refused.reason}` : '';
 
-    return `${printer.name}  ${x}x${y}x${z}mm  ${printer.address}  ${loaded}  ${doing}${stopped}${outOfReach}`;
+    return `${printer.name}  ${x}x${y}x${z}mm  ${printer.address}  ${loaded}  ${doing}${stopped}${outOfReach}${refused}`;
   });
 }
 
@@ -83,7 +86,7 @@ export async function resumePrinter(shop: Shop, name: string): Promise<string[]>
   // Read before it is changed, because what stopped it is the useful half of the answer and is gone
   // the moment it starts again.
   const was = (await shop.printers()).find((printer) => printer.name === name);
-  const trouble = was?.paused ?? was?.unreachable;
+  const trouble = was?.paused ?? was?.refused ?? was?.unreachable;
 
   const printer = await shop.resume(name);
 

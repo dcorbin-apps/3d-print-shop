@@ -152,6 +152,13 @@ describe('minding the printers', () => {
 
       expect(await listPrinters(shop)).toEqual(['mk4  250x210x220mm  http://mk4  nothing loaded  idle  UNREACHABLE: no API key for mk4']);
     });
+
+    // This one waits for a person, so it has to read like something to go and deal with.
+    it('says which would not take a file, and what the machine said', async () => {
+      mockPrinters.mockResolvedValue([printer({ refused: { reason: 'job-1.gcode - upload failed: 400', since: new Date() } })]);
+
+      expect(await listPrinters(shop)).toEqual(['mk4  250x210x220mm  http://mk4  nothing loaded  idle  REFUSED: job-1.gcode - upload failed: 400']);
+    });
   });
 
   describe('saying what is loaded', () => {
@@ -202,6 +209,13 @@ describe('minding the printers', () => {
       mockPrinters.mockResolvedValue([printer({ unreachable: { reason: 'no API key for mk4', since: new Date() } })]);
 
       expect(await resumePrinter(shop, 'mk4')).toEqual(['mk4 running again, after no API key for mk4']);
+    });
+
+    // Nothing else lifts this one, so saying go is a person saying they have dealt with it.
+    it('starts one that would not take a file, recalling what the machine said', async () => {
+      mockPrinters.mockResolvedValue([printer({ refused: { reason: 'job-1.gcode - upload failed: 400', since: new Date() } })]);
+
+      expect(await resumePrinter(shop, 'mk4')).toEqual(['mk4 running again, after job-1.gcode - upload failed: 400']);
     });
 
     // Rather than reporting a change it did not make.

@@ -59,7 +59,11 @@ const STATUS_FILE = 'status.json';
 
 type StoredJob = Omit<JobRecord, 'submittedAt'> & { submittedAt: string };
 type StoredTrouble = { reason: string; since: string };
-type StoredStatus = Omit<PrinterStatus, 'paused' | 'unreachable'> & { paused?: StoredTrouble; unreachable?: StoredTrouble };
+type StoredStatus = Omit<PrinterStatus, 'paused' | 'unreachable' | 'refused'> & {
+  paused?: StoredTrouble;
+  unreachable?: StoredTrouble;
+  refused?: StoredTrouble;
+};
 
 export class NoSuchJob extends Error {}
 export class NoSuchPrinter extends Error {}
@@ -320,7 +324,7 @@ export class JobStore {
    * wait out a backoff to find out whether they got it right.
    */
   async resume(name: string): Promise<void> {
-    await this.changeStatus(name, ({ paused: _paused, unreachable: _unreachable, ...status }) => status);
+    await this.changeStatus(name, ({ paused: _paused, unreachable: _unreachable, refused: _refused, ...status }) => status);
   }
 
   // AIDEV-NOTE: not a stop, and deliberately not `paused`. It is the shop's own reading of a
@@ -334,6 +338,14 @@ export class JobStore {
   /** It answered again. Nobody is told, because nobody was asked to do anything about it. */
   async reachedAgain(name: string): Promise<void> {
     await this.changeStatus(name, ({ unreachable: _unreachable, ...status }) => status);
+  }
+
+  // AIDEV-NOTE: not retried, unlike everything else the shop writes about a machine. The printer
+  // ANSWERED - a bad path, a full disk, a name it will not store - and asking again re-sends a whole
+  // plate to get the same no. It waits for a person, and `printer start` is how a person says so.
+  /** The machine would not take the file. */
+  async wouldNotTake(name: string, reason: string): Promise<void> {
+    await this.changeStatus(name, (status) => ({ ...status, refused: { reason, since: new Date() } }));
   }
 
   /**
@@ -402,7 +414,7 @@ export class JobStore {
     if (contents === undefined) return undefined;
 
     const stored = JSON.parse(contents) as StoredStatus;
-    return { ...stored, paused: since(stored.paused), unreachable: since(stored.unreachable) };
+    return { ...stored, paused: since(stored.paused), unreachable: since(stored.unreachable), refused: since(stored.refused) };
   }
 
   private async writeStatus(name: string, status: PrinterStatus): Promise<void> {

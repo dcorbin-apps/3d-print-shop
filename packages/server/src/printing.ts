@@ -19,8 +19,15 @@ export interface Printer {
   awaitOutcome(remotePath: string): Promise<PrinterOutcome>;
 }
 
+// AIDEV-NOTE: what tells "I could not get to that machine" apart from every other way a printer can
+// fail. It belongs to the PORT rather than to the loop above it: a send that fails because nothing
+// is listening is the same fact as a login that fails for the same reason, and the difference
+// between the two decides whether a whole plate is worth re-sending.
+/** The machine could not be got to at all - nothing listening, no key, a login it would not grant. */
+export class CouldNotReach extends Error {}
+
 export type PrintAttempt =
-  | { did: 'nothing'; because: 'paused' | 'unreachable' | 'busy' | 'nothing-printable' }
+  | { did: 'nothing'; because: 'paused' | 'unreachable' | 'refused' | 'busy' | 'nothing-printable' }
   | { did: 'started'; job: Job }
   | { did: 'could-not-start'; job: Job; remotePath: string; failure: Error };
 
@@ -55,6 +62,10 @@ export async function startNextPrint(shop: JobStore, reach: () => Promise<Printe
   // found it cannot get to. Read here rather than trusted from the caller's snapshot, because both
   // this and what the printer holds change while the shop runs.
   if (onto.unreachable) return { did: 'nothing', because: 'unreachable' };
+
+  // The machine already said no to a plate. The next one goes the same way, and finding that out
+  // costs another upload.
+  if (onto.refused) return { did: 'nothing', because: 'refused' };
 
   // Holding anything at all, including a print somebody has not judged yet: the bed is not clear.
   if (onto.holding) return { did: 'nothing', because: 'busy' };

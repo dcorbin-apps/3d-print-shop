@@ -508,6 +508,40 @@ describe('JobStore', () => {
     });
   });
 
+  // AIDEV-NOTE: the one thing the shop writes about a machine that waits for a person. The printer
+  // ANSWERED, so there is nothing to find out by asking again - and asking costs a whole plate.
+  describe('a printer that would not take the file', () => {
+    it('says what it would not take, and when', async () => {
+      await shop.wouldNotTake('mk4', '3d-print-shop/job-1.gcode - OctoPrint upload failed: 400 Bad Request');
+
+      const printer = await shop.printerNamed('mk4');
+      expect(printer.refused).toMatchObject({ reason: '3d-print-shop/job-1.gcode - OctoPrint upload failed: 400 Bad Request' });
+      expect(printer.refused?.since).toBeInstanceOf(Date);
+    });
+
+    it('is not a stop, because nobody stopped anything', async () => {
+      await shop.wouldNotTake('mk4', 'OctoPrint upload failed: 400 Bad Request');
+
+      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
+    });
+
+    // The machine answering says nothing about the file it already turned down.
+    it('is left where it is when the machine answers again', async () => {
+      await shop.wouldNotTake('mk4', 'OctoPrint upload failed: 400 Bad Request');
+      await shop.reachedAgain('mk4');
+
+      expect((await shop.printerNamed('mk4')).refused).toMatchObject({ reason: 'OctoPrint upload failed: 400 Bad Request' });
+    });
+
+    // Which is the only thing that lifts it: a person has looked, and says so.
+    it('is lifted when an operator says go', async () => {
+      await shop.wouldNotTake('mk4', 'OctoPrint upload failed: 400 Bad Request');
+      await shop.resume('mk4');
+
+      expect((await shop.printerNamed('mk4')).refused).toBeUndefined();
+    });
+  });
+
   // AIDEV-NOTE: a job no printer could ever take is refused on the way in rather than left to sit.
   // A client told at submission can do something about it; one whose job silently starves cannot.
   describe('what the shop will accept', () => {

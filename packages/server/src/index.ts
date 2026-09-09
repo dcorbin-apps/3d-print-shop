@@ -40,7 +40,7 @@ export {
   shutDownShop,
 } from './printerAdmin.js';
 export type { PrintAttempt, Printer } from './printing.js';
-export { recordOutcome, remotePathFor, startNextPrint } from './printing.js';
+export { CouldNotReach, recordOutcome, remotePathFor, startNextPrint } from './printing.js';
 export type { FilamentDemand } from './selection.js';
 export { nextToPrint, printableNow, startsWith, waitingOn } from './selection.js';
 export { SpoolInUse, claimSpool } from './spoolLock.js';

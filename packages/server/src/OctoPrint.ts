@@ -2,6 +2,7 @@ import { basename, dirname } from 'node:path';
 import type { Readable } from 'node:stream';
 import { WebSocket as WsWebSocket, type RawData } from 'ws';
 import type { PrinterOutcome } from './Job.js';
+import { CouldNotReach } from './printing.js';
 import type { Printer } from './printing.js';
 
 export interface OctoPrintConfig {
@@ -280,7 +281,7 @@ export class OctoPrint implements Printer {
     try {
       return await this.httpClient(url, init);
     } catch (failure) {
-      throw new Error(whyUnreachable(failure, this.config.baseUrl));
+      throw new CouldNotReach(whyUnreachable(failure, this.config.baseUrl));
     }
   }
 
@@ -291,14 +292,17 @@ export class OctoPrint implements Printer {
       body: JSON.stringify({ passive: true }),
     });
 
+    // AIDEV-NOTE: a login the machine would not grant is the shop failing to GET to it, not the
+    // machine refusing a job - what ends it is a key put right, outside the shop, and the shop finds
+    // out by asking again. Same for a session it hands back empty.
     if (!response.ok) {
-      throw new Error(`OctoPrint login failed: ${response.status} ${response.statusText}`);
+      throw new CouldNotReach(`OctoPrint login failed: ${response.status} ${response.statusText}`);
     }
 
     const body = (await response.json()) as { name?: unknown; session?: unknown };
     if (typeof body.session !== 'string' || typeof body.name !== 'string' || body.name === '') {
       // A guest login returns no name, which means the api key was not accepted as a user.
-      throw new Error(
+      throw new CouldNotReach(
         `OctoPrint passive login did not return a usable session (name: ${JSON.stringify(body.name)}, session: ${JSON.stringify(body.session)}). Check the API key.`
       );
     }
@@ -420,7 +424,7 @@ export class OctoPrint implements Printer {
         if (this.disconnectRequested) return;
 
         if (!opened) {
-          reject(new Error(whySocketFailed(failure, this.config.baseUrl)));
+          reject(new CouldNotReach(whySocketFailed(failure, this.config.baseUrl)));
           return;
         }
 

@@ -144,14 +144,18 @@ async function refusal(response: Response): Promise<string> {
 // holding a string finds out at the first comparison, somewhere else entirely.
 type WireJob = Omit<Job, 'submittedAt'> & { submittedAt: string };
 type WireTrouble = { reason: string; since: string };
-type WirePrinter = Omit<RegisteredPrinter, 'paused' | 'unreachable'> & { paused?: WireTrouble; unreachable?: WireTrouble };
+type WirePrinter = Omit<RegisteredPrinter, 'paused' | 'unreachable' | 'refused'> & {
+  paused?: WireTrouble;
+  unreachable?: WireTrouble;
+  refused?: WireTrouble;
+};
 
 function asJob(job: WireJob): Job {
   return { ...job, submittedAt: new Date(job.submittedAt) };
 }
 
 function asPrinter(printer: WirePrinter): RegisteredPrinter {
-  return { ...printer, paused: since(printer.paused), unreachable: since(printer.unreachable) };
+  return { ...printer, paused: since(printer.paused), unreachable: since(printer.unreachable), refused: since(printer.refused) };
 }
 
 function since(trouble: WireTrouble | undefined): { reason: string; since: Date } | undefined {
