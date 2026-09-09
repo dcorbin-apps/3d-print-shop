@@ -39,7 +39,7 @@ describe('the foreman', () => {
   const nextTurn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
   const jobIs = (id: number, state: string) => async (): Promise<boolean> => (await shop.find(id))?.state === state;
-  const printerIsStopped = (name: string) => async (): Promise<boolean> => (await shop.printerNamed(name)).paused !== undefined;
+  const outOfContact = (name: string) => async (): Promise<boolean> => (await shop.printerNamed(name)).outOfContact !== undefined;
 
   async function addPrinter(name: string): Promise<void> {
     await shop.addPrinter({ name, buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: `http://${name}` });
@@ -247,14 +247,125 @@ describe('the foreman', () => {
     });
 
     // Otherwise the job says it is printing and nobody is listening to the machine.
-    it('stops a printer whose print it loses track of', async () => {
+    it('writes down that it lost the print, and what took it', async () => {
       await submit();
       mockAwaitOutcome.mockRejectedValue(new Error('lost contact for too long'));
 
       await foreman.considerStarting();
 
-      await until(printerIsStopped('mk4'));
-      expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: expect.stringContaining('lost contact') });
+      await until(outOfContact('mk4'));
+      expect((await shop.printerNamed('mk4')).outOfContact).toMatchObject({ reason: 'lost contact for too long' });
+    });
+
+    // AIDEV-NOTE: it used to be a stop, which asked an operator to confirm something they could not
+    // see. As far as anyone knows the machine is still printing, and nothing is idled by this that
+    // the print was not idling anyway.
+    it('does not stop the printer, which is very likely still printing', async () => {
+      await submit();
+      mockAwaitOutcome.mockRejectedValue(new Error('lost contact for too long'));
+
+      await foreman.considerStarting();
+
+      await until(outOfContact('mk4'));
+      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
+    });
+
+    // Letting go would queue a job that is on a bed.
+    it('keeps the job on the printer', async () => {
+      const id = await submit();
+      mockAwaitOutcome.mockRejectedValue(new Error('lost contact for too long'));
+
+      await foreman.considerStarting();
+
+      await until(outOfContact('mk4'));
+      expect((await shop.printerNamed('mk4')).holding).toMatchObject({ job: id, phase: 'printing' });
+    });
+  });
+
+  // AIDEV-NOTE: rarer than it looks. The adapter reconnects for as long as the process lives, so a
+  // watch is only declared lost after minutes of silence - and the recovery is to listen again and
+  // let the machine's own status say what happened while nobody was there.
+  describe('listening again for a print it lost', () => {
+    let clock: Date;
+    let patient: Foreman;
+
+    const laterBy = (ms: number): void => {
+      clock = new Date(clock.getTime() + ms);
+    };
+
+    beforeEach(async () => {
+      clock = new Date('2026-09-09T09:00:00.000Z');
+      patient = new Foreman(shop, mockReach, silent, () => clock);
+      await submit();
+      mockAwaitOutcome.mockResolvedValue('finished');
+      mockAwaitOutcome.mockRejectedValueOnce(new Error('lost contact for too long'));
+
+      await patient.considerStarting();
+      await until(outOfContact('mk4'));
+
+      // AIDEV-NOTE: waiting for the WATCHER, not just for what it wrote. The store shows the loss a
+      // tick before the watcher lets go of the printer's name, and a retry started in that gap is
+      // refused as a second watch - which is a timeout here and says nothing about the code.
+      await patient.watchersSettled();
+      mockReach.mockClear();
+    });
+
+    // AIDEV-NOTE: a try is taken on by a watcher the clock does not wait for, so these settle it
+    // rather than polling what it wrote. The store shows a loss a tick before the watcher lets go of
+    // the printer's name, and a try started in that gap is refused as a second watch - which is a
+    // timeout that says nothing about the code.
+    async function tryAgainAfter(ms: number): Promise<void> {
+      laterBy(ms);
+      await patient.reachForWhatIsLost();
+      await patient.watchersSettled();
+    }
+
+    it('leaves the machine alone until it has waited', async () => {
+      await tryAgainAfter(0);
+
+      expect(mockReach).not.toHaveBeenCalled();
+    });
+
+    it('is hearing it again once the machine answers', async () => {
+      await tryAgainAfter(30_000);
+
+      expect((await shop.printerNamed('mk4')).outOfContact).toBeUndefined();
+    });
+
+    // The payoff: the print's outcome is written down after all, by the shop that lost it.
+    it('writes down how the print ended', async () => {
+      await tryAgainAfter(30_000);
+
+      expect(await shop.find(1)).toMatchObject({ state: 'awaiting-approval', lastPrinterOutcome: 'finished' });
+    });
+
+    // A machine that has been off for a day is not worth a login every thirty seconds.
+    it('waits longer after each try that gets nowhere', async () => {
+      mockReach.mockRejectedValue(new Error('nothing is listening at http://mk4'));
+
+      await tryAgainAfter(30_000);
+      expect(mockReach).toHaveBeenCalledTimes(1);
+      mockReach.mockClear();
+
+      await tryAgainAfter(30_000);
+      expect(mockReach).not.toHaveBeenCalled();
+
+      await tryAgainAfter(30_000);
+      expect(mockReach).toHaveBeenCalledTimes(1);
+    });
+
+    // AIDEV-NOTE: the other half of the rule, and the reason the two are told apart. Having the
+    // machine in hand IS contact, so a silence that follows one is a new silence rather than the
+    // old one going on - and a machine that keeps dropping its watch costs a login a time, not a
+    // plate, so starting over cannot run away.
+    it('starts the waiting over once it has heard the machine', async () => {
+      mockAwaitOutcome.mockRejectedValue(new Error('lost contact for too long'));
+      await tryAgainAfter(30_000);
+      mockReach.mockClear();
+
+      await tryAgainAfter(30_000);
+
+      expect(mockReach).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -370,7 +481,7 @@ describe('the foreman', () => {
       await patient.considerStarting();
       mockReach.mockClear();
 
-      await patient.retryUnreachable();
+      await patient.reachForWhatIsLost();
 
       expect(mockReach).not.toHaveBeenCalled();
     });
@@ -422,7 +533,7 @@ describe('the foreman', () => {
       mockReach.mockClear();
 
       clock = new Date(clock.getTime() + 30_000);
-      await patient.retryUnreachable();
+      await patient.reachForWhatIsLost();
 
       // Not a count: reaching the machine is what the retry IS, and what the shop does next with a
       // machine that answers is the ordinary look's business.
@@ -506,7 +617,7 @@ describe('the foreman', () => {
     });
 
     it('leaves the machine alone until it has waited', async () => {
-      await patient.retryUnreachable();
+      await patient.reachForWhatIsLost();
 
       expect(mockReach).not.toHaveBeenCalled();
     });
@@ -515,7 +626,7 @@ describe('the foreman', () => {
       mockReach.mockImplementation(async (): Promise<Printer> => ({ send: mockSend, awaitOutcome: mockAwaitOutcome }));
       laterBy(30_000);
 
-      await patient.retryUnreachable();
+      await patient.reachForWhatIsLost();
 
       expect((await shop.printerNamed('mk4')).unreachable).toBeUndefined();
     });
@@ -525,7 +636,7 @@ describe('the foreman', () => {
       mockReach.mockImplementation(async (): Promise<Printer> => ({ send: mockSend, awaitOutcome: mockAwaitOutcome }));
       laterBy(30_000);
 
-      await patient.retryUnreachable();
+      await patient.reachForWhatIsLost();
 
       expect(mockSend).toHaveBeenCalledTimes(1);
     });
@@ -533,25 +644,41 @@ describe('the foreman', () => {
     // A machine that has been off for a day is not worth a login every thirty seconds.
     it('waits longer after each try that fails', async () => {
       laterBy(30_000);
-      await patient.retryUnreachable();
+      await patient.reachForWhatIsLost();
       mockReach.mockClear();
 
       laterBy(30_000);
-      await patient.retryUnreachable();
+      await patient.reachForWhatIsLost();
       expect(mockReach).not.toHaveBeenCalled();
 
       laterBy(30_000);
-      await patient.retryUnreachable();
+      await patient.reachForWhatIsLost();
       expect(mockReach).toHaveBeenCalledTimes(1);
     });
 
     // AIDEV-NOTE: what a restart finds - the fact is on disk and nothing is remembered about the
     // last attempt. Trying at once is the point: a shop that has just come up is a good moment to
     // find out, and the cost of being wrong is one login.
+    // AIDEV-NOTE: a login answered is not a machine working. The client is kept once it has
+    // connected, so answering costs nothing, and the upload that follows can fail all the same -
+    // which would be a whole plate every thirty seconds if an answer alone were taken as recovery.
+    it('does not start its waiting over just because the machine answered', async () => {
+      mockReach.mockImplementation(async (): Promise<Printer> => ({ send: mockSend, awaitOutcome: mockAwaitOutcome }));
+      mockSend.mockRejectedValue(new CouldNotReach('octopi.local closed the connection'));
+      laterBy(30_000);
+      await patient.reachForWhatIsLost();
+      mockReach.mockClear();
+
+      laterBy(30_000);
+      await patient.reachForWhatIsLost();
+
+      expect(mockReach).not.toHaveBeenCalled();
+    });
+
     it('tries a machine it finds already out of reach', async () => {
       const restarted = new Foreman(new JobStore(spool), mockReach, silent, () => clock);
 
-      await restarted.retryUnreachable();
+      await restarted.reachForWhatIsLost();
 
       expect(mockReach).toHaveBeenCalledTimes(1);
     });
@@ -561,7 +688,7 @@ describe('the foreman', () => {
       await shop.pause('mk4', 'the door is open');
       laterBy(30_000);
 
-      await patient.retryUnreachable();
+      await patient.reachForWhatIsLost();
 
       expect(mockReach).not.toHaveBeenCalled();
       expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: 'the door is open' });
@@ -571,7 +698,7 @@ describe('the foreman', () => {
       laterBy(30_000);
       patient.stop();
 
-      await patient.retryUnreachable();
+      await patient.reachForWhatIsLost();
 
       expect(mockReach).not.toHaveBeenCalled();
     });

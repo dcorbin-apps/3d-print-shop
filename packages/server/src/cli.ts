@@ -77,11 +77,11 @@ export function createCLI(): Command {
       const foreman = new Foreman(store, machines.reach, log);
 
       // AIDEV-NOTE: the one thing the shop does on a clock rather than after a change it made. A
-      // printer the shop cannot get to makes no changes, so nothing else would ever ask again - and
+      // machine the shop cannot hear makes no changes, so nothing else would ever ask again - and
       // what ends one of these happens in a room the shop cannot see.
       const reachingAgain = setInterval(() => {
         void foreman
-          .retryUnreachable()
+          .reachForWhatIsLost()
           .catch((failure: unknown) => log.error('could not reach for the printers', { why: (failure as Error).message }));
       }, RETRY_TICK_MS);
 

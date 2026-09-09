@@ -633,12 +633,13 @@ at one login a try. A send the machine ANSWERED, with any reply that is not ok, 
 whole difference is whether asking again costs a login or a plate, so the distinction lives where
 the answer is: beside the `Printer` port, not in the loop above it.
 
-**Unknown.** The shop is holding a print it can no longer hear about, recorded as `outOfContact`
-with the time and what was last seen. **This is not a stop.** As far as anyone knows the machine is
-fine and the print is still running; there is nothing for a person to do, and asking one to type
-`printer start` to clear it would be asking them to confirm something they cannot see. Nor does it
-need to idle anything: a printer holding a job takes no work already, so the stop that used to be
-written here bought nothing and cost an operator a machine.
+**Out of contact.** The shop is holding a print it can no longer hear about, recorded as
+`outOfContact` with the time and what took the watch. **This is not a stop.** As far as anyone knows
+the machine is fine and the print is still running; there is nothing for a person to do, and asking
+one to type `printer start` to clear it would be asking them to confirm something they cannot see.
+Nor does it need to idle anything: a printer holding a job takes no work already, so the stop that
+used to be written here bought nothing and cost an operator a machine. The printer keeps its job for
+the same reason - letting go would queue a job that is on a bed.
 
 It is reachable from one state only. Contact is tested in exactly two places - reaching a machine in
 order to start a print, which stops the printer when it fails, and watching one, which only a
@@ -648,10 +649,20 @@ losing a watch is minutes of silence rather than a moment of it.
 
 **And it clears itself.** The recovery is the watch: rebuild the client, listen again, and let the
 machine's own status settle what happened while nobody was listening - still running that path and
-the watch simply resumes, not running it and the last print's result says how it ended. Success
-erases `outOfContact`, and nobody is asked to confirm anything. A restart does the same thing by
-another road: what is written says the printer is holding a print, and picking that back up is what
-the shop does with one anyway.
+the watch simply resumes, not running it and the last print's result says how it ended. It runs on
+the same clock that reaches for a machine out of reach, and having the machine in hand IS contact:
+that is what erases `outOfContact`, before anything has been settled about the print, because a shop
+saying it cannot hear a machine it is talking to would be saying something false. A restart does the
+same thing by another road: what is written says the printer is holding a print, and picking that
+back up is what the shop does with one anyway.
+
+**What each backoff does when it succeeds is not the same, and the difference is what a wasted try
+costs.** Hearing a machine again starts the waiting over, because a silence after contact is a new
+silence and losing a watch again costs one login. A machine merely ANSWERING does not: a client is
+kept once it has connected, so answering a login costs it nothing, and the upload that follows can
+fail all the same - starting over on that would put the shop back to re-sending a whole plate every
+thirty seconds. That count is forgotten when a print actually starts, which is the only thing that
+says the machine works.
 
 The known cost is a word: a print CANCELLED during the outage reconciles as `failed`, because a
 history records cancelled as unsuccessful and only a live event says otherwise. That is the shop

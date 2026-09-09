@@ -508,6 +508,51 @@ describe('JobStore', () => {
     });
   });
 
+  // AIDEV-NOTE: the shop lost hold of a print it was watching. The printer keeps its job - the
+  // machine goes on printing whoever is listening - so what is written is that nobody is hearing it.
+  describe('a print the shop stopped hearing about', () => {
+    beforeEach(async () => {
+      const job = await submit(details(), gcode());
+      await shop.load('mk4', ['PLA-SpaceGray']);
+      await shop.startPrinting('mk4', job.id);
+    });
+
+    it('says what took the watch, and when', async () => {
+      await shop.lostContact('mk4', 'lost contact for too long');
+
+      const printer = await shop.printerNamed('mk4');
+      expect(printer.outOfContact).toMatchObject({ reason: 'lost contact for too long' });
+      expect(printer.outOfContact?.since).toBeInstanceOf(Date);
+    });
+
+    it('is not a stop, because nobody stopped anything', async () => {
+      await shop.lostContact('mk4', 'lost contact for too long');
+
+      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
+    });
+
+    // Letting go would queue a job that is on a bed.
+    it('leaves the printer holding its print', async () => {
+      await shop.lostContact('mk4', 'lost contact for too long');
+
+      expect((await shop.printerNamed('mk4')).holding).toMatchObject({ phase: 'printing' });
+    });
+
+    it('lets go when the machine is being heard again', async () => {
+      await shop.lostContact('mk4', 'lost contact for too long');
+      await shop.inContactAgain('mk4');
+
+      expect((await shop.printerNamed('mk4')).outOfContact).toBeUndefined();
+    });
+
+    it('is lifted when an operator says go', async () => {
+      await shop.lostContact('mk4', 'lost contact for too long');
+      await shop.resume('mk4');
+
+      expect((await shop.printerNamed('mk4')).outOfContact).toBeUndefined();
+    });
+  });
+
   // AIDEV-NOTE: the one thing the shop writes about a machine that waits for a person. The printer
   // ANSWERED, so there is nothing to find out by asking again - and asking costs a whole plate.
   describe('a printer that would not take the file', () => {

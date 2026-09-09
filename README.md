@@ -133,6 +133,11 @@ so a printer that was switched off or missing a key comes back by itself and the
 without anybody typing anything. `printer stop` is an operator's word and only `printer start` lifts
 it; that lifts the other too, for somebody who has just put a key right and wants to know now.
 
+**A print it stops hearing about is not a stopped printer either.** If the shop loses the watch on a
+running print - minutes of silence, not a dropped packet - it says so and keeps listening, on the
+same backoff. The printer keeps its job, because the machine is very likely still printing it, and
+when the shop is heard again the machine's own status says how the print went.
+
 **A machine that answers and says no is a different thing.** An upload the printer turned down - a
 path it will not store, a disk with no room - is written down as a refusal and left there, because
 the machine has given its answer and asking again re-sends the whole plate to be told the same

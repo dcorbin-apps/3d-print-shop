@@ -53,6 +53,14 @@ export interface PrinterStatus {
    * person says they have dealt with it.
    */
   refused?: { reason: string; since: Date };
+  /**
+   * The shop is holding a print it can no longer hear about, with what took the watch and when.
+   *
+   * Not a stop and not a fault of the machine's: as far as anyone knows it is still printing, and
+   * nothing is idled by this that the print was not idling already. The shop listens again on a
+   * backoff, and the machine's own status settles what happened while nobody was there.
+   */
+  outOfContact?: { reason: string; since: Date };
   /** The job it has, or undefined when the bed is clear and it can take another. */
   holding?: Holding;
 }

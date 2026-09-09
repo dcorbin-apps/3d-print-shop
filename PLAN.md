@@ -10,21 +10,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The service
 
-- [ ] A lost watch leaves the printer UNKNOWN rather than stopped, and picking the print back up is
-  what clears it. Decided; the states are written down under `What state a printer is in` in the
-  design. Two halves:
-  - `watchToTheEnd` records `outOfContact` - the time and what was last seen - instead of pausing.
-    A new optional on `PrinterStatus`, so the wire contract, `HttpShop`'s date revival and
-    `printer list` all carry it. Nothing needs to be idled: a printer holding a job takes no work
-  - the recovery is what `resumeWatching` does, for one printer, away from startup - rebuild the
-    client and watch again - and the adapter's own reconciliation then settles it: still running
-    that path and the watch simply resumes, not running it and the last print's result says how it
-    ended. Success erases `outOfContact`, and nobody is asked to confirm anything. It runs on the
-    foreman's clock, which now exists, and needs nothing else. Note what produces this, because it is rarer than
-    it looks: the adapter reconnects for ever on its own, so the foreman sees it only after ten
-    minutes out of contact. Known cost: a print CANCELLED during the outage reconciles as `failed`,
-    because the history records cancelled as unsuccessful and only a live event says otherwise - a
-    wrong word the shop would be choosing by itself rather than being told
 - [ ] SIGHUP re-reads EVERYTHING in `/etc/3d-print-shop`, not only `callers.json`. Today a printer's
   key is read once at startup, so a wrong or missing one is fixed by editing a file and RESTARTING -
   and a stop outlives a restart, so the operator pays twice. Two things it touches: the keys reach

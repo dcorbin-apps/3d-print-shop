@@ -165,6 +165,12 @@ describe('the shop over HTTP', () => {
       expect((await shop.printers())[0].refused?.since).toBeInstanceOf(Date);
     });
 
+    it('hands back the time it stopped hearing a print as a time', async () => {
+      answers = { status: 200, body: [{ ...MK4, loaded: [], outOfContact: { reason: 'lost contact', since: '2026-09-06T11:22:04.177Z' } }] };
+
+      expect((await shop.printers())[0].outOfContact?.since).toBeInstanceOf(Date);
+    });
+
     // 201 or 200 is the whole difference between adding a printer and changing one, and it lives
     // only on the wire.
     it.each([

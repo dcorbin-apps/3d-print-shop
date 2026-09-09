@@ -59,10 +59,11 @@ const STATUS_FILE = 'status.json';
 
 type StoredJob = Omit<JobRecord, 'submittedAt'> & { submittedAt: string };
 type StoredTrouble = { reason: string; since: string };
-type StoredStatus = Omit<PrinterStatus, 'paused' | 'unreachable' | 'refused'> & {
+type StoredStatus = Omit<PrinterStatus, 'paused' | 'unreachable' | 'refused' | 'outOfContact'> & {
   paused?: StoredTrouble;
   unreachable?: StoredTrouble;
   refused?: StoredTrouble;
+  outOfContact?: StoredTrouble;
 };
 
 export class NoSuchJob extends Error {}
@@ -324,7 +325,10 @@ export class JobStore {
    * wait out a backoff to find out whether they got it right.
    */
   async resume(name: string): Promise<void> {
-    await this.changeStatus(name, ({ paused: _paused, unreachable: _unreachable, refused: _refused, ...status }) => status);
+    await this.changeStatus(
+      name,
+      ({ paused: _paused, unreachable: _unreachable, refused: _refused, outOfContact: _outOfContact, ...status }) => status
+    );
   }
 
   // AIDEV-NOTE: not a stop, and deliberately not `paused`. It is the shop's own reading of a
@@ -346,6 +350,19 @@ export class JobStore {
   /** The machine would not take the file. */
   async wouldNotTake(name: string, reason: string): Promise<void> {
     await this.changeStatus(name, (status) => ({ ...status, refused: { reason, since: new Date() } }));
+  }
+
+  // AIDEV-NOTE: the printer keeps its job. Nothing here says the print stopped - the machine goes on
+  // printing whoever is listening - so letting go of what it holds would queue a job that is on a
+  // bed. What is written down is that nobody is hearing about it any more.
+  /** The shop lost hold of a print it was watching. */
+  async lostContact(name: string, reason: string): Promise<void> {
+    await this.changeStatus(name, (status) => ({ ...status, outOfContact: { reason, since: new Date() } }));
+  }
+
+  /** It is being heard again. Nobody is told, because nobody was asked to do anything about it. */
+  async inContactAgain(name: string): Promise<void> {
+    await this.changeStatus(name, ({ outOfContact: _outOfContact, ...status }) => status);
   }
 
   /**
@@ -414,7 +431,13 @@ export class JobStore {
     if (contents === undefined) return undefined;
 
     const stored = JSON.parse(contents) as StoredStatus;
-    return { ...stored, paused: since(stored.paused), unreachable: since(stored.unreachable), refused: since(stored.refused) };
+    return {
+      ...stored,
+      paused: since(stored.paused),
+      unreachable: since(stored.unreachable),
+      refused: since(stored.refused),
+      outOfContact: since(stored.outOfContact),
+    };
   }
 
   private async writeStatus(name: string, status: PrinterStatus): Promise<void> {

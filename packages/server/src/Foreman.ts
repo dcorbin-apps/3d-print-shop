@@ -75,18 +75,19 @@ export class Foreman {
   }
 
   /**
-   * Reach for the machines the shop could not get to, and let go of the fact for any that answer.
+   * Reach for every machine the shop has lost hold of - the ones it could not get to, and the ones
+   * whose print it stopped hearing about - and let go of the fact for any that answer.
    *
-   * Driven by a clock rather than by a change, because a printer nobody can reach makes none - and
+   * Driven by a clock rather than by a change, because a machine nobody can hear makes none - and
    * everything that ends one of these is outside the shop: a machine switched on, a key corrected,
-   * a router fixed. None of them announces itself, so trying is the only way to find out.
+   * a router fixed. None of them announces itself, so asking is the only way to find out.
    */
-  retryUnreachable(): Promise<void> {
+  reachForWhatIsLost(): Promise<void> {
     if (this.stopping) return Promise.resolve();
 
     const retry = this.retrying.then(
-      () => this.reachForWhatIsOutOfReach(),
-      () => this.reachForWhatIsOutOfReach()
+      () => this.reachForEverythingLost(),
+      () => this.reachForEverythingLost()
     );
     this.retrying = retry.catch(() => undefined);
 
@@ -117,16 +118,19 @@ export class Foreman {
     return picked;
   }
 
-  private async reachForWhatIsOutOfReach(): Promise<void> {
+  private async reachForEverythingLost(): Promise<void> {
     let anyAnswered = false;
 
     for (const printer of await this.shop.printers()) {
       // An operator's stop is not lifted by a machine answering: it is a fact about the room, and
       // reaching the machine says nothing about it.
-      if (!printer.unreachable || printer.paused) continue;
+      if (printer.paused) continue;
       if (this.now().getTime() < (this.waiting.get(printer.name)?.until ?? 0)) continue;
 
-      anyAnswered = (await this.tryAgain(printer)) || anyAnswered;
+      // A print nobody is hearing about is picked back up rather than started again: the printer
+      // still has its job, and listening again is what settles how it went.
+      if (printer.outOfContact) this.watch(printer.name);
+      else if (printer.unreachable) anyAnswered = (await this.tryAgain(printer)) || anyAnswered;
     }
 
     if (anyAnswered) await this.considerStarting();
@@ -141,7 +145,10 @@ export class Foreman {
       return false;
     }
 
-    this.waiting.delete(printer.name);
+    // AIDEV-NOTE: the wait is NOT forgotten here. A machine can answer a login and still refuse the
+    // upload that follows - a client is kept once it has connected, so the answer costs nothing to
+    // give - and forgetting the wait on that would put the shop back to re-sending a whole plate
+    // every thirty seconds. It is forgotten when a print actually starts.
     await this.shop.reachedAgain(printer.name);
     this.log.info('reached the printer again', { printer: printer.name, after: printer.unreachable?.reason });
 
@@ -168,6 +175,9 @@ export class Foreman {
       const attempt = await startNextPrint(this.shop, () => this.reach(printer), printer.name);
 
       if (attempt.did === 'started') {
+        // It is working. Whatever it had been waiting out is over.
+        this.waiting.delete(printer.name);
+
         this.log.info('started printing', {
           printer: printer.name,
           job: attempt.job.id,
@@ -231,9 +241,12 @@ export class Foreman {
     this.log.error('could not reach the printer', { printer: name, why });
     await this.shop.couldNotReach(name, why);
 
-    // From the start, whatever this printer's last spell out of reach cost: it was reachable a
-    // moment ago, so this is a new fault rather than the continuation of an old one.
-    this.waitBeforeTrying(name, 1);
+    // AIDEV-NOTE: it goes on from where this printer left off rather than starting at thirty
+    // seconds. A machine can answer a login and still fail the upload that follows - the client is
+    // kept once it has connected, so the answer costs it nothing - and starting over on that would
+    // re-send a whole plate every thirty seconds for as long as it kept doing it. The count is
+    // forgotten when a print actually starts, which is the only thing that says it works.
+    this.waitBeforeTrying(name, (this.waiting.get(name)?.attempt ?? 0) + 1);
   }
 
   private async reach(printer: RegisteredPrinter): Promise<Printer> {
@@ -263,7 +276,22 @@ export class Foreman {
   private async watchToTheEnd(name: string): Promise<void> {
     try {
       const printer = await this.shop.printerNamed(name);
-      const outcome = await recordOutcome(this.shop, await this.machines(printer), name);
+      const machine = await this.machines(printer);
+
+      // AIDEV-NOTE: having the machine in hand IS contact. What it makes of the print comes after,
+      // from the adapter's own reconciliation, and waiting for that to call it contact would leave
+      // the shop saying it cannot hear a machine it is already talking to.
+      //
+      // The wait IS forgotten here, unlike a machine that could not be reached: a silence after
+      // contact is a new silence, and losing a watch again costs one login rather than a plate - so
+      // starting the waiting over cannot run away, and the adapter's own ten minutes bounds it.
+      if (printer.outOfContact) {
+        this.waiting.delete(name);
+        await this.shop.inContactAgain(name);
+        this.log.info('hearing the printer again', { printer: name, after: printer.outOfContact.reason });
+      }
+
+      const outcome = await recordOutcome(this.shop, machine, name);
 
       // What the PRINTER said, which is not a verdict - the bed is still held until a person judges
       // what came off it.
@@ -273,11 +301,13 @@ export class Foreman {
       // shop that comes back up refusing to print for a reason nobody caused.
       if (this.stopping) return;
 
-      // Losing track leaves a job that says it is printing and a machine nobody is listening to.
-      // Stopping the printer is what puts that in front of an operator instead of leaving it.
-      const why = `lost track of the print on ${name}: ${(failure as Error).message}`;
-      this.log.error('printer stopped', { printer: name, why });
-      await this.shop.pause(name, why).catch(() => undefined);
+      // AIDEV-NOTE: NOT a stop. The machine is very likely still printing, the printer keeps its
+      // job, and nothing is idled that the print was not idling already - so there is nothing for a
+      // person to do and nothing for them to confirm. It is written down, and listened for again.
+      const why = (failure as Error).message;
+      this.log.error('lost track of the print', { printer: name, why });
+      this.waitBeforeTrying(name, (this.waiting.get(name)?.attempt ?? 0) + 1);
+      await this.shop.lostContact(name, why).catch(() => undefined);
     }
   }
 }

@@ -60,8 +60,11 @@ export async function listPrinters(shop: Shop): Promise<string[]> {
     // The one the shop writes that waits for a person, so it has to read like something to go and
     // deal with rather than like something the shop is still working on.
     const refused = printer.refused ? `  REFUSED: ${printer.refused.reason}` : '';
+    // Said, but as news rather than as a job: the print is very likely still running, and the shop
+    // is already listening for it again.
+    const unheard = printer.outOfContact ? `  OUT OF CONTACT: ${printer.outOfContact.reason}` : '';
 
-    return `${printer.name}  ${x}x${y}x${z}mm  ${printer.address}  ${loaded}  ${doing}${stopped}${outOfReach}${refused}`;
+    return `${printer.name}  ${x}x${y}x${z}mm  ${printer.address}  ${loaded}  ${doing}${stopped}${outOfReach}${refused}${unheard}`;
   });
 }
 
@@ -86,7 +89,7 @@ export async function resumePrinter(shop: Shop, name: string): Promise<string[]>
   // Read before it is changed, because what stopped it is the useful half of the answer and is gone
   // the moment it starts again.
   const was = (await shop.printers()).find((printer) => printer.name === name);
-  const trouble = was?.paused ?? was?.refused ?? was?.unreachable;
+  const trouble = was?.paused ?? was?.refused ?? was?.unreachable ?? was?.outOfContact;
 
   const printer = await shop.resume(name);
 
