@@ -411,4 +411,38 @@ describe('the foreman', () => {
       expect(await shop.find(id)).toMatchObject({ state: 'printing', heldBy: 'mini' });
     });
   });
+
+  // AIDEV-NOTE: a fault of the SHOP's - the store, the spool - rather than of the machine's. It used
+  // to stop the printer, along with everything else that could go wrong inside a start, which put an
+  // operator in front of a stopped machine that was never the thing at fault.
+  describe('when the shop itself is at fault', () => {
+    let lines: string[];
+    let watched: Foreman;
+
+    // The job's record goes between reading the queue and claiming the printer, so the failure lands
+    // where a store read or a spool that went away would: inside the start, past the machine.
+    beforeEach(async () => {
+      lines = [];
+      watched = new Foreman(shop, mockReach, toStdout(() => new Date(), (line) => lines.push(line)));
+
+      const id = await submit();
+      mockReach.mockImplementation(async (): Promise<Printer> => {
+        await fs.rm(path.join(spool, 'jobs', String(id)), { recursive: true, force: true });
+
+        return { send: mockSend, awaitOutcome: mockAwaitOutcome };
+      });
+    });
+
+    it('leaves the printer running', async () => {
+      await watched.considerStarting();
+
+      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
+    });
+
+    it('says what went wrong, since a log line is the only trace of it', async () => {
+      await watched.considerStarting();
+
+      expect(lines.join('\n')).toContain('ERROR could not start anything printer=mk4 why="no job 1"');
+    });
+  });
 });

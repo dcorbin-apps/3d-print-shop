@@ -8,6 +8,13 @@ import type { RegisteredPrinter } from './Printer.js';
 /** How a registration becomes something that can actually be talked to. */
 export type Machines = (printer: RegisteredPrinter) => Promise<Printer>;
 
+// AIDEV-NOTE: what tells "I could not get to that machine" apart from everything else that can go
+// wrong while starting a print. Only this stops a printer, because only this is about the printer:
+// a store or spool fault is the shop's own, and stopping a machine over one puts a person in front
+// of a message that names the wrong thing.
+/** The machine could not be got to at all - nothing listening, no key, a login it would not grant. */
+export class CouldNotReach extends Error {}
+
 // AIDEV-NOTE: what decides that now is a moment to start something. It is called after EVERY change
 // the shop makes rather than from the handful of places that obviously matter - a curated list of
 // triggers is a list somebody forgets to add to, and a missed wake-up is a job that sits for ever.
@@ -95,7 +102,7 @@ export class Foreman {
 
   private async start(printer: RegisteredPrinter): Promise<void> {
     try {
-      const attempt = await startNextPrint(this.shop, () => this.machines(printer), printer.name);
+      const attempt = await startNextPrint(this.shop, () => this.reach(printer), printer.name);
 
       if (attempt.did === 'started') {
         this.log.info('started printing', {
@@ -131,12 +138,28 @@ export class Foreman {
       // seen for real, as `printer stopped` written after `the shop has stopped`.
       if (this.stopping) return;
 
+      if (!(failure instanceof CouldNotReach)) {
+        // Nothing here is the machine's fault, and it is not the machine that has to be put right -
+        // so the next look tries again, and a person who types `printer start` is not made to clear
+        // a fault that was never about the printer.
+        this.log.error('could not start anything', { printer: printer.name, why: (failure as Error).message });
+
+        return;
+      }
+
       // AIDEV-NOTE: a machine that cannot even be built - no key, an address nothing answers at -
       // would otherwise be tried again on every single change, one failure per change. It stops for
       // the same reason a failed upload stops it: the next attempt will fail the same way.
-      const why = `could not start anything on ${printer.name}: ${(failure as Error).message}`;
-      this.log.error('printer stopped', { printer: printer.name, why });
-      await this.shop.pause(printer.name, why);
+      this.log.error('printer stopped', { printer: printer.name, why: failure.message });
+      await this.shop.pause(printer.name, failure.message);
+    }
+  }
+
+  private async reach(printer: RegisteredPrinter): Promise<Printer> {
+    try {
+      return await this.machines(printer);
+    } catch (failure) {
+      throw new CouldNotReach(`could not reach ${printer.name}: ${(failure as Error).message}`);
     }
   }
 

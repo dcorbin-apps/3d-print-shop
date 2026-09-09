@@ -132,7 +132,7 @@ and then `key=value` for the rest:
 
 ```
 2026-09-08T14:27:59.056Z INFO  job submitted job=1 displayName="Player Box" filaments=["PLA-Red"] owner=dave
-2026-09-08T14:27:59.067Z ERROR printer stopped printer=mk4 why="could not start anything on mk4: fetch failed"
+2026-09-08T14:27:59.067Z ERROR printer stopped printer=mk4 why="could not reach mk4: fetch failed"
 ```
 
 What was submitted, what started on which printer, how each print ended, every verdict and who gave
