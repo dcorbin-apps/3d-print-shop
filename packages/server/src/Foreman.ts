@@ -94,7 +94,7 @@ export class Foreman {
   private async startWhatCanBeStarted(): Promise<void> {
     for (const printer of await this.shop.printers()) {
       // Holding anything at all means the bed is not clear, verdict or no verdict.
-      if (printer.paused || printer.holding) continue;
+      if (printer.paused || printer.unreachable || printer.holding) continue;
 
       await this.start(printer);
     }
@@ -148,10 +148,11 @@ export class Foreman {
       }
 
       // AIDEV-NOTE: a machine that cannot even be built - no key, an address nothing answers at -
-      // would otherwise be tried again on every single change, one failure per change. It stops for
-      // the same reason a failed upload stops it: the next attempt will fail the same way.
-      this.log.error('printer stopped', { printer: printer.name, why: failure.message });
-      await this.shop.pause(printer.name, failure.message);
+      // would otherwise be tried again on every single change, one failure per change. Written down
+      // so the next look leaves it alone, and NOT as a stop: nothing about the room changed, and an
+      // operator asked to clear it would be confirming something they cannot see.
+      this.log.error('could not reach the printer', { printer: printer.name, why: failure.message });
+      await this.shop.couldNotReach(printer.name, failure.message);
     }
   }
 
@@ -159,7 +160,7 @@ export class Foreman {
     try {
       return await this.machines(printer);
     } catch (failure) {
-      throw new CouldNotReach(`could not reach ${printer.name}: ${(failure as Error).message}`);
+      throw new CouldNotReach((failure as Error).message);
     }
   }
 

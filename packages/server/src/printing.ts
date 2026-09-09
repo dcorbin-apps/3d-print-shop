@@ -20,7 +20,7 @@ export interface Printer {
 }
 
 export type PrintAttempt =
-  | { did: 'nothing'; because: 'paused' | 'busy' | 'nothing-printable' }
+  | { did: 'nothing'; because: 'paused' | 'unreachable' | 'busy' | 'nothing-printable' }
   | { did: 'started'; job: Job }
   | { did: 'could-not-start'; job: Job; remotePath: string; failure: Error };
 
@@ -50,6 +50,11 @@ export async function startNextPrint(shop: JobStore, reach: () => Promise<Printe
   const onto = await shop.printerNamed(printerName);
 
   if (onto.paused) return { did: 'nothing', because: 'paused' };
+
+  // Not a stop, but the same answer: there is no point uploading to a machine the shop has just
+  // found it cannot get to. Read here rather than trusted from the caller's snapshot, because both
+  // this and what the printer holds change while the shop runs.
+  if (onto.unreachable) return { did: 'nothing', because: 'unreachable' };
 
   // Holding anything at all, including a print somebody has not judged yet: the bed is not clear.
   if (onto.holding) return { did: 'nothing', because: 'busy' };

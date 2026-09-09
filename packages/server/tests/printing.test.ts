@@ -250,6 +250,15 @@ describe('printing the next job', () => {
       expect(await printOn('mk4', ['PLA-Red'])).toEqual({ did: 'nothing', because: 'paused' });
     });
 
+    // Not a stop, and the same answer: there is no point uploading to a machine the shop has just
+    // found it cannot get to.
+    it('will not print on a machine the shop cannot get to', async () => {
+      await submit(['PLA-Red'], { printer: 'mk4' });
+      await shop.couldNotReach('mk4', 'no API key for mk4');
+
+      expect(await printOn('mk4', ['PLA-Red'])).toEqual({ did: 'nothing', because: 'unreachable' });
+    });
+
     it('prints on a named machine while the unnamed one is stopped', async () => {
       await submit(['PLA-Red'], { printer: 'mk4' });
       await shop.pause('mini', 'nothing to do with mk4');

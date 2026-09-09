@@ -403,13 +403,13 @@ describe('JobStore', () => {
     });
 
     it('says why it stopped', async () => {
-      await shop.pause('mk4', 'the printer is unreachable');
+      await shop.pause('mk4', 'out of filament');
 
-      expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: 'the printer is unreachable' });
+      expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: 'out of filament' });
     });
 
     it('runs again when told to', async () => {
-      await shop.pause('mk4', 'the printer is unreachable');
+      await shop.pause('mk4', 'out of filament');
       await shop.resume('mk4');
 
       expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
@@ -440,21 +440,71 @@ describe('JobStore', () => {
     });
 
     it('is still stopped after a restart', async () => {
-      await shop.pause('mk4', 'the printer is unreachable');
+      await shop.pause('mk4', 'out of filament');
 
       expect((await new JobStore(spool).printerNamed('mk4')).paused).toMatchObject({
-        reason: 'the printer is unreachable',
+        reason: 'out of filament',
       });
     });
 
     it('records when it stopped', async () => {
-      await shop.pause('mk4', 'the printer is unreachable');
+      await shop.pause('mk4', 'out of filament');
 
       expect((await shop.printerNamed('mk4')).paused?.since).toBeInstanceOf(Date);
     });
 
     it('will not stop a printer it does not have', async () => {
       await expect(shop.pause('ender', 'anything')).rejects.toThrow(NoSuchPrinter);
+    });
+  });
+
+  // AIDEV-NOTE: the shop's own reading of a machine, kept apart from a stop. `paused` is what an
+  // operator said and only an operator lifts; this is what the shop found, and the shop lifts it.
+  describe('a printer the shop cannot get to', () => {
+    it('says what it saw, and when', async () => {
+      await shop.couldNotReach('mk4', 'no API key for mk4');
+
+      const printer = await shop.printerNamed('mk4');
+      expect(printer.unreachable).toMatchObject({ reason: 'no API key for mk4' });
+      expect(printer.unreachable?.since).toBeInstanceOf(Date);
+    });
+
+    // A restart is not contact with the machine, so it says nothing about whether this is over.
+    it('is still out of reach after a restart', async () => {
+      await shop.couldNotReach('mk4', 'no API key for mk4');
+
+      expect((await new JobStore(spool).printerNamed('mk4')).unreachable).toMatchObject({ reason: 'no API key for mk4' });
+    });
+
+    it('is not a stop, because nobody is being asked to clear it', async () => {
+      await shop.couldNotReach('mk4', 'no API key for mk4');
+
+      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
+    });
+
+    it('lets go when the machine answers again', async () => {
+      await shop.couldNotReach('mk4', 'no API key for mk4');
+      await shop.reachedAgain('mk4');
+
+      expect((await shop.printerNamed('mk4')).unreachable).toBeUndefined();
+    });
+
+    // The machine answering says nothing about the reason a person gave, which no machine can
+    // contradict - a printer whose door an operator left open is still stopped when it picks up.
+    it("leaves an operator's stop where it is when the machine answers again", async () => {
+      await shop.pause('mk4', 'the door is open');
+      await shop.couldNotReach('mk4', 'no API key for mk4');
+      await shop.reachedAgain('mk4');
+
+      expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: 'the door is open' });
+    });
+
+    // Somebody who has just put a key right should not wait out a backoff to find out whether it took.
+    it('is lifted too when an operator says go', async () => {
+      await shop.couldNotReach('mk4', 'no API key for mk4');
+      await shop.resume('mk4');
+
+      expect((await shop.printerNamed('mk4')).unreachable).toBeUndefined();
     });
   });
 

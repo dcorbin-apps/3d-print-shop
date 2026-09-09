@@ -53,8 +53,12 @@ export async function listPrinters(shop: Shop): Promise<string[]> {
     const loaded = printer.loaded.length > 0 ? printer.loaded.join(', ') : 'nothing loaded';
     const doing = printer.holding ? `${printer.holding.phase} job ${printer.holding.job}` : 'idle';
     const stopped = printer.paused ? `  STOPPED: ${printer.paused.reason}` : '';
+    // Said even though nobody has to act on it: an operator looking at a machine that is taking no
+    // work is owed the reason, and "the shop cannot get to it" is a different thing to go and look
+    // at than "somebody stopped it".
+    const outOfReach = printer.unreachable ? `  UNREACHABLE: ${printer.unreachable.reason}` : '';
 
-    return `${printer.name}  ${x}x${y}x${z}mm  ${printer.address}  ${loaded}  ${doing}${stopped}`;
+    return `${printer.name}  ${x}x${y}x${z}mm  ${printer.address}  ${loaded}  ${doing}${stopped}${outOfReach}`;
   });
 }
 
@@ -78,9 +82,10 @@ export async function pausePrinter(shop: Shop, name: string, reason: string): Pr
 export async function resumePrinter(shop: Shop, name: string): Promise<string[]> {
   // Read before it is changed, because what stopped it is the useful half of the answer and is gone
   // the moment it starts again.
-  const stopped = (await shop.printers()).find((printer) => printer.name === name)?.paused;
+  const was = (await shop.printers()).find((printer) => printer.name === name);
+  const trouble = was?.paused ?? was?.unreachable;
 
   const printer = await shop.resume(name);
 
-  return [stopped ? `${printer.name} running again, after ${stopped.reason}` : `${printer.name} was not stopped`];
+  return [trouble ? `${printer.name} running again, after ${trouble.reason}` : `${printer.name} was not stopped`];
 }

@@ -143,12 +143,17 @@ async function refusal(response: Response): Promise<string> {
 // reason this is a client rather than a cast: a caller handed `submittedAt` typed as a Date and
 // holding a string finds out at the first comparison, somewhere else entirely.
 type WireJob = Omit<Job, 'submittedAt'> & { submittedAt: string };
-type WirePrinter = Omit<RegisteredPrinter, 'paused'> & { paused?: { reason: string; since: string } };
+type WireTrouble = { reason: string; since: string };
+type WirePrinter = Omit<RegisteredPrinter, 'paused' | 'unreachable'> & { paused?: WireTrouble; unreachable?: WireTrouble };
 
 function asJob(job: WireJob): Job {
   return { ...job, submittedAt: new Date(job.submittedAt) };
 }
 
 function asPrinter(printer: WirePrinter): RegisteredPrinter {
-  return { ...printer, paused: printer.paused && { ...printer.paused, since: new Date(printer.paused.since) } };
+  return { ...printer, paused: since(printer.paused), unreachable: since(printer.unreachable) };
+}
+
+function since(trouble: WireTrouble | undefined): { reason: string; since: Date } | undefined {
+  return trouble && { ...trouble, since: new Date(trouble.since) };
 }

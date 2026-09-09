@@ -31,8 +31,19 @@ export interface Holding {
 export interface PrinterStatus {
   /** What is on the machine now, positionally by extruder. Empty when nothing is. */
   loaded: string[];
-  /** Why this printer is not taking work, or undefined if it is. */
+  /**
+   * An OPERATOR stopped this printer, with the reason they gave and when. Only an operator lifts
+   * it: a reason given by a person is a fact about the room, and no machine can contradict it.
+   */
   paused?: { reason: string; since: Date };
+  /**
+   * The shop could not get to the machine, with what it saw and when.
+   *
+   * Kept apart from `paused` because it is the shop's own reading of a machine rather than
+   * anybody's instruction: nobody is asked to clear it, and the shop clears it itself once it can
+   * reach the machine again.
+   */
+  unreachable?: { reason: string; since: Date };
   /** The job it has, or undefined when the bed is clear and it can take another. */
   holding?: Holding;
 }

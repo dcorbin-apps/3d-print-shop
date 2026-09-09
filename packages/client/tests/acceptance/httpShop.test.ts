@@ -153,6 +153,12 @@ describe('the shop over HTTP', () => {
       expect((await shop.printers())[0].paused?.since).toBeInstanceOf(Date);
     });
 
+    it('hands back the time the shop lost it as a time', async () => {
+      answers = { status: 200, body: [{ ...MK4, loaded: [], unreachable: { reason: 'no API key for mk4', since: '2026-09-06T11:22:04.177Z' } }] };
+
+      expect((await shop.printers())[0].unreachable?.since).toBeInstanceOf(Date);
+    });
+
     // 201 or 200 is the whole difference between adding a printer and changing one, and it lives
     // only on the wire.
     it.each([

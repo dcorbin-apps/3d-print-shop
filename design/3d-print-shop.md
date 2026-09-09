@@ -594,17 +594,31 @@ verdict is how the shop finds out that happened.
 
 **Stopped.** `paused`, carrying the reason and the time. It takes no work whatever is loaded and
 whether or not the bed is clear, and the stop outlives a restart - a restart is not evidence that
-the trouble is over. Three things stop a printer: an operator says so, the machine could not be
-reached, and the machine refused an upload. Only the first is a fact about the room that no machine
-can contradict; the other two are the shop's own reading of a machine, and the intent is that they
-clear themselves once the machine can be reached again, leaving an operator's stop as the only one
-that needs an operator to lift it.
+the trouble is over. An operator's word, and an operator's alone: the reason a person gives is a
+fact about the room, no machine can contradict it, and only a person can say it is over. The
+exception still to be moved out is a refused upload, which stops the printer because whatever
+prevented one upload will prevent the next - it belongs with the fact below rather than here.
 
-**Stopped per printer, not per shop.** A machine that is unreachable has no business idling a
-machine that is working. The reason and the time are recorded so an operator can see what happened
-without watching it happen. A fault of the shop's own - the store, the spool - stops nothing: it is
-no printer's fault, and stopping a machine over one names the wrong thing and leaves a person
-clearing a fault that was never about the printer.
+**Stopped per printer, not per shop.** A machine in trouble has no business idling a machine that is
+working. The reason and the time are recorded so an operator can see what happened without watching
+it happen. A fault of the shop's own - the store, the spool - stops nothing: it is no printer's
+fault, and stopping a machine over one names the wrong thing and leaves a person clearing a fault
+that was never about the printer.
+
+**Unreachable.** The shop could not get to the machine at all - nothing listening, a name that does
+not resolve, no key for it, a key it refused, a login that handed back no session. Recorded as
+`unreachable`, with what was seen and when, and deliberately **not** as `paused`: nothing about the
+room changed, nobody did anything, and an operator asked to clear it would be confirming something
+only the shop can see. It takes no work while it lasts, for the reason a stop does - the next
+attempt fails the same way, and one fault would otherwise become one failure per job held - so what
+an operator sees is a machine standing idle with the reason beside it.
+
+**And it clears itself**, because the shop is the only one who can tell. Every one of those causes
+is ended by something outside the shop - a machine switched on, a key corrected, a router fixed -
+and none of them announces itself, so the shop reaches for the machine again on a backoff and lifts
+the fact the moment it answers. One login a try. `printer start` lifts it too, and lifts a stop with
+it: somebody who has just put a key right should not wait out a backoff to find out whether they
+got it.
 
 **Unknown.** The shop is holding a print it can no longer hear about, recorded as `outOfContact`
 with the time and what was last seen. **This is not a stop.** As far as anyone knows the machine is

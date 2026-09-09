@@ -144,6 +144,14 @@ describe('minding the printers', () => {
 
       expect(await listPrinters(shop)).toEqual(['mk4  250x210x220mm  http://mk4  nothing loaded  idle  STOPPED: the door is open']);
     });
+
+    // Nobody has to act on this one - the shop clears it itself - but a machine taking no work is
+    // still owed a reason, and this is a different thing to go and look at than a stop.
+    it('says which the shop cannot get to, and what it saw', async () => {
+      mockPrinters.mockResolvedValue([printer({ unreachable: { reason: 'no API key for mk4', since: new Date() } })]);
+
+      expect(await listPrinters(shop)).toEqual(['mk4  250x210x220mm  http://mk4  nothing loaded  idle  UNREACHABLE: no API key for mk4']);
+    });
   });
 
   describe('saying what is loaded', () => {
@@ -186,6 +194,14 @@ describe('minding the printers', () => {
 
       expect(await resumePrinter(shop, 'mk4')).toEqual(['mk4 running again, after out of filament']);
       expect(mockResume).toHaveBeenCalledWith('mk4');
+    });
+
+    // The shop would lift this by itself once the machine answered. Saying go is how an operator who
+    // has just put a key right finds out whether they got it, instead of waiting out a backoff.
+    it('starts one the shop could not reach, recalling what it saw', async () => {
+      mockPrinters.mockResolvedValue([printer({ unreachable: { reason: 'no API key for mk4', since: new Date() } })]);
+
+      expect(await resumePrinter(shop, 'mk4')).toEqual(['mk4 running again, after no API key for mk4']);
     });
 
     // Rather than reporting a change it did not make.

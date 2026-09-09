@@ -58,7 +58,8 @@ const PRINTER_FILE = 'printer.json';
 const STATUS_FILE = 'status.json';
 
 type StoredJob = Omit<JobRecord, 'submittedAt'> & { submittedAt: string };
-type StoredStatus = Omit<PrinterStatus, 'paused'> & { paused?: { reason: string; since: string } };
+type StoredTrouble = { reason: string; since: string };
+type StoredStatus = Omit<PrinterStatus, 'paused' | 'unreachable'> & { paused?: StoredTrouble; unreachable?: StoredTrouble };
 
 export class NoSuchJob extends Error {}
 export class NoSuchPrinter extends Error {}
@@ -313,8 +314,26 @@ export class JobStore {
     await this.changeStatus(name, (status) => ({ ...status, paused: { reason, since: new Date() } }));
   }
 
+  /**
+   * The operator says go. It lifts everything the shop is holding against the printer, including
+   * what the shop decided by itself: somebody who has just put a key right should not be made to
+   * wait out a backoff to find out whether they got it right.
+   */
   async resume(name: string): Promise<void> {
-    await this.changeStatus(name, ({ paused: _paused, ...status }) => status);
+    await this.changeStatus(name, ({ paused: _paused, unreachable: _unreachable, ...status }) => status);
+  }
+
+  // AIDEV-NOTE: not a stop, and deliberately not `paused`. It is the shop's own reading of a
+  // machine rather than anybody's instruction - nothing about the room changed, nobody is asked to
+  // clear it, and the shop lifts it itself the moment it can reach the machine again.
+  /** The shop could not get to the machine at all - nothing listening, no key, a login refused. */
+  async couldNotReach(name: string, reason: string): Promise<void> {
+    await this.changeStatus(name, (status) => ({ ...status, unreachable: { reason, since: new Date() } }));
+  }
+
+  /** It answered again. Nobody is told, because nobody was asked to do anything about it. */
+  async reachedAgain(name: string): Promise<void> {
+    await this.changeStatus(name, ({ unreachable: _unreachable, ...status }) => status);
   }
 
   /**
@@ -383,7 +402,7 @@ export class JobStore {
     if (contents === undefined) return undefined;
 
     const stored = JSON.parse(contents) as StoredStatus;
-    return { ...stored, paused: stored.paused ? { reason: stored.paused.reason, since: new Date(stored.paused.since) } : undefined };
+    return { ...stored, paused: since(stored.paused), unreachable: since(stored.unreachable) };
   }
 
   private async writeStatus(name: string, status: PrinterStatus): Promise<void> {
@@ -561,4 +580,8 @@ function describeWhyNothingCanTakeIt(details: JobDetails, printers: RegisteredPr
 
 function describeVolume(volume: BuildVolume): string {
   return `${volume.x}x${volume.y}x${volume.z}mm`;
+}
+
+function since(trouble: StoredTrouble | undefined): { reason: string; since: Date } | undefined {
+  return trouble && { reason: trouble.reason, since: new Date(trouble.since) };
 }

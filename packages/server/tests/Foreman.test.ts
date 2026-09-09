@@ -378,12 +378,23 @@ describe('the foreman', () => {
       mockReach.mockRejectedValue(new Error('no API key for mk4'));
     });
 
-    it('stops the printer, saying what was wrong', async () => {
+    it('writes down that it cannot get to it, and what it saw', async () => {
       await submit();
 
       await foreman.considerStarting();
 
-      expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: expect.stringContaining('no API key for mk4') });
+      expect((await shop.printerNamed('mk4')).unreachable).toMatchObject({ reason: 'no API key for mk4' });
+    });
+
+    // AIDEV-NOTE: it used to be a stop, and an operator had to type `printer start` to clear one.
+    // Nothing about the room changed, so there was nothing for them to confirm - and the shop is
+    // the only one that can tell when the machine answers again.
+    it('does not stop it, since there is nothing for a person to do', async () => {
+      await submit();
+
+      await foreman.considerStarting();
+
+      expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
     });
 
     // Otherwise every change in the shop would produce one more failure against the same machine.
