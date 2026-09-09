@@ -19,12 +19,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   only a job's FIRST filament today, which is right for one extruder and wrong for several: the
   index is the extruder the slicer assigned, so `[red, blue]` and `[blue, red]` are different
   requirements. `startsWith()` in `packages/server/src/selection.ts` is the one place to revisit
-- [ ] Optional duration on a job, so `waitingOn` can rank demand by how much WORK is waiting rather
-  than by how many jobs are. It has to be a field of its own — putting it in `metadata` would make
-  the shop interpret a bag it promises never to read
-- [ ] Guard: refuse a job whose printer does not match the machine it would print on. A client can
-  say what the SLICER called the machine (`MK4IS`) in `metadata`, and whether OctoPrint names it the
-  same way is unknown — that answer is needed before this can be anything but a guess
 
 ### Security
 

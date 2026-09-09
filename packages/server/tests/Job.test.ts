@@ -33,6 +33,30 @@ describe('validateDetails', () => {
     expect(() => validateDetails(details({ filaments: [filament] }))).toThrow('no name');
   });
 
+  // AIDEV-NOTE: a number the shop adds up, so what it refuses is what would poison the total. It is
+  // cast from JSON on the way in, so a client can send anything at all under this name.
+  describe('how long a client says the print takes', () => {
+    it('accepts a job that says', () => {
+      expect(() => validateDetails(details({ estimatedPrintSeconds: 20_460 }))).not.toThrow();
+    });
+
+    it.each([[0], [-1], [Number.NaN], [Number.POSITIVE_INFINITY], ['3600' as unknown as number], [null as unknown as number]])(
+      'refuses %p as how long a print takes',
+      (said) => {
+        expect(() => validateDetails(details({ estimatedPrintSeconds: said }))).toThrow('is not how long a print takes');
+      }
+    );
+
+    // Said back so an operator reading the log can see what arrived - and JSON.stringify writes
+    // both of these as `null`, which would name neither.
+    it.each([
+      [Number.NaN, 'NaN is not how long'],
+      [Number.POSITIVE_INFINITY, 'Infinity is not how long'],
+    ])('says what it was given when it was %p', (said, complaint) => {
+      expect(() => validateDetails(details({ estimatedPrintSeconds: said }))).toThrow(complaint);
+    });
+  });
+
   it('refuses a blank filament among good ones', () => {
     expect(() => validateDetails(details({ filaments: ['PLA-SpaceGray', ''] }))).toThrow(InvalidSubmission);
   });

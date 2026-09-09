@@ -193,6 +193,7 @@ submit(details, gcode: Readable)
   displayName?: string,                 // what a human should see
   remotePath?: string,                  // where to push it on the printer
   printer?: string,                     // which printer, when there is more than one
+  estimatedPrintSeconds?: number,       // how long the slicer thought, if the client knows
   metadata?: Record<string, unknown>,   // carried, never interpreted
 }
 ```
@@ -503,11 +504,20 @@ the jobs it could take. Without one it answers for the whole shop, which is the 
 there is one machine and the wrong one where there are two: a job may name another printer or be too
 big for this one, and an operator at the smaller machine would be told to load a filament nothing
 there could use. It filters on `canTake` and deliberately NOT on what is loaded, which is the very
-thing being asked about. Ranking by job COUNT is admittedly the wrong measure - four quick
-jobs outrank one long one, where "load red, it is six hours of work" is the answer an operator
-actually wants. A job carries no duration yet. When one is added it has to be a field of its own and
-not the `metadata` bag, because ranking by something inside metadata would break the promise never
-to interpret it.
+thing being asked about.
+
+**It ranks by WORK where it can, and by job count where it cannot.** "Load red, it is six hours" is
+the answer an operator wants, and four quick jobs should not outrank one long one - so a job may say
+`estimatedPrintSeconds`, which the shop never measures and never corrects. It is a field of its own
+rather than something in the `metadata` bag, because ranking by something inside metadata would break
+the promise never to interpret it.
+
+Two rules keep a half-answered queue honest. A filament's total is left out entirely where any job
+waiting on it said nothing, rather than summed over the ones that did: a partial total is quietly
+short, and choosing a spool by a number that understates the queue is worse than choosing by a count.
+And the ranking is decided over the whole answer - one filament without a total puts every one of
+them back on counting, because otherwise a single job that said how long it takes would outrank six
+that did not.
 
 ## Sending a job to a printer
 

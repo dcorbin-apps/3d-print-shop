@@ -163,6 +163,37 @@ describe('choosing what to print', () => {
       expect(waitingOn([])).toEqual([]);
     });
 
+    // AIDEV-NOTE: what an operator decides by is how much WORK is waiting, not how many jobs are -
+    // four quick ones should not send them for a spool ahead of one long one. What keeps that
+    // honest is that a total is all-or-nothing: see workIn().
+    describe('how much work is waiting', () => {
+      const timed = (id: number, filament: string, seconds: number): Job => job(id, [filament], { estimatedPrintSeconds: seconds });
+
+      it('totals what every job waiting on a filament says it takes', () => {
+        expect(waitingOn([timed(1, 'red', 3600), timed(2, 'red', 1800)])).toEqual([
+          { filament: 'red', jobs: 2, estimatedPrintSeconds: 5400 },
+        ]);
+      });
+
+      it('says nothing of the total when one of them did not say', () => {
+        expect(waitingOn([timed(1, 'red', 3600), job(2, ['red'])])).toEqual([{ filament: 'red', jobs: 2 }]);
+      });
+
+      it('puts the most work first, though it is the fewest jobs', () => {
+        const held = [timed(1, 'red', 36_000), timed(2, 'blue', 600), timed(3, 'blue', 600)];
+
+        expect(waitingOn(held).map((demand) => demand.filament)).toEqual(['red', 'blue']);
+      });
+
+      // One job that said how long it takes must not outrank several that did not - which is what
+      // ranking a half-known answer by work would do.
+      it('goes back to counting jobs when any filament has no total', () => {
+        const held = [timed(1, 'red', 36_000), job(2, ['blue']), job(3, ['blue'])];
+
+        expect(waitingOn(held).map((demand) => demand.filament)).toEqual(['blue', 'red']);
+      });
+    });
+
     // AIDEV-NOTE: the question is asked AT a machine - "what do I load next" - and a job that
     // machine could never take is not work it is waiting on. printableNow has always filtered on
     // this and counting demand did not, so an operator at the mini could be sent for a filament

@@ -33,7 +33,23 @@ export function validateDetails(details: JobDetails): void {
     throw new InvalidSubmission('a job cannot need a filament with no name');
   }
 
+  if (details.estimatedPrintSeconds !== undefined) validateEstimate(details.estimatedPrintSeconds);
   if (details.remotePath !== undefined) validateRemotePath(details.remotePath);
+}
+
+// AIDEV-NOTE: a number the shop ADDS UP, so what is refused is what arithmetic would not survive -
+// anything that is not a number, a NaN, an infinity - and a print that takes no time at all, which
+// is a client that meant to say nothing. Taken as `unknown` because it arrives from JSON.parse and
+// the type it was cast to on the way in proves nothing about what was sent.
+//
+// Nothing here has an opinion about how LONG is too long: a plate that runs for two days is a plate.
+function validateEstimate(seconds: unknown): void {
+  if (typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0) return;
+
+  // A number says itself, because JSON.stringify writes both NaN and Infinity as `null`.
+  const said = typeof seconds === 'number' ? String(seconds) : JSON.stringify(seconds);
+
+  throw new InvalidSubmission(`${said} is not how long a print takes - it is a number of seconds, above zero`);
 }
 
 // The longest name a single path component may have on every filesystem this could land on. Applied

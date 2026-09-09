@@ -44,7 +44,7 @@ export function nextToPrint(jobs: Job[], printer: RegisteredPrinter): Job | unde
  * Named a printer, it answers for that machine rather than for the shop.
  */
 export function waitingOn(jobs: Job[], printer?: RegisteredPrinter): FilamentDemand[] {
-  const waiting = new Map<string, number>();
+  const waiting = new Map<string, Job[]>();
 
   // AIDEV-NOTE: `canTake` and NOT what is loaded, which is the difference between this and
   // `printableNow`: what is loaded is the very thing being asked about. Without a printer this
@@ -52,19 +52,33 @@ export function waitingOn(jobs: Job[], printer?: RegisteredPrinter): FilamentDem
   // moment there are two - it would tell somebody at the mini to load a filament for a job only the
   // XL could take.
   for (const job of jobs.filter((queued) => queued.state === 'queued' && (printer === undefined || canTake(printer, queued)))) {
-    waiting.set(startsWith(job), (waiting.get(startsWith(job)) ?? 0) + 1);
+    waiting.set(startsWith(job), [...(waiting.get(startsWith(job)) ?? []), job]);
   }
 
-  // AIDEV-NOTE: busiest by COUNT, which is the wrong measure - "load red, it is six hours of work"
-  // is the answer an operator wants, and four quick jobs should not outrank one long one. A job
-  // carries no duration today, so a client that knows one has no way to say it.
-  //
-  // If that is added it must be an optional field of its own, NOT the `metadata` bag: metadata is
-  // carried and never interpreted, and ranking by something inside it would break that rule for
-  // every client at once.
+  const demands = [...waiting.entries()].map(([filament, held]) => ({
+    filament,
+    jobs: held.length,
+    estimatedPrintSeconds: workIn(held),
+  }));
+
+  // AIDEV-NOTE: by WORK when the shop knows all of it, and by COUNT when it does not - decided over
+  // the whole answer rather than demand by demand. "Load red, it is six hours" is what an operator
+  // wants, and four quick jobs should not outrank one long one; but neither should one job that
+  // said how long it takes outrank six that did not, which is what ranking a mixed answer by work
+  // would do. So a single filament nobody timed puts the whole answer back on counting.
   //
   // Alphabetical within a tie, so that the answer does not wander between asks.
-  return [...waiting.entries()]
-    .map(([filament, count]) => ({ filament, jobs: count }))
-    .sort((a, b) => b.jobs - a.jobs || a.filament.localeCompare(b.filament));
+  const byWork = demands.every((demand) => demand.estimatedPrintSeconds !== undefined);
+  const work = (demand: FilamentDemand): number => (byWork ? (demand.estimatedPrintSeconds ?? 0) : 0);
+
+  return demands.sort((a, b) => work(b) - work(a) || b.jobs - a.jobs || a.filament.localeCompare(b.filament));
+}
+
+// AIDEV-NOTE: nothing at all where any one of them said nothing, rather than a total over the ones
+// that did. A partial total is quietly short, and an operator choosing what to load by a number
+// that understates the queue is worse served than by the count they had before.
+function workIn(jobs: Job[]): number | undefined {
+  if (jobs.some((job) => job.estimatedPrintSeconds === undefined)) return undefined;
+
+  return jobs.reduce((total, job) => total + (job.estimatedPrintSeconds ?? 0), 0);
 }

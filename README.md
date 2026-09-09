@@ -189,6 +189,7 @@ const job = await shop.submit(
     filaments: ['PLA-Red'],          // the PRINTER's names, in extruder order
     displayName: 'Player Box x4',    // what a person sees in a queue
     requiredBuildVolume: { x: 120, y: 90, z: 40 },
+    estimatedPrintSeconds: 20460,    // what the slicer said, if the client knows
     metadata: { anything: 'the shop carries this and never reads it' },
   },
   await openAsBlob('player_box.gcode')

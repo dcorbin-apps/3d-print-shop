@@ -38,8 +38,24 @@ function nothingIsWaiting(printer: string | undefined): string {
     : `nothing queued that ${printer} could take`;
 }
 
-function jobsWaiting({ jobs }: FilamentDemand): string {
-  return jobs === 1 ? '1 job waiting' : `${jobs} jobs waiting`;
+function jobsWaiting({ jobs, estimatedPrintSeconds }: FilamentDemand): string {
+  const waiting = jobs === 1 ? '1 job waiting' : `${jobs} jobs waiting`;
+
+  // Said only when the shop has it for all of them - see `FilamentDemand`. What an operator decides
+  // by is the time, so it goes on the line rather than being left for them to work out.
+  return estimatedPrintSeconds === undefined ? waiting : `${waiting}, ${asPrintingTime(estimatedPrintSeconds)} of printing`;
+}
+
+// Hours and minutes, which is what a person deciding whether to swap a spool thinks in - and rounded
+// UP, so that the queue is never said to be shorter than it is.
+function asPrintingTime(seconds: number): string {
+  const minutes = Math.ceil(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours === 0) return `${minutes}m`;
+  if (minutes % 60 === 0) return `${hours}h`;
+
+  return `${hours}h ${minutes % 60}m`;
 }
 
 // AIDEV-NOTE: the verdict is what frees the PRINTER, not just the job - a printer holds its bed

@@ -100,6 +100,14 @@ describe('JobStore', () => {
       });
     });
 
+    // Written down rather than only echoed back, because what ranks the queue is read from the
+    // record long after the submission that carried it has been answered.
+    it('records how long a client said the print takes', async () => {
+      const job = await submit(details({ estimatedPrintSeconds: 20_460 }), gcode());
+
+      expect((await new JobStore(spool).find(job.id))?.estimatedPrintSeconds).toBe(20_460);
+    });
+
     // Counted as it is written, rather than taken on trust from a client - what is recorded is what
     // actually arrived, which is also what would betray a truncated file.
     it.each([

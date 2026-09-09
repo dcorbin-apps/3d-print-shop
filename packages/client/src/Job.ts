@@ -26,6 +26,15 @@ export interface JobDetails {
   printer?: string;
   /** The room the SLICED result needs, compared axis for axis with no rotation. */
   requiredBuildVolume?: BuildVolume;
+  /**
+   * How long printing this is expected to take, in seconds, as whatever sliced it estimated. The
+   * shop never measures one and never corrects one; it only adds them up.
+   *
+   * A field of its own rather than something in `metadata`, because the shop RANKS demand by it and
+   * metadata is carried without ever being interpreted. Absent is a client that does not know, which
+   * costs a total rather than counting as no work - see `FilamentDemand`.
+   */
+  estimatedPrintSeconds?: number;
   /** Carried by the shop and never interpreted - how a client keeps its own meaning attached. */
   metadata?: Record<string, unknown>;
 }
@@ -47,10 +56,18 @@ export interface JobsHeld {
  * What queued work is waiting for, and how much of it there is - the answer to "what should I load
  * next". Counted by the filament each job STARTS with, because that is the one that has to be on the
  * machine before it can begin.
+ *
+ * Busiest first, which is by WORK when the shop knows all of it and by count when it does not.
  */
 export interface FilamentDemand {
   filament: string;
   jobs: number;
+  /**
+   * How much printing is waiting on this filament, in seconds - present only when EVERY job counted
+   * here said how long it takes. A total summed over the ones that did would understate the queue,
+   * and a number that is quietly short is worse to choose by than no number at all.
+   */
+  estimatedPrintSeconds?: number;
 }
 
 /** Where a job is. Derived by the shop from what its printers are holding. */

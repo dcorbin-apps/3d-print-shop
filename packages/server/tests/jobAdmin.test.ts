@@ -88,6 +88,24 @@ describe('minding the work', () => {
       expect(await whatToLoadNext(shop)).toEqual(['PLA-Red    3 jobs waiting', 'PLA-White  1 job waiting']);
     });
 
+    // What the operator is actually deciding by, when the shop knows it.
+    it('says how much printing is waiting, not only how many jobs', async () => {
+      mockWaitingOn.mockResolvedValue([{ filament: 'PLA-Red', jobs: 2, estimatedPrintSeconds: 20_460 }]);
+
+      expect(await whatToLoadNext(shop)).toEqual(['PLA-Red  2 jobs waiting, 5h 41m of printing']);
+    });
+
+    // Rounded up, so a queue is never said to be shorter than it is.
+    it.each([
+      [59, '1m'],
+      [3600, '1h'],
+      [3601, '1h 1m'],
+    ])('says %i seconds as %s', async (seconds, expected) => {
+      mockWaitingOn.mockResolvedValue([{ filament: 'PLA-Red', jobs: 1, estimatedPrintSeconds: seconds }]);
+
+      expect(await whatToLoadNext(shop)).toEqual([`PLA-Red  1 job waiting, ${expected} of printing`]);
+    });
+
     it('says when nothing is waiting on anything', async () => {
       mockWaitingOn.mockResolvedValue([]);
 
