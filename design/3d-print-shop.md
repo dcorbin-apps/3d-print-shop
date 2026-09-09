@@ -572,9 +572,63 @@ fault nobody caused, would be worse than one that simply picks the print up agai
 A print already running is not interrupted. It is on the bed, the printer's status still says so,
 and the next run picks it up - which is what `resumeWatching` is for.
 
+## What state a printer is in
+
+**Nothing records a printer's state as a word.** It is read from what is written down about the
+machine - what is loaded, what it is holding, and what the shop has been told or has found out - and
+each state below is a combination of those. A single `state` field would be a second place to be
+wrong about facts the shop already has, and the facts are what it acts on.
+
+**Idle.** Holding nothing, and free to take work: the bed is clear, and the next look starts the best
+job that what is loaded can print. A printer with nothing loaded is idle too. It is not in trouble,
+it simply cannot take anything until an operator says what is on it.
+
+**Printing.** Holding a job whose phase is `printing`, with a watcher listening for how it ends. It
+takes no other work, because holding anything at all means the bed is not clear.
+
+**Waiting for a verdict.** Holding a job whose phase is `awaiting-approval`. The print has ended -
+which is what the machine said, and not a judgement of what came off the bed - and the printer keeps
+both the job and the bed until a person gives one. A shop nobody attends fills up in this state, one
+printer at a time, and that is deliberate: between prints somebody has to clear a bed, and the
+verdict is how the shop finds out that happened.
+
+**Stopped.** `paused`, carrying the reason and the time. It takes no work whatever is loaded and
+whether or not the bed is clear, and the stop outlives a restart - a restart is not evidence that
+the trouble is over. Three things stop a printer: an operator says so, the machine could not be
+reached, and the machine refused an upload. Only the first is a fact about the room that no machine
+can contradict; the other two are the shop's own reading of a machine, and the intent is that they
+clear themselves once the machine can be reached again, leaving an operator's stop as the only one
+that needs an operator to lift it.
+
 **Stopped per printer, not per shop.** A machine that is unreachable has no business idling a
 machine that is working. The reason and the time are recorded so an operator can see what happened
-without watching it happen.
+without watching it happen. A fault of the shop's own - the store, the spool - stops nothing: it is
+no printer's fault, and stopping a machine over one names the wrong thing and leaves a person
+clearing a fault that was never about the printer.
+
+**Unknown.** The shop is holding a print it can no longer hear about, recorded as `outOfContact`
+with the time and what was last seen. **This is not a stop.** As far as anyone knows the machine is
+fine and the print is still running; there is nothing for a person to do, and asking one to type
+`printer start` to clear it would be asking them to confirm something they cannot see. Nor does it
+need to idle anything: a printer holding a job takes no work already, so the stop that used to be
+written here bought nothing and cost an operator a machine.
+
+It is reachable from one state only. Contact is tested in exactly two places - reaching a machine in
+order to start a print, which stops the printer when it fails, and watching one, which only a
+printer that is printing has - so unknown always means printing, with the shop having lost the
+thread. It is not a dropped packet either: the client reconnects for as long as the process lives, so
+losing a watch is minutes of silence rather than a moment of it.
+
+**And it clears itself.** The recovery is the watch: rebuild the client, listen again, and let the
+machine's own status settle what happened while nobody was listening - still running that path and
+the watch simply resumes, not running it and the last print's result says how it ended. Success
+erases `outOfContact`, and nobody is asked to confirm anything. A restart does the same thing by
+another road: what is written says the printer is holding a print, and picking that back up is what
+the shop does with one anyway.
+
+The known cost is a word: a print CANCELLED during the outage reconciles as `failed`, because a
+history records cancelled as unsuccessful and only a live event says otherwise. That is the shop
+choosing a wrong word by itself rather than being told one, and it is the price of not stopping.
 
 ## One extruder, for now
 
