@@ -152,9 +152,24 @@ copiedTheBuild() {
 copiedEverything() {
   copiedTheBuild
   copiedIn "$REPO/node_modules" ''
+  droppedTheLinksThatLeadNowhere
 
   chown -R "root:$ROOT_GROUP" "$INSTALL_DIR"
   chmod -R a+rX,go-w "$INSTALL_DIR"
+}
+
+# AIDEV-NOTE: only the packages the service RUNS are copied, so a workspace link to one left behind -
+# the octoprint-sim the tests print against - arrives pointing at nothing. Nothing resolves it at
+# runtime, and it is removed anyway: a link that leads nowhere is not part of an install, and the
+# next person to look in here should not have to work out whether it matters.
+#
+# Just this directory, because a workspace is the only thing yarn links rather than copies.
+droppedTheLinksThatLeadNowhere() {
+  local link
+
+  for link in "$INSTALL_DIR/node_modules/@3d-print-shop"/*; do
+    if [ -L "$link" ] && [ ! -e "$link" ]; then rm -f "$link"; fi
+  done
 }
 
 # ---------------------------------------------------------------------------- macOS
