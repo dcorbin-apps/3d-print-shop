@@ -3,7 +3,7 @@ import { Command, InvalidArgumentError } from 'commander';
 import type { AddressInfo } from 'node:net';
 import { HttpShop, SHOP_URL_ENV, defaultShopUrl } from '@3d-print-shop/client';
 import { DEFAULT_PORT, LOOPBACK, serve } from './api.js';
-import { Foreman } from './Foreman.js';
+import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
 import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
@@ -76,6 +76,15 @@ export function createCLI(): Command {
       const machines = new OctoPrintMachines(printerKeys);
       const foreman = new Foreman(store, machines.reach, log);
 
+      // AIDEV-NOTE: the one thing the shop does on a clock rather than after a change it made. A
+      // printer the shop cannot get to makes no changes, so nothing else would ever ask again - and
+      // what ends one of these happens in a room the shop cannot see.
+      const reachingAgain = setInterval(() => {
+        void foreman
+          .retryUnreachable()
+          .catch((failure: unknown) => log.error('could not reach for the printers', { why: (failure as Error).message }));
+      }, RETRY_TICK_MS);
+
       // AIDEV-NOTE: every change the API makes is a moment something might be startable, so the
       // foreman is told about all of them rather than about a chosen few. Not awaited: a client
       // waiting on its own submission has no reason to wait for a printer to take a different job.
@@ -95,6 +104,7 @@ export function createCLI(): Command {
         // In this order: take no more requests, start nothing more, then let the machines go -
         // which is what settles the watchers waiting on them.
         shopServer.close();
+        clearInterval(reachingAgain);
         foreman.stop();
         machines.closeAll();
         releaseSpool();

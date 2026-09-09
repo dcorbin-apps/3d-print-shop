@@ -10,30 +10,13 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The service
 
-- [ ] Start a printer again by itself once it can be REACHED. The catch is narrowed - a `CouldNotReach`
-  stops the printer and anything else is logged and left - so what is left is the retry itself:
-  - what retries is both halves of "I could not get to this machine": unreachable (the whole
-    `UNREACHABLE` table - nothing listening, a name that does not resolve, no route, a timeout) AND
-    misconfigured (no key for this printer, a key the machine refuses, a login that hands back no
-    session). Both are ended by something outside the shop, and a retry costs one login
-  - it needs a clock. The foreman looks only after a change the shop made, and a stopped printer
-    makes none. Backoff, and it stays stopped between tries
-  - it needs `paused` to record WHO stopped it. An operator's reason is a fact about the room, and
-    no machine can contradict it
-  - preference on the retry itself: attempt the upload and only clear `paused` when a print actually
-    STARTS, rather than unpausing on a reachability check and letting the ordinary look try. Two
-    consequences to settle - `startNextPrint` refuses outright when `onto.paused` and that guard is
-    what keeps the ordinary look off a stopped printer, and with nothing printable there is nothing
-    to attempt, so a healthy machine keeps showing STOPPED until there is work it can take. That
-    same preference collapses this item and the failed-upload one into a single mechanism, which is
-    still open
-- [ ] Try a failed upload again by itself, for a printer the shop stopped because `send` was refused.
-  There is no status to read here - the retry is the test, and it is an ordinary start: the job went
-  back to the queue and nothing about it was written. Needs the same origin mark on `paused` and the
-  same clock as reaching a printer again. What it also needs is a way to tell an unreachable machine
-  from a refusal that will never stop being one - a bad path, a full disk - because retrying the
-  second re-sends a whole plate per attempt, for ever. Either back off to a ceiling and stay stopped,
-  or split what `send` throws so only the unreachable half is retried
+- [ ] A refused upload is the last thing left wearing `paused` that no operator said. It should be
+  its own fact the way `unreachable` is, and retried on the foreman's clock, which now exists. There
+  is no status to read here - the retry IS the test, and it is an ordinary start: the job went back
+  to the queue and nothing about it was written. What it needs beyond the clock is a way to tell an
+  unreachable machine from a refusal that will never stop being one - a bad path, a full disk -
+  because retrying the second re-sends a whole plate per attempt, for ever. Either back off to a
+  ceiling and stay there, or split what `send` throws so only the unreachable half is retried
 - [ ] A lost watch leaves the printer UNKNOWN rather than stopped, and picking the print back up is
   what clears it. Decided; the states are written down under `What state a printer is in` in the
   design. Two halves:
@@ -43,8 +26,8 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   - the recovery is what `resumeWatching` does, for one printer, away from startup - rebuild the
     client and watch again - and the adapter's own reconciliation then settles it: still running
     that path and the watch simply resumes, not running it and the last print's result says how it
-    ended. Success erases `outOfContact`, and nobody is asked to confirm anything. It needs the same
-    clock as retrying a reach, and nothing else. Note what produces this, because it is rarer than
+    ended. Success erases `outOfContact`, and nobody is asked to confirm anything. It runs on the
+    foreman's clock, which now exists, and needs nothing else. Note what produces this, because it is rarer than
     it looks: the adapter reconnects for ever on its own, so the foreman sees it only after ten
     minutes out of contact. Known cost: a print CANCELLED during the outage reconciles as `failed`,
     because the history records cancelled as unsuccessful and only a live event says otherwise - a

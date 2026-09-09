@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { Foreman } from '../src/Foreman';
-import { toStdout } from '../src/log';
+import { silent, toStdout } from '../src/log';
 import type { Machines } from '../src/Foreman';
 import { JobStore } from '../src/JobStore';
 import type { PrinterOutcome } from '../src/Job';
@@ -407,7 +407,7 @@ describe('the foreman', () => {
       expect(mockReach).toHaveBeenCalledTimes(1);
     });
 
-    // Two printers, because stopping the whole shop would satisfy the test above.
+    // Two printers, because clearing everything would satisfy the test above.
     it('leaves a working printer working', async () => {
       await addPrinter('mini');
       mockReach.mockImplementation(async (printer: RegisteredPrinter): Promise<Printer> => {
@@ -420,6 +420,103 @@ describe('the foreman', () => {
       await foreman.considerStarting();
 
       expect(await shop.find(id)).toMatchObject({ state: 'printing', heldBy: 'mini' });
+    });
+  });
+
+  // AIDEV-NOTE: nobody tells the shop that a machine has come back - it is switched on, or a key is
+  // corrected, in a room the shop cannot see. So it asks, on a clock, and a printer that answers is
+  // taking work again without anybody having typed anything.
+  describe('reaching a machine again by itself', () => {
+    let clock: Date;
+    let patient: Foreman;
+
+    const laterBy = (ms: number): void => {
+      clock = new Date(clock.getTime() + ms);
+    };
+
+    // Out of reach for a reason the shop found on its own, which is the only thing this retries.
+    async function couldNotBeReached(): Promise<void> {
+      mockReach.mockRejectedValue(new Error('no API key for mk4'));
+      await patient.considerStarting();
+      mockReach.mockClear();
+    }
+
+    beforeEach(async () => {
+      clock = new Date('2026-09-09T09:00:00.000Z');
+      patient = new Foreman(shop, mockReach, silent, () => clock);
+      await submit();
+      await couldNotBeReached();
+    });
+
+    it('leaves the machine alone until it has waited', async () => {
+      await patient.retryUnreachable();
+
+      expect(mockReach).not.toHaveBeenCalled();
+    });
+
+    it('lets go of the fact once the machine answers', async () => {
+      mockReach.mockImplementation(async (): Promise<Printer> => ({ send: mockSend, awaitOutcome: mockAwaitOutcome }));
+      laterBy(30_000);
+
+      await patient.retryUnreachable();
+
+      expect((await shop.printerNamed('mk4')).unreachable).toBeUndefined();
+    });
+
+    // The point of the whole thing: the queue moves again without anybody having typed anything.
+    it('starts what was waiting on it', async () => {
+      mockReach.mockImplementation(async (): Promise<Printer> => ({ send: mockSend, awaitOutcome: mockAwaitOutcome }));
+      laterBy(30_000);
+
+      await patient.retryUnreachable();
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    // A machine that has been off for a day is not worth a login every thirty seconds.
+    it('waits longer after each try that fails', async () => {
+      laterBy(30_000);
+      await patient.retryUnreachable();
+      mockReach.mockClear();
+
+      laterBy(30_000);
+      await patient.retryUnreachable();
+      expect(mockReach).not.toHaveBeenCalled();
+
+      laterBy(30_000);
+      await patient.retryUnreachable();
+      expect(mockReach).toHaveBeenCalledTimes(1);
+    });
+
+    // AIDEV-NOTE: what a restart finds - the fact is on disk and nothing is remembered about the
+    // last attempt. Trying at once is the point: a shop that has just come up is a good moment to
+    // find out, and the cost of being wrong is one login.
+    it('tries a machine it finds already out of reach', async () => {
+      const restarted = new Foreman(new JobStore(spool), mockReach, silent, () => clock);
+
+      await restarted.retryUnreachable();
+
+      expect(mockReach).toHaveBeenCalledTimes(1);
+    });
+
+    // Reaching the machine says nothing about the reason a person gave.
+    it("does not lift an operator's stop", async () => {
+      await shop.pause('mk4', 'the door is open');
+      laterBy(30_000);
+
+      await patient.retryUnreachable();
+
+      expect(mockReach).not.toHaveBeenCalled();
+      expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: 'the door is open' });
+    });
+
+    it('reaches for nothing on the way out', async () => {
+      laterBy(30_000);
+      patient.stop();
+
+      await patient.retryUnreachable();
+
+      expect(mockReach).not.toHaveBeenCalled();
     });
   });
 

@@ -15,6 +15,12 @@ export type Machines = (printer: RegisteredPrinter) => Promise<Printer>;
 /** The machine could not be got to at all - nothing listening, no key, a login it would not grant. */
 export class CouldNotReach extends Error {}
 
+/** How often the shop reaches for the machines it could not get to. Each printer waits its own turn. */
+export const RETRY_TICK_MS = 30_000;
+
+const FIRST_RETRY_MS = 30_000;
+const LONGEST_RETRY_MS = 10 * 60_000;
+
 // AIDEV-NOTE: what decides that now is a moment to start something. It is called after EVERY change
 // the shop makes rather than from the handful of places that obviously matter - a curated list of
 // triggers is a list somebody forgets to add to, and a missed wake-up is a job that sits for ever.
@@ -34,10 +40,18 @@ export class Foreman {
 
   private stopping = false;
 
+  // AIDEV-NOTE: how long each unreachable printer waits before the next try, in memory and
+  // deliberately not written down. A restart is a fine moment to try a machine again - one login
+  // is worth less than remembering how the last attempt went.
+  private readonly waiting = new Map<string, { attempt: number; until: number }>();
+
+  private retrying: Promise<unknown> = Promise.resolve();
+
   constructor(
     private readonly shop: JobStore,
     private readonly machines: Machines,
-    private readonly log: Log = silent
+    private readonly log: Log = silent,
+    private readonly now: () => Date = () => new Date()
   ) {}
 
   /**
@@ -68,6 +82,25 @@ export class Foreman {
   }
 
   /**
+   * Reach for the machines the shop could not get to, and let go of the fact for any that answer.
+   *
+   * Driven by a clock rather than by a change, because a printer nobody can reach makes none - and
+   * everything that ends one of these is outside the shop: a machine switched on, a key corrected,
+   * a router fixed. None of them announces itself, so trying is the only way to find out.
+   */
+  retryUnreachable(): Promise<void> {
+    if (this.stopping) return Promise.resolve();
+
+    const retry = this.retrying.then(
+      () => this.reachForWhatIsOutOfReach(),
+      () => this.reachForWhatIsOutOfReach()
+    );
+    this.retrying = retry.catch(() => undefined);
+
+    return retry;
+  }
+
+  /**
    * Pick up prints that were already running, and answer with the printers whose prints it took on.
    * A restart does not stop a machine, so a printer whose status says it is printing is a print
    * still worth watching - and its outcome is written down by whoever is watching, which after a
@@ -89,6 +122,43 @@ export class Foreman {
     }
 
     return picked;
+  }
+
+  private async reachForWhatIsOutOfReach(): Promise<void> {
+    let anyAnswered = false;
+
+    for (const printer of await this.shop.printers()) {
+      // An operator's stop is not lifted by a machine answering: it is a fact about the room, and
+      // reaching the machine says nothing about it.
+      if (!printer.unreachable || printer.paused) continue;
+      if (this.now().getTime() < (this.waiting.get(printer.name)?.until ?? 0)) continue;
+
+      anyAnswered = (await this.tryAgain(printer)) || anyAnswered;
+    }
+
+    if (anyAnswered) await this.considerStarting();
+  }
+
+  private async tryAgain(printer: RegisteredPrinter): Promise<boolean> {
+    try {
+      await this.machines(printer);
+    } catch {
+      this.waitBeforeTrying(printer.name, (this.waiting.get(printer.name)?.attempt ?? 1) + 1);
+
+      return false;
+    }
+
+    this.waiting.delete(printer.name);
+    await this.shop.reachedAgain(printer.name);
+    this.log.info('reached the printer again', { printer: printer.name, after: printer.unreachable?.reason });
+
+    return true;
+  }
+
+  private waitBeforeTrying(name: string, attempt: number): void {
+    const wait = Math.min(FIRST_RETRY_MS * 2 ** (attempt - 1), LONGEST_RETRY_MS);
+
+    this.waiting.set(name, { attempt, until: this.now().getTime() + wait });
   }
 
   private async startWhatCanBeStarted(): Promise<void> {
@@ -153,6 +223,10 @@ export class Foreman {
       // operator asked to clear it would be confirming something they cannot see.
       this.log.error('could not reach the printer', { printer: printer.name, why: failure.message });
       await this.shop.couldNotReach(printer.name, failure.message);
+
+      // From the start, whatever this printer's last spell out of reach cost: it was reachable a
+      // moment ago, so this is a new fault rather than the continuation of an old one.
+      this.waitBeforeTrying(printer.name, 1);
     }
   }
 

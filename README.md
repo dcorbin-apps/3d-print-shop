@@ -127,6 +127,12 @@ raises it. OctoPrint's own default is 1GB, so the shop is the binding limit unti
 **A verdict is not a formality.** A printer holds its bed until a person has judged what came off it,
 so a shop nobody gives verdicts to prints one thing per machine and then stops.
 
+**A machine it cannot reach is not a stopped printer.** The shop writes down that it could not get
+to one - what it saw and when - leaves it out of the queue, and reaches for it again on a backoff,
+so a printer that was switched off or missing a key comes back by itself and the queue moves again
+without anybody typing anything. `printer stop` is an operator's word and only `printer start` lifts
+it; that lifts the other too, for somebody who has just put a key right and wants to know now.
+
 **It writes down what it did**, one line of text per event, to stdout - `<when> <level> <message>`
 and then `key=value` for the rest:
 
