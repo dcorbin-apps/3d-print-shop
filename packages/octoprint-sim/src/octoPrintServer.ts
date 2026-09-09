@@ -45,6 +45,12 @@ export interface OctoPrintServer {
    * disconnect never happened.
    */
   connectionsAccepted(): number;
+  /**
+   * Test control: every api key a request has presented, in the order they arrived. Still not
+   * checked - this remains a test double - but a client that was rebuilt with a corrected key is
+   * otherwise indistinguishable from one that kept the old one.
+   */
+  keysPresented(): string[];
   close(): Promise<void>;
 }
 
@@ -83,6 +89,14 @@ export function startOctoPrintServer(
 ): Promise<OctoPrintServer> {
   const app = express();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: uploadLimitBytes } });
+
+  const keysPresented: string[] = [];
+  app.use((req, _res, next) => {
+    const presented = req.header('X-Api-Key');
+    if (presented !== undefined) keysPresented.push(presented);
+
+    next();
+  });
 
   // AIDEV-NOTE: only clients that have completed the {"auth":"apikey:..."} handshake receive
   // events. The key itself is still not checked - this remains a test double, not a security
@@ -295,6 +309,7 @@ export function startOctoPrintServer(
         uploadLimitBytes,
         broadcastEvent,
         connectionsAccepted: () => connectionsAccepted,
+        keysPresented: () => [...keysPresented],
         dropConnections: () => {
           // terminate(), not close() - a close handshake is an orderly goodbye, and the failure
           // being simulated is a connection that simply stops.

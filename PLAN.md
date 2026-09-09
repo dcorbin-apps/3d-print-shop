@@ -10,17 +10,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The service
 
-- [ ] SIGHUP re-reads EVERYTHING in `/etc/3d-print-shop`, not only `callers.json`. Today a printer's
-  key is read once at startup, so a wrong or missing one is fixed by editing a file and RESTARTING -
-  and a stop outlives a restart, so the operator pays twice. Two things it touches: the keys reach
-  `OctoPrintMachines` and the log's redactor as a map handed over once, which wants to become a
-  supplier the way `callers` already is; and a client is cached per printer and replaced only when
-  the ADDRESS changes, so a new key would not take until the cache compares it too. Replacing a
-  cached client DISCONNECTS it, which would kill a watch on a running print - so a new key waits
-  until the printer is idle or already unreachable. Decided: SIGHUP touches no client at all, and
-  `reach()` compares the key beside the address. It is called when a print is STARTED and when one
-  is picked up to watch, and a printer that is holding anything is never started on - so the swap
-  defers itself, with nothing in the cache needing to know what is being watched
 - [ ] The shop can say when IT is in trouble, rather than only what each printer is doing. A store
   or spool fault is nobody's printer's fault and now stops nothing, so a log line is all there is -
   and nothing a client or an operator asks answers "the shop is not well". The contract has no

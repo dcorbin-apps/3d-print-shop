@@ -355,14 +355,27 @@ reason an identity's id is neither its name nor its token. Rotating a credential
 **And it takes effect on SIGHUP, not on a restart.** Adding or revoking a caller is editing the file
 the shop already reads, and the signal is what tells it to read it again - which is what a
 long-running service is told with, and what keeps rotating a token from meaning losing sight of
-every print the shop is watching. Only the callers are re-read: a printer's key is held by a client
-already connected to a machine, so swapping one under a running watcher is a different question.
+every print the shop is watching. Everything in that directory is re-read, each file on its own, so
+one somebody has just broken does not hold up another they have just put right.
 
 A re-read it cannot make sense of leaves the callers exactly as they were, and says why. The other
 answer - no readable file, therefore nobody may call - revokes every caller at once over a stray
 comma, including the operator who would then have to get back in to fix it. That is the opposite of
 the rule at STARTUP, where an unreadable file stops the shop: there, nothing is running yet and
 refusing costs nothing, while here a shop is already holding work.
+
+**A printer's key is the harder half, and what makes it safe is where a key is USED.** A key is held
+by a client that is connected to a machine, and replacing that client disconnects it - which, if a
+watcher were waiting on the socket it holds, would take the print it was watching. So the signal
+touches no client at all. It replaces the keys the shop holds, and the comparison happens where a
+machine is reached: a client is kept while its address AND its key are what the files now say, and
+built afresh when either has changed. Reaching a machine is done to start a print on it and to pick
+one up to watch, and a printer that is holding something is never started on - so a new key defers
+itself until the machine is idle, and nothing in that cache has to know what is being watched.
+
+That leaves one asymmetry worth naming: a keys file that is GONE is read as no keys, the same as it
+means on a fresh install, where a missing callers file is a refusal. The machines go out of reach
+until it is back, which is visible, reversible, and stops nothing that is already printing.
 
 The cost is deliberate and worth writing down: an admin may judge work that is not theirs, and
 afterwards nothing says they did. Approval discards the job, the shop keeps no history, and the

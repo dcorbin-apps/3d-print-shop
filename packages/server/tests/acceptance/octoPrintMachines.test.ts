@@ -26,7 +26,7 @@ describe('reaching a printer', () => {
     keys = new Map([['mk4', 'a-key']]);
     spool = await mkdtemp(path.join(tmpdir(), 'print-shop-machines-'));
     shop = new JobStore(spool);
-    machines = new OctoPrintMachines(keys);
+    machines = new OctoPrintMachines(() => keys);
 
     server = await startOctoPrintServer(0, () => undefined);
     await addPrinter('mk4', `http://127.0.0.1:${server.port}`);
@@ -96,6 +96,16 @@ describe('reaching a printer', () => {
     machines.closeAll();
 
     expect(await machines.reach(await shop.printerNamed('mk4'))).not.toBe(first);
+  });
+
+  // The operator corrected a key that was wrong. The old client is talking to the right machine with
+  // a key it will not accept, and nothing else in the shop would ever notice.
+  it('answers with a new client carrying a key that has been corrected', async () => {
+    const first = await machines.reach(await shop.printerNamed('mk4'));
+    keys.set('mk4', 'a-corrected-key');
+
+    expect(await machines.reach(await shop.printerNamed('mk4'))).not.toBe(first);
+    expect(server!.keysPresented()).toEqual(['a-key', 'a-corrected-key']);
   });
 
   it('refuses a printer whose key was left blank', async () => {

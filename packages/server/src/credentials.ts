@@ -157,10 +157,9 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Map<string,
   return callers;
 }
 
-// AIDEV-NOTE: the answer to "how does a token get rotated without stopping the shop". SIGHUP is what
-// a long-running service is told to re-read its configuration with, and callers.json is the only
-// thing this one re-reads: a printer's key is held by an open client watching a print, so swapping
-// one under a running loop is a different question from adding a caller.
+// AIDEV-NOTE: the answer to "how does a credential get changed without stopping the shop". SIGHUP is
+// what a long-running service is told to re-read its configuration with, and the whole of the
+// mechanism is the files it already reads, read again - the callers here, the printer keys below.
 /**
  * Read the callers again, so one can be added or revoked while the shop is running.
  *
@@ -178,6 +177,35 @@ export async function rereadCallers(etc: string, keeping: ReadonlyMap<string, Ca
     log.error('could not re-read the callers, so the shop keeps the ones it has', {
       etc,
       callers: keeping.size,
+      why: (failure as Error).message,
+    });
+
+    return keeping;
+  }
+}
+
+// AIDEV-NOTE: a key is corrected the way a token is, and for the same reason: a shop stopped to fix
+// a typo loses sight of every print it was watching, and a stop outlives a restart, so the operator
+// pays twice. What makes it safe is WHERE a key is used - nothing swaps a client on a re-read, and a
+// printer that is holding a print is never started on, so a new key waits for the machine to be idle
+// without anything here having to know what is being watched.
+/**
+ * Read the printer keys again, so one can be corrected while the shop is running.
+ *
+ * A file it cannot read leaves the keys exactly as they were, and says why. A file that is not there
+ * is no keys at all, which is what it means at startup too - the machines are out of reach until it
+ * is back, and nothing else about the shop stops.
+ */
+export async function rereadPrinterKeys(etc: string, keeping: ReadonlyMap<string, string>, log: Log): Promise<ReadonlyMap<string, string>> {
+  try {
+    const keys = await printerKeysIn(etc);
+    log.info('printer keys re-read', { etc, printers: keys.size });
+
+    return keys;
+  } catch (failure) {
+    log.error('could not re-read the printer keys, so the shop keeps the ones it has', {
+      etc,
+      printers: keeping.size,
       why: (failure as Error).message,
     });
 

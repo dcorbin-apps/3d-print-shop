@@ -36,7 +36,7 @@ writes that file with one admin in it - see **Who may call it** below.
 
 `yarn shop` runs the server straight from source; an installed shop is the `3d-print-shop` binary
 `@3d-print-shop/server` declares. Either way it is a plain long-running process, so `launchd` and
-`systemd` can both supervise it, it stops on `SIGTERM`, and it re-reads `callers.json` on `SIGHUP`.
+`systemd` can both supervise it, it stops on `SIGTERM`, and it re-reads its credentials on `SIGHUP`.
 
 **The spool root is the installer's to create, not the shop's.** `/var/spool/cups` is made at
 install time and owned by the service's user, and this is the same: a missing root is a machine that
@@ -91,7 +91,14 @@ from `PRINT_SHOP_TOKEN` or `~/.config/3d-print-shop/token`.
 **A caller is added or revoked while the shop runs**: edit the file and send `SIGHUP` - `kill -HUP
 <pid>`, or `launchctl kill HUP ...` / `systemctl reload ...` - and the next request is judged against
 what it now says. A file it cannot read leaves the callers as they were, and the shop says so in its
-log rather than locking everybody out over a stray comma. Nothing else is re-read.
+log rather than locking everybody out over a stray comma.
+
+**A printer's key is corrected the same way**, in the same signal: `printer-keys.json` is re-read
+too, and each file is read on its own, so one that is mistyped does not hold up the other. A key
+takes effect the next time the shop reaches that machine, which is when it starts a print on it or
+picks one up to watch - a printer holding a print is never started on, so a corrected key waits for
+the machine to be idle rather than cutting off a watcher mid-print. A file that is gone is no keys
+at all, and the machines are out of reach until it is back.
 
 **A job belongs to the caller who submitted it**, by the `id` above, written with the record and
 never rewritten. The owner or an admin reads it; anybody else is told it is not here, because a

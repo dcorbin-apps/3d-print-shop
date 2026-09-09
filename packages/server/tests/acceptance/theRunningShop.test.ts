@@ -182,6 +182,10 @@ describe('the shop, running as its own process', () => {
     await writeFile(path.join(credentials, 'callers.json'), JSON.stringify(callers), { mode: 0o600 });
   }
 
+  async function writePrinterKeys(credentials: string, keys: Record<string, string>): Promise<void> {
+    await writeFile(path.join(credentials, 'printer-keys.json'), JSON.stringify(keys), { mode: 0o600 });
+  }
+
   async function submitGcode(shop: RunningShop, gcode: string): Promise<Response> {
     const body = new FormData();
     body.append('job', JSON.stringify({ filaments: ['PLA-SpaceGray'], displayName: 'Player Box' }));
@@ -394,10 +398,10 @@ describe('the shop, running as its own process', () => {
     }, 30_000);
   });
 
-  // AIDEV-NOTE: rotating a token used to mean stopping the shop, which meant losing sight of every
-  // print it was watching. SIGHUP is what a long-running service is told to re-read its
-  // configuration with, and the whole of the mechanism is the file it already reads, read again.
-  describe('told to re-read its callers', () => {
+  // AIDEV-NOTE: changing a credential used to mean stopping the shop, which meant losing sight of
+  // every print it was watching. SIGHUP is what a long-running service is told to re-read its
+  // configuration with, and the whole of the mechanism is the files it already reads, read again.
+  describe('told to re-read its credentials', () => {
     const DAVE = { id: 'dave', name: 'dave', role: 'admin', token: ADMIN };
     const SLICER = { id: 'slicer', name: 'slicer', role: 'user', token: USER };
 
@@ -437,6 +441,20 @@ describe('the shop, running as its own process', () => {
       await shop.saysSomethingLike(/could not re-read the callers/);
 
       expect((await askCarrying(shop, ADMIN)).status).toBe(200);
+    }, 30_000);
+
+    // The other file in the same directory, and the reason a wrong key no longer costs a restart -
+    // which cost the operator twice, because a stop outlives one. Waiting on the line IS the claim:
+    // nothing says it until the signal has landed and the file has been read again.
+    it('re-reads the printer keys as well as the callers', async () => {
+      const credentials = await credentialsNaming([DAVE]);
+      await writePrinterKeys(credentials, { mk4: 'was-wrong' });
+      const shop = await startShopOver(spool, [], credentials);
+
+      await writePrinterKeys(credentials, { mk4: 'is-right' });
+      shop.reload();
+
+      await shop.saysSomethingLike(/printer keys re-read .*printers=1/);
     }, 30_000);
   });
 

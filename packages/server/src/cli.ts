@@ -7,7 +7,7 @@ import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
 import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
-import { ETC_ENV, callersIn, defaultEtc, printerKeysIn, rereadCallers } from './credentials.js';
+import { ETC_ENV, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys } from './credentials.js';
 import type { Caller } from './credentials.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 import { redacting, toStdout } from './log.js';
@@ -58,7 +58,7 @@ export function createCLI(): Command {
       // reaches the port. A file that is THERE and wrong stops it for the same reason: answering a
       // typo in the security file by removing the security is the failure nobody notices.
       let callers: ReadonlyMap<string, Caller> = await callersIn(etc);
-      const printerKeys = await printerKeysIn(etc);
+      let printerKeys: ReadonlyMap<string, string> = await printerKeysIn(etc);
       const listenOn = options.listen ?? LOOPBACK;
 
       // AIDEV-NOTE: built from every secret this process holds - each printer's key, and every
@@ -73,7 +73,7 @@ export function createCLI(): Command {
       await store.ready();
       const releaseSpool = await claimSpool(spool);
 
-      const machines = new OctoPrintMachines(printerKeys);
+      const machines = new OctoPrintMachines(() => printerKeys);
       const foreman = new Foreman(store, machines.reach, log);
 
       // AIDEV-NOTE: the one thing the shop does on a clock rather than after a change it made. A
@@ -135,11 +135,13 @@ export function createCLI(): Command {
       process.on('SIGTERM', stopTheShop);
       process.on('SIGINT', stopTheShop);
 
-      // AIDEV-NOTE: SIGHUP is how a token is added or revoked without stopping the shop, and node
-      // ENDS a process that has no handler for it - so a shop under a terminal that closed used to
-      // die where it now re-reads. Nothing else is re-read: see `rereadCallers`.
+      // AIDEV-NOTE: SIGHUP is how a credential is changed without stopping the shop, and node ENDS a
+      // process that has no handler for it - so a shop under a terminal that closed used to die where
+      // it now re-reads. Everything the shop was given is re-read, each independently: a callers file
+      // somebody has just broken is no reason to leave a corrected key unread.
       process.on('SIGHUP', () => {
         void rereadCallers(etc, callers, log).then((known) => (callers = known));
+        void rereadPrinterKeys(etc, printerKeys, log).then((keys) => (printerKeys = keys));
       });
 
       // Where it actually IS, not where it was asked to be. Port 0 means "any free one", and

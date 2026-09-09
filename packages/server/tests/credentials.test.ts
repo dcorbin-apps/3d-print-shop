@@ -12,6 +12,7 @@ import {
   defaultEtc,
   printerKeysIn,
   rereadCallers,
+  rereadPrinterKeys,
   writeFirstCaller,
 } from '../src/credentials';
 import { toStdout } from '../src/log';
@@ -264,6 +265,56 @@ describe('the credentials a shop is given', () => {
       await write(PRINTER_KEYS_FILE, written);
 
       await expect(printerKeysIn(etc)).rejects.toThrow(complaint);
+    });
+  });
+
+  // AIDEV-NOTE: what SIGHUP does to the other file. A key is corrected by editing the file the shop
+  // already reads, so what matters is which of the two sets a running shop ends up with - and a key
+  // it was never going to be able to use is exactly the sort a shop is running with while it waits.
+  describe('reading the printer keys again while the shop is running', () => {
+    let lines: string[];
+    let log: Log;
+
+    beforeEach(() => {
+      lines = [];
+      log = toStdout(() => new Date(), (line) => lines.push(line));
+    });
+
+    it('knows the key the file has since been corrected to', async () => {
+      await write(PRINTER_KEYS_FILE, { mk4: 'was-wrong' });
+      const before = await printerKeysIn(etc);
+      await write(PRINTER_KEYS_FILE, { mk4: 'is-right' });
+
+      expect((await rereadPrinterKeys(etc, before, log)).get('mk4')).toBe('is-right');
+    });
+
+    // Caught halfway through being replaced, read as "no keys at all", would put every machine in
+    // the shop out of reach at once - and the operator's own is the one they are in the middle of.
+    it('keeps the keys it has when the file it is told to re-read is unusable', async () => {
+      await write(PRINTER_KEYS_FILE, { mk4: 'mk4-key' });
+      const before = await printerKeysIn(etc);
+      await write(PRINTER_KEYS_FILE, '{ not json');
+
+      expect(await rereadPrinterKeys(etc, before, log)).toBe(before);
+    });
+
+    it('says it kept them, and what was wrong with the file', async () => {
+      await write(PRINTER_KEYS_FILE, '{ not json');
+
+      await rereadPrinterKeys(etc, new Map(), log);
+
+      expect(lines.join('\n')).toContain('ERROR could not re-read the printer keys, so the shop keeps the ones it has');
+      expect(lines.join('\n')).toContain('is not JSON');
+    });
+
+    // The line an operator looks for after signalling, to see that the shop did anything at all.
+    it('says how many it re-read', async () => {
+      await write(PRINTER_KEYS_FILE, { mk4: 'mk4-key', mini: 'mini-key' });
+
+      await rereadPrinterKeys(etc, new Map(), log);
+
+      expect(lines.join('\n')).toContain('INFO  printer keys re-read');
+      expect(lines.join('\n')).toContain('printers=2');
     });
   });
 
