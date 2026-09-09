@@ -115,7 +115,20 @@ export function createCLI(): Command {
         });
       };
 
-      const shopServer = await serve(store, options.port, { changed: lookForWork, shutDown: stopTheShop, callers: () => callers, log }, listenOn);
+      // An operator's go, which is more than a change: it says which machine, and that somebody has
+      // been to look at it.
+      const tryEverythingAgain = (name: string): void => {
+        void foreman
+          .startAgain(name)
+          .catch((failure: unknown) => log.error('could not try the printer again', { printer: name, why: (failure as Error).message }));
+      };
+
+      const shopServer = await serve(
+        store,
+        options.port,
+        { changed: lookForWork, started: tryEverythingAgain, shutDown: stopTheShop, callers: () => callers, log },
+        listenOn
+      );
 
       // What a supervised service is stopped with. `launchd` and `systemd` both send it, and one
       // that ignored it would be killed with prints still being watched.

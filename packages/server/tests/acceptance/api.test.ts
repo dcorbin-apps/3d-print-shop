@@ -18,6 +18,7 @@ describe('the shop over HTTP', () => {
   let server: Server;
   let shopUrl: string;
   let mockChanged: jest.Mock<() => void>;
+  let mockStarted: jest.Mock<(name: string) => void>;
   let mockShutDown: jest.Mock<() => void>;
 
   const MK4 = { x: 250, y: 210, z: 220 };
@@ -77,8 +78,9 @@ describe('the shop over HTTP', () => {
     await shop.addPrinter({ name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS });
 
     mockChanged = jest.fn<() => void>();
+    mockStarted = jest.fn<(name: string) => void>();
     mockShutDown = jest.fn<() => void>();
-    server = await serve(shop, 0, { changed: mockChanged, shutDown: mockShutDown, callers: () => CALLERS });
+    server = await serve(shop, 0, { changed: mockChanged, started: mockStarted, shutDown: mockShutDown, callers: () => CALLERS });
     shopUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
 
@@ -248,6 +250,20 @@ describe('the shop over HTTP', () => {
       await send('PUT', '/printers/mk4/status', { stopped: true });
 
       expect(mockChanged).not.toHaveBeenCalled();
+    });
+
+    // AIDEV-NOTE: apart from `changed`, because looking for work does not pick a lost print back up
+    // and nothing else tells the shop that a PERSON has been to look at this machine.
+    it('names the printer an operator started', async () => {
+      await send('PUT', '/printers/mk4/status', { stopped: false });
+
+      expect(mockStarted).toHaveBeenCalledWith('mk4');
+    });
+
+    it('says nobody started a printer that was only stopped', async () => {
+      await send('PUT', '/printers/mk4/status', { stopped: true, reason: 'the door is open' });
+
+      expect(mockStarted).not.toHaveBeenCalled();
     });
   });
 

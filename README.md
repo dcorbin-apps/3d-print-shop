@@ -131,7 +131,7 @@ so a shop nobody gives verdicts to prints one thing per machine and then stops.
 to one - what it saw and when - leaves it out of the queue, and reaches for it again on a backoff,
 so a printer that was switched off or missing a key comes back by itself and the queue moves again
 without anybody typing anything. `printer stop` is an operator's word and only `printer start` lifts
-it; that lifts the other too, for somebody who has just put a key right and wants to know now.
+it.
 
 **A print it stops hearing about is not a stopped printer either.** If the shop loses the watch on a
 running print - minutes of silence, not a dropped packet - it says so and keeps listening, on the
@@ -143,6 +143,12 @@ path it will not store, a disk with no room - is written down as a refusal and l
 the machine has given its answer and asking again re-sends the whole plate to be told the same
 thing. That one waits for a person, and `printer start` is how a person says they have dealt with
 it.
+
+**`printer start` means try it now, whatever was wrong.** It lifts an operator's stop, a machine out
+of reach, a file the machine refused and a print the shop stopped hearing about, forgets whatever
+wait it was serving, picks a running print back up, and looks for work. Somebody who has just been
+to the machine should not have to say which of those it was, or wait out a backoff the shop chose
+before they got there.
 
 **It writes down what it did**, one line of text per event, to stdout - `<when> <level> <message>`
 and then `key=value` for the rest:

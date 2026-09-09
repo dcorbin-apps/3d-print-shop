@@ -633,6 +633,15 @@ at one login a try. A send the machine ANSWERED, with any reply that is not ok, 
 whole difference is whether asking again costs a login or a plate, so the distinction lives where
 the answer is: beside the `Printer` port, not in the loop above it.
 
+**`printer start` is the one word that answers all of them.** It lifts every fact standing against
+the printer - an operator's own stop, a machine out of reach, a file refused, a print nobody is
+hearing - forgets whatever wait the shop had set itself, picks the print back up if there is one,
+and looks for work. There is no separate word per fact, because an operator does not think in the
+shop's categories: they have been to the machine, and what they are saying is try it now. That is
+more than the shop can ever find out by itself, so nothing it decided on its own outranks it. It is
+told apart from an ordinary change for the same reason - looking for work passes over a printer that
+is holding a print, so a lost watch would otherwise wait out a backoff nobody wanted.
+
 **Out of contact.** The shop is holding a print it can no longer hear about, recorded as
 `outOfContact` with the time and what took the watch. **This is not a stop.** As far as anyone knows
 the machine is fine and the print is still running; there is nothing for a person to do, and asking

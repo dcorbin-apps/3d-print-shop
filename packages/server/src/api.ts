@@ -112,6 +112,11 @@ function tokenIn(header: string | undefined): string | undefined {
 export interface ShopHooks {
   /** Told after every change, so something can decide whether a print could start. */
   changed?: () => void;
+  // AIDEV-NOTE: apart from `changed` because it says WHICH printer and that a PERSON asked. Looking
+  // for work does not pick a lost print back up - the printer is holding one already - and nothing
+  // else can tell the shop to stop waiting out a backoff it decided on by itself.
+  /** Told when an operator starts a printer, which is the shop's cue to try everything again. */
+  started?: (name: string) => void;
   /** Told to shut the shop down. Answered before it happens, because it cannot be answered after. */
   shutDown?: () => void;
   // Asked per request rather than handed over once: the shop re-reads its callers on SIGHUP, so a
@@ -134,6 +139,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   api.use(express.json());
 
   const changed = hooks.changed ?? ((): void => undefined);
+  const started = hooks.started ?? ((): void => undefined);
   const callers = hooks.callers;
   const log = hooks.log ?? silent;
 
@@ -344,6 +350,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     } else if (stopped === false) {
       await shop.resume(request.params.name);
       log.info('printer started', { printer: request.params.name, by: request.caller.name });
+      started(request.params.name);
     } else {
       throw new UnusableRequest('a printer status says stopped true or false');
     }

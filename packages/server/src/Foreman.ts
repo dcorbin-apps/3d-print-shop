@@ -95,6 +95,21 @@ export class Foreman {
   }
 
   /**
+   * An operator says go. Whatever this printer was waiting to try again, it tries now: the backoff
+   * it was serving is forgotten, a print nobody is hearing is picked back up, and the queue is
+   * looked at. Somebody who has just put a machine right should not wait out a wait the shop
+   * decided on before they did.
+   */
+  async startAgain(name: string): Promise<void> {
+    this.waiting.delete(name);
+
+    // A printer that is holding a print is not started ON, so looking for work would pass it by -
+    // and after an operator's go there is nothing written against it to say a watch was ever lost.
+    await this.resumeWatching();
+    await this.considerStarting();
+  }
+
+  /**
    * Pick up prints that were already running, and answer with the printers whose prints it took on.
    * A restart does not stop a machine, so a printer whose status says it is printing is a print
    * still worth watching - and its outcome is written down by whoever is watching, which after a

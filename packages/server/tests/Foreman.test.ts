@@ -591,6 +591,54 @@ describe('the foreman', () => {
     });
   });
 
+  // AIDEV-NOTE: an operator's go is more than a change. The shop is told WHICH machine and that a
+  // person has been to look at it - which is the one thing that outranks a wait the shop set itself,
+  // and the only way a print nobody is hearing gets picked back up, since looking for work passes
+  // over a printer that is holding one.
+  describe('when an operator says go', () => {
+    it('picks a lost print back up at once', async () => {
+      const id = await submit();
+      mockAwaitOutcome.mockResolvedValue('finished');
+      mockAwaitOutcome.mockRejectedValueOnce(new Error('lost contact for too long'));
+      await foreman.considerStarting();
+      await until(outOfContact('mk4'));
+      await foreman.watchersSettled();
+      await shop.resume('mk4');
+
+      await foreman.startAgain('mk4');
+      await foreman.watchersSettled();
+
+      expect(await shop.find(id)).toMatchObject({ state: 'awaiting-approval', lastPrinterOutcome: 'finished' });
+    });
+
+    it('looks for work the printer can take', async () => {
+      await submit();
+
+      await foreman.startAgain('mk4');
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    // Somebody who has just put a machine right should not wait out a wait the shop decided on
+    // before they did.
+    it('forgets what the printer was waiting out', async () => {
+      let clock = new Date('2026-09-09T09:00:00.000Z');
+      const patient = new Foreman(shop, mockReach, silent, () => clock);
+      await submit();
+      mockReach.mockRejectedValue(new Error('no API key for mk4'));
+      await patient.considerStarting();
+
+      await shop.resume('mk4');
+      await patient.startAgain('mk4');
+      mockReach.mockClear();
+
+      clock = new Date(clock.getTime() + 30_000);
+      await patient.reachForWhatIsLost();
+
+      expect(mockReach).toHaveBeenCalled();
+    });
+  });
+
   // AIDEV-NOTE: nobody tells the shop that a machine has come back - it is switched on, or a key is
   // corrected, in a room the shop cannot see. So it asks, on a clock, and a printer that answers is
   // taking work again without anybody having typed anything.
