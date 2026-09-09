@@ -32,6 +32,16 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@3d-print-shop/installer@workspace:packages/installer":
+  version: 0.0.0-use.local
+  resolution: "@3d-print-shop/installer@workspace:packages/installer"
+  dependencies:
+    "@3d-print-shop/server": "workspace:*"
+  bin:
+    3d-print-shop-install: ./install.sh
+  languageName: unknown
+  linkType: soft
+
 "@3d-print-shop/octoprint-sim@workspace:*, @3d-print-shop/octoprint-sim@workspace:packages/octoprint-sim":
   version: 0.0.0-use.local
   resolution: "@3d-print-shop/octoprint-sim@workspace:packages/octoprint-sim"
@@ -46,7 +56,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@3d-print-shop/server@workspace:packages/server":
+"@3d-print-shop/server@workspace:*, @3d-print-shop/server@workspace:packages/server":
   version: 0.0.0-use.local
   resolution: "@3d-print-shop/server@workspace:packages/server"
   dependencies:

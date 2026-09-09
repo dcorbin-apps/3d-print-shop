@@ -18,6 +18,7 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for why it is shaped this
 | `@3d-print-shop/server` | The service, and the operator's command line. |
 | `@3d-print-shop/client` | The contract - the wire types, the `Shop` interface, and `HttpShop`, which speaks it. What a client depends on. |
 | `@3d-print-shop/octoprint-sim` | A stand-in OctoPrint, enough of the real protocol to prove the shop talks to one. |
+| `@3d-print-shop/installer` | One shell script: the user, the directories and the daemon a machine needs before it can run any of the above. |
 
 The server depends on the client, not the other way about: the contract is one thing, written once,
 so a client cannot be written against an API it can no longer see.
@@ -54,8 +55,20 @@ same spool is refused and a crash leaves nothing to clean up.
 
 ```
 yarn install && yarn build
-sudo scripts/install.sh
+sudo packages/installer/install.sh
 ```
+
+`@3d-print-shop/installer` is a package of its own, whose whole content is that script. It is
+separate from the server because installing a daemon is not something that should happen to somebody
+who merely depends on the shop's code, and because `npm i -g @3d-print-shop/installer` reads as
+"install the service" where `npm i @3d-print-shop/server` reads as "give me the library". Installed
+that way it runs itself: its `postinstall` calls the same script, which finds the server npm put
+beside it and installs the service around it, with nothing copied because npm has already put the
+code where the service can read it.
+
+That is not usable until these packages are published - see PLAN.md - and it needs an npm whose
+global directory is outside a home directory, for the same reason the node does. Both are refused
+with the reason rather than installed into a daemon that could never start.
 
 It works out which machine it is on and does the same thing either way: a system user (`_printshop`
 on macOS, `printshop` on Linux) that can be logged in as by nobody; `/var/spool/3d-print-shop` and
@@ -71,7 +84,7 @@ The shop is **copied** rather than run out of the checkout, for that same reason
 means a `git checkout` of another branch is not a live change to a running service. So after a build:
 
 ```
-yarn build && sudo scripts/install.sh update
+yarn build && sudo packages/installer/install.sh update
 ```
 
 **The first admin is yours to make**, because the token it answers with exists nowhere else. The
@@ -85,10 +98,10 @@ Day to day:
 | | macOS | Linux |
 |---|---|---|
 | its log | `tail -f /var/log/3d-print-shop.log` | `journalctl -u 3d-print-shop -f` |
-| after a build | `sudo scripts/install.sh update` | same |
+| after a build | `sudo packages/installer/install.sh update` | same |
 | after editing a credential | `sudo launchctl kill HUP system/com.dcorbin.3d-print-shop` | `sudo systemctl reload 3d-print-shop` |
 
-`sudo scripts/install.sh uninstall` stops it and removes the service and the installed copy. It
+`sudo packages/installer/install.sh uninstall` stops it and removes the service and the installed copy. It
 leaves the spool, the credentials and the user alone: uninstalling a service is not the same act as
 throwing away the work it was holding, and one of those cannot be undone.
 

@@ -80,7 +80,7 @@ root others may read gives up the ids of the jobs held and no more, and refusing
 shop installed 0750 for an operators' group. `/var/spool/cups` is `drwx--x---` for the same reason -
 the group is let in to traverse, never to change what is there.
 
-**So there is an installer, and `scripts/install.sh` is it** - one script that knows both machines,
+**So there is an installer, and `@3d-print-shop/installer` is it** - one script that knows both machines,
 because the two directories and the mode on them are the same question wherever it runs and only the
 supervisor differs. It makes a system user that can be logged in as by nobody, gives it the spool and
 `/etc/3d-print-shop` at 0700, and hands the process to `launchd` or to `systemd`.

@@ -22,9 +22,27 @@ ERR_LOG=/var/log/3d-print-shop.err.log
 # `git checkout` of another branch is not a live change to the running service.
 INSTALL_DIR=/usr/local/lib/3d-print-shop
 
-REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-BUILT="$REPO/packages/server/dist/main.js"
-SERVER="$INSTALL_DIR/packages/server/dist/main.js"
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# AIDEV-NOTE: two ways this file is reached, and the difference is who put the code somewhere the
+# service can read. Exploded by npm, the server is a sibling in the same scope and npm has already
+# resolved everything it needs - so there is nothing to copy and copying would be a second, staler
+# tree. In a checkout there is a build, sitting where a daemon cannot get at it.
+case "$HERE" in
+  */node_modules/@3d-print-shop/installer) MODE=package ;;
+  *) MODE=checkout ;;
+esac
+
+if [ "$MODE" = package ]; then
+  BUILT="$HERE/../server/dist/main.js"
+  SERVER=$BUILT
+  MANIFEST="$HERE/package.json"
+else
+  REPO=$(cd "$HERE/../.." && pwd)
+  BUILT="$REPO/packages/server/dist/main.js"
+  SERVER="$INSTALL_DIR/packages/server/dist/main.js"
+  MANIFEST="$REPO/package.json"
+fi
 
 PLIST="/Library/LaunchDaemons/$LABEL.plist"
 UNIT=/etc/systemd/system/3d-print-shop.service
@@ -43,32 +61,59 @@ usage() {
   cat <<USAGE
 usage: sudo $0 [install|update|uninstall]
 
-install    make the spool and credentials directories, the user that owns them, a copy of the
-           shop under $INSTALL_DIR, and the service that runs it
-update     copy a fresh build over the installed one and restart - what to run after 'yarn build'
+install    make the spool and credentials directories, the user that owns them, the copy of the
+           shop the service runs, and the service itself
+update     copy a fresh build over the installed one and restart - what to run after 'yarn build',
+           and only from a checkout: an installed package is updated by installing it again
 uninstall  stop the service and remove it - the spool, the credentials and the user are left,
            because they hold work and secrets this script did not create
 USAGE
 }
 
+# Named as the person would type it, which is the bin npm put on their PATH once there is one.
+asTyped() {
+  if [ "$MODE" = package ]; then printf '3d-print-shop-install %s' "$1"; else printf '%s %s' "$0" "$1"; fi
+}
+
 requireRoot() {
-  [ "$(id -u)" = 0 ] || refuse "this writes under /var, /etc and /usr/local, so it needs sudo: sudo $0 $1"
+  [ "$(id -u)" = 0 ] || refuse "this writes under /var, /etc and /usr/local, so it needs sudo: sudo $(asTyped "$1")"
 }
 
 requireBuild() {
-  [ -f "$BUILT" ] || refuse "$BUILT is not there - run 'yarn install && yarn build' in $REPO first"
+  if [ ! -f "$BUILT" ]; then
+    if [ "$MODE" = package ]; then
+      refuse "$BUILT is not there - @3d-print-shop/server is not installed beside this"
+    fi
+
+    refuse "$BUILT is not there - run 'yarn install && yarn build' in $REPO first"
+  fi
+
+  # AIDEV-NOTE: the same rule the node has to pass, and for the same reason - an npm run under a
+  # version manager explodes its global packages inside the home directory, which is the one place
+  # the service user cannot walk into. Checked here rather than left to fail at boot with a daemon
+  # that starts, finds nothing, and is restarted for ever.
+  if [ "$MODE" = package ]; then
+    case "$HERE" in
+      /Users/* | /home/* | "$HOME"/*)
+        refuse "this is installed under $HERE, and the service runs as $SHOP_USER, which cannot read
+into a home directory. Install it with a node that lives outside one (brew install node@24, or your
+distribution's package), so that npm puts its global packages outside one too"
+        ;;
+    esac
+  fi
 }
 
-# The floor the repo already declares, so there is one place that says which node this runs on. The
-# ceiling in `engines` is yarn's business at build time; what matters here is not running the
-# service on something older than the code was written for.
+# The floor whichever manifest is in play already declares, so this script says it nowhere: the
+# repo's when run from a checkout, the installed package's own when npm exploded one. The ceiling in
+# `engines` is the package manager's business; what matters here is not running the service on
+# something older than the code was written for.
 requiredNode() {
   local floor
-  floor=$(sed -n 's/.*"node" *: *">=\([0-9][0-9.]*\).*/\1/p' "$REPO/package.json" | head -1)
+  floor=$(sed -n 's/.*"node" *: *">=\([0-9][0-9.]*\).*/\1/p' "$MANIFEST" | head -1)
 
   # Said rather than shrugged at: a floor that came back empty would let every node past the check,
   # which is the version guard silently not being one.
-  [ -n "$floor" ] || refuse "$REPO/package.json does not say which node this runs on, as engines.node"
+  [ -n "$floor" ] || refuse "$MANIFEST does not say which node this runs on, as engines.node"
 
   printf '%s\n' "$floor"
 }
@@ -373,8 +418,12 @@ install() {
 
   say 'the shop itself:'
   stopIt
-  copiedEverything
-  say "  $INSTALL_DIR  (root, and readable by everybody - there is nothing secret in it)"
+  if [ "$MODE" = package ]; then
+    say "  $(cd "$HERE/.." && pwd)  (where npm put it)"
+  else
+    copiedEverything
+    say "  $INSTALL_DIR  (root, and readable by everybody - there is nothing secret in it)"
+  fi
 
   say 'what supervises it:'
   if [ "$PLATFORM" = macos ]; then
@@ -406,7 +455,7 @@ Then keep that token where the client looks for it, as yourself:
 Each printer's API key goes in $ETC/printer-keys.json as {"mk4": "..."}, 0600 and owned by
 $SHOP_USER. Then run this again to start it:
 
-  sudo $0 install
+  sudo $(asTyped install)
 NEXT
     return 0
   fi
@@ -419,7 +468,7 @@ Installed and running, on http://localhost:7373 - loopback, which is where a tok
 the clear belongs.
 
   its log        $(reading)
-  after a build  sudo $0 update
+  a new build    $(if [ "$MODE" = package ]; then printf 'sudo npm i -g @3d-print-shop/installer'; else printf 'sudo %s update' "$0"; fi)
   a credential   edit a file in $ETC, then $(reloading)
 RUNNING
 }
@@ -427,7 +476,8 @@ RUNNING
 update() {
   requireRoot update
   requireBuild
-  isInstalled || refuse "there is no service to update - run 'sudo $0 install' first"
+  [ "$MODE" = checkout ] || refuse 'an installed package is updated by installing it again: sudo npm i -g @3d-print-shop/installer'
+  isInstalled || refuse "there is no service to update - run 'sudo $(asTyped install)' first"
 
   stopIt
   copiedTheBuild
@@ -451,8 +501,10 @@ uninstall() {
     say "stopped, and $UNIT is gone"
   fi
 
-  rm -rf "$INSTALL_DIR"
-  say "$INSTALL_DIR is gone"
+  if [ -d "$INSTALL_DIR" ]; then
+    rm -rf "$INSTALL_DIR"
+    say "$INSTALL_DIR is gone"
+  fi
 
   # AIDEV-NOTE: the spool holds work nobody has judged and /etc holds every token the shop knows.
   # Neither is this script's to throw away on the way out - uninstalling a service is not the same
@@ -470,6 +522,23 @@ KEPT
 }
 
 case "${1:-install}" in
+  # AIDEV-NOTE: what npm's postinstall calls, and it is a separate word from `install` because yarn
+  # runs it on every install in the CHECKOUT too, where nobody asked for a daemon and there is
+  # nothing to explode. It also must not fail: a postinstall that exits non-zero fails the whole npm
+  # install, so a person who has not used sudo is told what to type rather than shouted at.
+  #
+  # npm drops to the owner of its prefix when it is run as root, so being root here is not something
+  # to count on even under sudo.
+  from-npm)
+    [ "$MODE" = package ] || exit 0
+    if [ "$(id -u)" != 0 ]; then
+      say "3d-print-shop is unpacked. It makes a system user, a spool and a daemon, so the install
+itself is one more command: sudo 3d-print-shop-install"
+      exit 0
+    fi
+
+    install
+    ;;
   install | --install) install ;;
   update | --update) update ;;
   uninstall | --uninstall) uninstall ;;

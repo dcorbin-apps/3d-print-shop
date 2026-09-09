@@ -1,0 +1,26 @@
+{
+  "name": "@3d-print-shop/installer",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Installs 3d-print-shop as a service: the user that owns its work, the directories it keeps it in, and launchd or systemd to run it",
+  "author": "dcorbin",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "bin": {
+    "3d-print-shop-install": "./install.sh"
+  },
+  "files": [
+    "install.sh"
+  ],
+  "scripts": {
+    "postinstall": "./install.sh from-npm",
+    "build": "echo \"nothing to build - this package is a shell script\" && exit 0",
+    "typecheck": "echo \"no typescript here\" && exit 0",
+    "test": "echo \"tests run from root\" && exit 0"
+  },
+  "dependencies": {
+    "@3d-print-shop/server": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24.16 <25"
+  }
+}
