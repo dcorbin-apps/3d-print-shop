@@ -50,6 +50,48 @@ can write. Being readable is allowed - 0750 for an operators' group is a working
 One shop to a spool. `serve` claims it by listening on a socket inside it, so a second shop over the
 same spool is refused and a crash leaves nothing to clean up.
 
+## Installing it as a service
+
+```
+yarn install && yarn build
+sudo scripts/install.sh
+```
+
+It works out which machine it is on and does the same thing either way: a system user (`_printshop`
+on macOS, `printshop` on Linux) that can be logged in as by nobody; `/var/spool/3d-print-shop` and
+`/etc/3d-print-shop` owned by it at 0700; a copy of the built shop under `/usr/local/lib/3d-print-shop`
+owned by root; and a `launchd` daemon or a `systemd` unit that runs it.
+
+**It refuses rather than guesses.** No node outside a home directory that is new enough, no build to
+install, or a shop with no callers yet: each stops it, and each says what to do about it. The node it
+looks for has to be a system one - a daemon runs as `_printshop`, which cannot read into your home
+directory, so a version manager's node is no good to it (`brew install node@24`).
+
+The shop is **copied** rather than run out of the checkout, for that same reason and one more: it
+means a `git checkout` of another branch is not a live change to a running service. So after a build:
+
+```
+yarn build && sudo scripts/install.sh update
+```
+
+**The first admin is yours to make**, because the token it answers with exists nowhere else. The
+install prints the exact command; it runs `init` as the service user, and then the token goes in
+`~/.config/3d-print-shop/token` (0600) where the client looks for it. Each printer's API key goes in
+`/etc/3d-print-shop/printer-keys.json`, 0600 and owned by the service user. Then run the install
+again to start it.
+
+Day to day:
+
+| | macOS | Linux |
+|---|---|---|
+| its log | `tail -f /var/log/3d-print-shop.log` | `journalctl -u 3d-print-shop -f` |
+| after a build | `sudo scripts/install.sh update` | same |
+| after editing a credential | `sudo launchctl kill HUP system/com.dcorbin.3d-print-shop` | `sudo systemctl reload 3d-print-shop` |
+
+`sudo scripts/install.sh uninstall` stops it and removes the service and the installed copy. It
+leaves the spool, the credentials and the user alone: uninstalling a service is not the same act as
+throwing away the work it was holding, and one of those cannot be undone.
+
 ## The operator's commands
 
 ```

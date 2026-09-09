@@ -80,6 +80,25 @@ root others may read gives up the ids of the jobs held and no more, and refusing
 shop installed 0750 for an operators' group. `/var/spool/cups` is `drwx--x---` for the same reason -
 the group is let in to traverse, never to change what is there.
 
+**So there is an installer, and `scripts/install.sh` is it** - one script that knows both machines,
+because the two directories and the mode on them are the same question wherever it runs and only the
+supervisor differs. It makes a system user that can be logged in as by nobody, gives it the spool and
+`/etc/3d-print-shop` at 0700, and hands the process to `launchd` or to `systemd`.
+
+Three of its decisions are worth writing down. It **copies** the built shop to
+`/usr/local/lib/3d-print-shop` rather than pointing the service at a checkout: a service user is not
+the developer, and a home directory is not theirs to walk into - a macOS one is 0750, so a daemon
+aimed inside one cannot read a byte. It also means a `git checkout` of another branch is not a live
+change to a running service. It **will not start a shop that has no callers**, because one with none
+refuses to start and a supervisor would then restart it every few seconds for as long as the machine
+was up - a fault that reads like a bug. And it keeps the supervisor's restart **conditional on a
+failure**: `3d-print-shop shutdown` is somebody asking it to stop, and an unconditional `KeepAlive`
+would start it again a second later.
+
+It writes no credential. `init` does that, as the service user, and it is the one step that has to be
+a person's - the token it answers with exists nowhere else. What the installer does instead is say
+the command.
+
 ```
 /var/spool/3d-print-shop/
   next-id                     the id counter

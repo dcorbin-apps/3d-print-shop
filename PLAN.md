@@ -39,18 +39,9 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   rule in `validateDetails` was written from the API docs and pathvalidate's, not from a machine.
   The one known gap: the docs show `20mm-ümläut-böx.gcode` stored as `20mm-umlaut-box.gcode`
   without saying what transliterates it, so a non-ASCII name may be accepted here and renamed there
-- [ ] `add` doubles as `change`, and a printer's key is keyed by its NAME - so re-pointing an
-  existing printer's address sends that printer's key, and a plate's gcode, wherever it was pointed.
-  Decided: an admin may point the shop anywhere, because that is close to what admin means, and a
-  range check here would be defeated by a hostname resolving at connect time. What is left is
-  whether a leaked admin token should be able to redirect a key without also holding the key
 
 ### Installation
 
-- [ ] The spool root is created by the installer and owned by the service's user, the way
-  `/var/spool/cups` is. The store refuses a missing one, and one its group or anybody else can
-  write, rather than creating or fixing either - so the packaging is what has to exist: a `launchd`
-  plist, a `systemd` unit, and whatever makes the directory 0700 (or 0750) and owns it
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this
   repository sitting beside it — the client it was written for reaches it as
   `portal:../3d-print-shop/packages/client`, which cannot survive a fresh clone that has no shop
