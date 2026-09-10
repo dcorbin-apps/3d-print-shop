@@ -266,6 +266,55 @@ export function createCLI(): Command {
   return program;
 }
 
+// AIDEV-NOTE: commander answers a --help anywhere in argv, and BEFORE it has decided whether the
+// command in front of it is one it has. So `3d-print-shop add printer add --help` - a typo, one word
+// too many - printed the general help and exited 0, and `printer nonsense --help` printed the
+// printer help and did the same. Neither is distinguishable from having asked for help and got it,
+// which is the failure a script cannot see.
+//
+// Walked rather than looked up once, because the same thing happens at every level that has
+// subcommands. It stops at the first command that has none: everything after that is an argument,
+// and `job approve 7` must not have 7 read as a command it does not have.
+/** The word that was asked for as a command and is not one, so a typo is not answered as a cry for help. */
+export function unknownCommandIn(program: Command, args: string[]): string | undefined {
+  let at = program;
+  let skipping = false;
+
+  for (const word of args) {
+    if (skipping) {
+      skipping = false;
+      continue;
+    }
+
+    if (word.startsWith('-')) {
+      skipping = carriesAValue(at, word);
+      continue;
+    }
+
+    // `help` is commander's own and is in no list to be found in; what follows it is commander's to
+    // judge. Everything after a command with no subcommands is an argument rather than a command.
+    if (word === 'help' || at.commands.length === 0) return undefined;
+
+    const found = at.commands.find((command) => command.name() === word || command.aliases().includes(word));
+    if (found === undefined) return word;
+
+    at = found;
+  }
+
+  return undefined;
+}
+
+// Whether the next word belongs to this option rather than being a command. Only the options
+// declared HERE: commander lets one written after a subcommand belong to its parent, and a word this
+// misses is a word that lands on a command with no subcommands and is let past as an argument.
+function carriesAValue(at: Command, word: string): boolean {
+  if (word.includes('=')) return false;
+
+  const option = at.options.find((declared) => declared.short === word || declared.long === word);
+
+  return option?.required === true || option?.optional === true;
+}
+
 // The shop's own ids are counting numbers, so anything else is a typo rather than a job it has not
 // got - and saying so here is better than a 404 about job NaN.
 export function readJobId(value: string): number {
