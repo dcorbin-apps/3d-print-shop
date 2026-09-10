@@ -23,7 +23,7 @@ describe('the shop over HTTP', () => {
 
   const MK4 = { x: 250, y: 210, z: 220 };
   const MK4_ADDRESS = 'http://octopi.local';
-  const asRegistered = { name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS, loaded: [] };
+  const asRegistered = { name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS, camera: `${MK4_ADDRESS}/webcam/?action=stream`, loaded: [] };
 
   const playerBox: JobDetails = { filaments: ['PLA-SpaceGray'], displayName: 'Player Box' };
 
@@ -815,7 +815,7 @@ describe('the shop over HTTP', () => {
       const response = await send('POST', '/printers', mini);
 
       expect(response.status).toBe(201);
-      expect(await response.json()).toEqual({ ...mini, api: 'octoprint', loaded: [] });
+      expect(await response.json()).toEqual({ ...mini, api: 'octoprint', camera: `${mini.address}/webcam/?action=stream`, loaded: [] });
     });
 
     // Adding a printer that is already here changes its build volume rather than failing, so the

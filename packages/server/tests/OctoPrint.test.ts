@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Readable } from 'node:stream';
-import { CouldNotReach, OctoPrint, reconnectAfter, reconnectDelayMs, whyUnreachable } from '../src';
+import { CouldNotReach, OctoPrint, octoPrintCamera, reconnectAfter, reconnectDelayMs, whyUnreachable } from '../src';
 import type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from '../src';
 
 interface MockPushSocket extends PushSocket {
@@ -54,6 +54,24 @@ describe('why a machine could not be reached', () => {
     expect(whyUnreachable(new Error('something else entirely'), 'http://octopi.local')).toBe(
       'http://octopi.local could not be reached: something else entirely'
     );
+  });
+});
+
+// AIDEV-NOTE: the adapter's answer to "where can a person watch this", which is a fact about the
+// protocol - the bundled webcam is proxied off the same base URL the API is on. Nothing fetches it.
+describe('where an OctoPrint machine can be watched', () => {
+  it('is the bundled webcam, off the address the shop already talks to it at', () => {
+    expect(octoPrintCamera('http://octopi.local')).toBe('http://octopi.local/webcam/?action=stream');
+  });
+
+  // An operator may well type the address with one, and two slashes is a path no machine serves.
+  it.each([['http://octopi.local/'], ['http://octopi.local//']])('does not double the slash in %p', (address) => {
+    expect(octoPrintCamera(address)).toBe('http://octopi.local/webcam/?action=stream');
+  });
+
+  // A machine behind a path, which is what a reverse proxy in front of several of them looks like.
+  it('keeps a path the machine is served under', () => {
+    expect(octoPrintCamera('http://printers.local/mk4')).toBe('http://printers.local/mk4/webcam/?action=stream');
   });
 });
 

@@ -1,0 +1,29 @@
+{
+  "name": "@3d-print-shop/ui",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "author": "dcorbin",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"tests run from root\" && exit 0"
+  },
+  "dependencies": {
+    "@3d-print-shop/client": "workspace:*",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "jest-environment-jsdom": "^29",
+    "typescript": "^5.9.3",
+    "vite": "^7"
+  }
+}

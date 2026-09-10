@@ -1,4 +1,5 @@
 import type { BuildVolume, JobRecord } from './Job.js';
+import { octoPrintCamera } from './OctoPrint.js';
 import type { PrinterRecord } from '@3d-print-shop/client';
 
 // The wire contract, so the shop and everything that talks to it cannot drift apart.
@@ -11,6 +12,17 @@ export function fitsInside(required: BuildVolume | undefined, volume: BuildVolum
   if (!required) return true;
 
   return required.x <= volume.x && required.y <= volume.y && required.z <= volume.z;
+}
+
+// AIDEV-NOTE: the ADAPTER's knowledge, not the shop's - where a camera lives is part of what a
+// protocol says, the way an upload path is, so it is answered per api rather than configured per
+// machine. Nothing here fetches it: it is a URL handed to whoever is looking at the shop.
+/** Where a person can watch this machine, if what it speaks says where that is. */
+export function whereToWatch(printer: PrinterRecord): string | undefined {
+  switch (printer.api) {
+    case 'octoprint':
+      return octoPrintCamera(printer.address);
+  }
 }
 
 /** Whether this printer could take this job at all, leaving aside what is loaded and what it holds. */

@@ -1,0 +1,346 @@
+:root {
+  --ink: #e9edf2;
+  --dim: #98a2b0;
+  --ground: #14181d;
+  --raised: #1d232a;
+  --edge: #2c343d;
+  --live: #4ea3ff;
+  --wants-somebody: #ffb547;
+  --wrong: #ff6b6b;
+  --gallery-height: 250px;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+}
+
+.shop {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ------------------------------------------------------------------ the banner and what it says */
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--edge);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.banner .mark {
+  font-size: 26px;
+  color: var(--live);
+}
+
+.banner h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+.summary {
+  display: flex;
+  gap: 22px;
+  margin: 0;
+}
+
+.count {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.count dt {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.count dd {
+  margin: 0;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.count.urgent dd,
+.count.urgent dt {
+  color: var(--wants-somebody);
+}
+
+.trouble {
+  flex: 1 1 100%;
+  margin: 6px 0 0;
+  color: var(--wrong);
+}
+
+/* --------------------------------------------------------------------------- the printer gallery */
+
+.gallery {
+  display: flex;
+  gap: 12px;
+  height: var(--gallery-height);
+  padding: 12px 20px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--edge);
+}
+
+.gallery.empty {
+  align-items: center;
+  color: var(--dim);
+  height: auto;
+}
+
+.printer-tile {
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  background: var(--raised);
+  border: 2px solid var(--edge);
+  border-radius: 8px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.printer-tile.selected {
+  border-color: var(--live);
+}
+
+.camera {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  object-fit: cover;
+  background: #000;
+  border-radius: 4px;
+}
+
+.camera.none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tile-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.printer-name {
+  font-weight: 600;
+}
+
+.condition {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.condition.printing {
+  color: var(--live);
+}
+
+.condition.stopped,
+.condition.refused,
+.condition.awaiting-approval {
+  color: var(--wants-somebody);
+}
+
+.condition.unreachable,
+.condition.out-of-contact {
+  color: var(--wrong);
+}
+
+.why,
+.loaded {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------------------------------------ the work waiting */
+
+.jobs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  padding: 18px 20px;
+}
+
+.filament {
+  padding: 12px 14px;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+}
+
+.filament.loaded {
+  border-color: var(--live);
+}
+
+.filament h2 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+}
+
+.on-machine {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--live);
+}
+
+.waiting {
+  margin: 2px 0 10px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.filament ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job {
+  display: grid;
+  grid-template-columns: 2.5em 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-top: 1px solid var(--edge);
+}
+
+.job .id {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.job .state {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.job.awaiting-approval .state {
+  color: var(--wants-somebody);
+}
+
+.job.printing .state {
+  color: var(--live);
+}
+
+.nothing,
+.not-yours,
+.asking {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--dim);
+}
+
+.asking {
+  padding: 0 20px 18px;
+}
+
+/* ------------------------------------------------------------------------------------ the way in */
+
+.ask-for-token {
+  max-width: 380px;
+  margin: 14vh auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+}
+
+.ask-for-token h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.ask-for-token p {
+  margin: 0;
+  color: var(--dim);
+}
+
+.ask-for-token label {
+  margin-top: 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.ask-for-token input {
+  padding: 8px 10px;
+  color: inherit;
+  font: inherit;
+  background: var(--ground);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+}
+
+.ask-for-token button {
+  margin-top: 8px;
+  padding: 9px;
+  color: var(--ground);
+  font: inherit;
+  font-weight: 600;
+  background: var(--live);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ask-for-token button:disabled {
+  background: var(--edge);
+  color: var(--dim);
+  cursor: default;
+}
+
+.ask-for-token .aside {
+  font-size: 12px;
+}

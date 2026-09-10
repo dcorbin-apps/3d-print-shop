@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command, InvalidArgumentError } from 'commander';
 import type { AddressInfo } from 'node:net';
-import { HttpShop, SHOP_URL_ENV, defaultShopUrl } from '@3d-print-shop/client';
+import { HttpShop, SHOP_URL_ENV, defaultShopUrl, defaultToken } from '@3d-print-shop/client';
 import { DEFAULT_PORT, LOOPBACK, serve } from './api.js';
 import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
@@ -28,7 +28,7 @@ import { SPOOL_ROOT_ENV, defaultSpoolRoot } from './spoolRoot.js';
 // Only `serve` names a spool, because only `serve` is the thing that holds it.
 export function createCLI(): Command {
   const program = new Command();
-  const shop = (options: { shopUrl?: string }): HttpShop => new HttpShop(options.shopUrl ?? defaultShopUrl());
+  const shop = (options: { shopUrl?: string }): HttpShop => new HttpShop(options.shopUrl ?? defaultShopUrl(), defaultToken());
 
   program.name('3d-print-shop').description('Run the shop, and mind the printers it prints on');
 

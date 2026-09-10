@@ -318,6 +318,18 @@ describe('JobStore', () => {
       expect((await shop.printerNamed('mk4')).loaded).toEqual([]);
     });
 
+    // Derived from the record on the way out rather than kept in it, so a printer moved to a new
+    // address is watched at the new one without anything being rewritten.
+    it('says where the machine can be watched, from the address it was given', async () => {
+      expect((await shop.printerNamed('mk4')).camera).toBe('http://mk4/webcam/?action=stream');
+    });
+
+    it('says where it moved to when the address changes', async () => {
+      await shop.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://moved' });
+
+      expect((await shop.printerNamed('mk4')).camera).toBe('http://moved/webcam/?action=stream');
+    });
+
     // Re-adding a printer is how an operator corrects its address or its bed, and it must not make
     // the shop forget what is on the machine.
     it('still knows what is loaded after the printer is added again', async () => {

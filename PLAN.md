@@ -40,6 +40,17 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   The one known gap: the docs show `20mm-ümläut-böx.gcode` stored as `20mm-umlaut-box.gcode`
   without saying what transliterates it, so a non-ASCII name may be accepted here and renamed there
 
+### The page in a browser
+
+- [ ] The shop serves the built UI itself, so there is one origin and one thing to install. Today
+  `yarn ui` is a Vite dev server proxying the shop's routes; a built `@3d-print-shop/ui` has nowhere
+  to be served from, and anything else serving it would need the API to grow CORS - which is a way
+  in that nothing has asked for. What is undecided is whether the server depends on the ui package
+  to find its files, or is pointed at a directory
+- [ ] The UI can only READ. Every route it needs is a GET, and the verdict a person gives - the one
+  thing that frees a bed - is still `job approve` at a terminal. That is the first thing to add once
+  the page is in front of somebody
+
 ### Installation
 
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this

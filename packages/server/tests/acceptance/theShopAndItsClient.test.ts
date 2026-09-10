@@ -19,6 +19,10 @@ describe('the shop and its client', () => {
   let server: Server;
   let shop: HttpShop;
 
+  // Where the shop says a machine can be watched, which is the adapter's answer rather than
+  // anything the operator typed - so it turns up on every printer the shop reports.
+  const watchedAt = (address: string): string => `${address}/webcam/?action=stream`;
+
   const MK4: PrinterRecord = {
     name: 'mk4',
     buildVolume: { x: 250, y: 210, z: 220 },
@@ -51,7 +55,7 @@ describe('the shop and its client', () => {
       const { printer, created } = await shop.addPrinter(MK4);
 
       expect(created).toBe(true);
-      expect(printer).toEqual({ ...MK4, loaded: [] });
+      expect(printer).toEqual({ ...MK4, camera: watchedAt(MK4.address), loaded: [] });
     });
 
     it('says it changed one the shop already had', async () => {
@@ -63,7 +67,7 @@ describe('the shop and its client', () => {
     it('lists what the shop has', async () => {
       await shop.addPrinter(MK4);
 
-      expect(await shop.printers()).toEqual([{ ...MK4, loaded: [] }]);
+      expect(await shop.printers()).toEqual([{ ...MK4, camera: watchedAt(MK4.address), loaded: [] }]);
     });
 
     it('takes one out again', async () => {
@@ -84,7 +88,7 @@ describe('the shop and its client', () => {
       await shop.addPrinter(MK4);
       await shop.pause('mk4', 'the door is open');
 
-      expect(await shop.resume('mk4')).toEqual({ ...MK4, loaded: [] });
+      expect(await shop.resume('mk4')).toEqual({ ...MK4, camera: watchedAt(MK4.address), loaded: [] });
     });
 
     it('says what is loaded on a machine', async () => {

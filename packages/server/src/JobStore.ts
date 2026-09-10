@@ -5,7 +5,7 @@ import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { InvalidSubmission, generatedDisplayName, validateDetails } from './Job.js';
 import type { BuildVolume, Job, JobDetails, JobRecord, PrinterOutcome } from './Job.js';
-import { canTake } from './Printer.js';
+import { canTake, whereToWatch } from './Printer.js';
 import type { Holding, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
 import { defaultSpoolRoot } from './spoolRoot.js';
 
@@ -423,7 +423,7 @@ export class JobStore {
     if (contents === undefined) return undefined;
 
     const record = JSON.parse(contents) as PrinterRecord;
-    return { ...record, ...((await this.readStatus(name)) ?? { loaded: [] }) };
+    return { ...record, camera: whereToWatch(record), ...((await this.readStatus(name)) ?? { loaded: [] }) };
   }
 
   private async readStatus(name: string): Promise<PrinterStatus | undefined> {

@@ -65,5 +65,15 @@ export interface PrinterStatus {
   holding?: Holding;
 }
 
-/** A printer as the shop reports it: what it is, and what it is doing. */
-export interface RegisteredPrinter extends PrinterRecord, PrinterStatus {}
+/** A printer as the shop reports it: what it is, what it is doing, and where it can be watched. */
+export interface RegisteredPrinter extends PrinterRecord, PrinterStatus {
+  /**
+   * Where a person can watch this machine, when the protocol it speaks says where that is.
+   *
+   * Derived from the record rather than recorded, and never asked of the machine: where a camera
+   * lives is a fact about the protocol, not something an operator should have to retype, and this
+   * is a URL for a BROWSER to open rather than anything the shop fetches. Absent is a machine whose
+   * protocol says nothing about one.
+   */
+  camera?: string;
+}

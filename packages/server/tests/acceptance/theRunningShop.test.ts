@@ -237,7 +237,7 @@ describe('the shop, running as its own process', () => {
     expect(await runCommand(['printer', '--shop-url', shop.url, 'add', 'mk4', '250x210x220', 'http://mk4'])).toBe(0);
 
     expect(await (await ask(shop, '/printers')).json()).toEqual([
-      { name: 'mk4', buildVolume: MK4, api: 'octoprint', address: 'http://mk4', loaded: [] },
+      { name: 'mk4', buildVolume: MK4, api: 'octoprint', address: 'http://mk4', camera: 'http://mk4/webcam/?action=stream', loaded: [] },
     ]);
   }, 30_000);
 

@@ -554,6 +554,14 @@ given one built from its id: ids are unique and safe in a path, display names ar
 A registration is a snapshot, and what a printer holds and what is written against it both change
 while the shop runs - including inside that call.
 
+**Where a machine can be WATCHED is the adapter's answer too.** A printer the shop reports carries a
+`camera`, and it is derived rather than recorded: OctoPrint proxies its bundled webcam at a known
+path off the same base URL the API is on, so where the camera lives is part of what the protocol
+says, exactly as the upload path is. That keeps it out of `printer add`, where an operator would be
+retyping something the shop already knows, and out of the shop's own vocabulary - the shop never
+fetches it and has no idea what is in it. It is a URL, answered so that whoever is LOOKING at the
+shop can open it, and absent for any machine whose protocol says nothing about one.
+
 ```ts
 send(remotePath, gcode: Readable)     // answers with where it FILED it, once it has taken it
 awaitOutcome(remotePath)              // answers when the print stops, however it stops

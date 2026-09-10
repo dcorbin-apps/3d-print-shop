@@ -1,7 +1,6 @@
 import type { FilamentDemand, Job, JobDetails, JobsHeld, Verdict } from './Job.js';
 import type { PrinterRecord, RegisteredPrinter } from './Printer.js';
 import type { PrinterAdded, Shop } from './Shop.js';
-import { defaultToken } from './token.js';
 
 const DESCRIPTION_PART = 'job';
 const GCODE_PART = 'gcode';
@@ -11,9 +10,15 @@ export class HttpShop implements Shop {
   // AIDEV-NOTE: the token is taken once, here, so every request carries it without a caller
   // remembering to. Undefined is a caller that has none to present, which every shop refuses - it
   // is not a mode, it is the 401 a caller gets for not having been set up yet.
+  //
+  // Handed in rather than looked up. Finding a token on THIS machine - an environment variable, a
+  // file under a home directory - is a thing only a program on a machine can do, and this class is
+  // also what a browser talks to the shop with, where none of that exists and importing `node:fs`
+  // to reach the default would sink the whole bundle. `defaultToken()` is still what a command line
+  // passes; see index.ts.
   constructor(
     private readonly url: string,
-    private readonly token: string | undefined = defaultToken()
+    private readonly token?: string
   ) {}
 
   async jobs(): Promise<JobsHeld> {

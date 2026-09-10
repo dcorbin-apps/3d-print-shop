@@ -19,9 +19,13 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for why it is shaped this
 | `@3d-print-shop/client` | The contract - the wire types, the `Shop` interface, and `HttpShop`, which speaks it. What a client depends on. |
 | `@3d-print-shop/octoprint-sim` | A stand-in OctoPrint, enough of the real protocol to prove the shop talks to one. |
 | `@3d-print-shop/installer` | One shell script: the user, the directories and the daemon a machine needs before it can run any of the above. |
+| `@3d-print-shop/ui` | A single page in a browser: what the shop is doing, the printers with their cameras, and the work grouped by what it needs loaded. |
 
 The server depends on the client, not the other way about: the contract is one thing, written once,
-so a client cannot be written against an API it can no longer see.
+so a client cannot be written against an API it can no longer see. The UI is a client like any other
+and reaches the shop through the same `HttpShop` - it imports `@3d-print-shop/client/browser`, which
+is the same contract without the two things only a program on a machine can do: find a token in a
+file, and read an environment variable for the shop's URL.
 
 ## Running one
 
@@ -104,6 +108,29 @@ Day to day:
 `sudo packages/installer/install.sh uninstall` stops it and removes the service and the installed copy. It
 leaves the spool, the credentials and the user alone: uninstalling a service is not the same act as
 throwing away the work it was holding, and one of those cannot be undone.
+
+## The page in a browser
+
+```
+yarn ui
+```
+
+Vite on `http://localhost:5173`, proxying the shop's own routes to `http://localhost:7373` so the
+browser makes same-origin requests - the API has no CORS handling and should not grow any to suit a
+dev server. `PRINT_SHOP_URL` points it at a shop somewhere else.
+
+Three bands, top to bottom: the shop's name and what it is doing, counted; the printers, each with
+its name, what it is doing and its camera, one of them selected and remembered across a reload; and
+every job the caller can see, grouped by the filament it needs loaded first. Choosing a printer
+marks the groups it could start on now.
+
+It asks the shop again every two seconds, because every route is a question a client asks and there
+is nothing to push. An ask that fails leaves the last good answer on the screen and says what went
+wrong above it, so a shop being restarted does not blank a display somebody is watching a print on.
+
+**It asks for a token and keeps it in the browser.** The shop has no notion of a session - a caller
+is a token in `callers.json` - so this is the honest interim rather than a design, and it goes when
+the shop can issue one. See PLAN.md.
 
 ## The operator's commands
 

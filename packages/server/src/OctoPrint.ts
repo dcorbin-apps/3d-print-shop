@@ -147,6 +147,16 @@ export function whySocketFailed(failure: unknown, where: string): string {
   return failure === null || failure === undefined ? closed : `${closed}: ${whyUnreachable(failure, where)}`;
 }
 
+// AIDEV-NOTE: the bundled webcam is proxied at this path off the same base URL the API is on, which
+// makes it a fact about the protocol rather than about any one machine. Nothing here ever fetches
+// it - it is answered so that whoever is LOOKING at the shop can open it.
+const CAMERA_PATH = '/webcam/?action=stream';
+
+/** Where a person can watch an OctoPrint machine, from the address the shop already talks to it at. */
+export function octoPrintCamera(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, '')}${CAMERA_PATH}`;
+}
+
 /** Why a machine could not be reached, in words an operator can act on, and the code to search for. */
 export function whyUnreachable(failure: unknown, where: string): string {
   const code = codeOf(failure);
