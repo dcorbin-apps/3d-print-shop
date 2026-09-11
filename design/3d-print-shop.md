@@ -153,6 +153,14 @@ being held, with nothing written about the job at all.
 changed, and nothing scheduled on it. Something that wants to say "this is the third attempt" needs
 a history of finished prints, which is a different feature from a queue of outstanding work.
 
+**What a printer would RENAME is refused, and that list was measured rather than read.** The stored
+path is what a completion event is matched against, so a name the machine alters is a print whose
+outcome never arrives and a bed held for ever. Against a real OctoPrint (1.11.8), one character at a
+time: `&`, `;` and `$` are taken out of a name silently - `a&b.gcode` is stored as `ab.gcode` - and
+everything else the shop allows comes back verbatim, including `#`, brackets, an apostrophe and a
+space. A non-ASCII name is NOT transliterated, which the API docs had implied it would be; `ü`, `ß`
+and an emoji all survived, so there is no rule against them.
+
 **The API key is not in either file.** A key an operator types when adding a printer is a key in
 shell history and in `ps`, and the spool is a working directory rather than a credential store - so
 it is kept apart, in `/etc/3d-print-shop/printer-keys.json`, keyed by the printer's own name. A

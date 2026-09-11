@@ -29,10 +29,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 - [ ] Nobody can change their own password. `caller password` is an operator at a terminal, which is
   right for setting one and wrong for the person who wants to change theirs
 
-- [ ] Confirm the `remotePath` rule against a real OctoPrint - the printer here is offline, so the
-  rule in `validateDetails` was written from the API docs and pathvalidate's, not from a machine.
-  The one known gap: the docs show `20mm-ümläut-böx.gcode` stored as `20mm-umlaut-box.gcode`
-  without saying what transliterates it, so a non-ASCII name may be accepted here and renamed there
 
 ### The page in a browser
 

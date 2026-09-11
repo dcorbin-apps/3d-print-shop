@@ -62,15 +62,22 @@ const MAX_REMOTE_PATH = 255;
 // ever. Refusing here keeps "what the shop accepted" and "what the printer stored" the same string.
 //
 // Deliberately a blocklist. A client names its own files and an allowlist would refuse ordinary
-// ones - brackets, parentheses, '#', '&', an apostrophe are all legal on the printer and stay legal
-// here. See docs.octoprint.org/en/master/api/files.html and octoprint.filemanager.storage:
+// ones - brackets, parentheses, '#', an apostrophe, a space are all kept by the printer and stay
+// legal here. See docs.octoprint.org/en/master/api/files.html and octoprint.filemanager.storage:
 // sanitize_name() raises on '/' and '\\' and strips a leading '.', and sanitize_filename() defers to
 // pathvalidate, which removes what is illegal on any OS.
-//
-// AIDEV-TODO: confirm against a real OctoPrint when one is reachable - the API docs show a filename
-// transliterated on upload ('20mm-ümläut-böx' stored as '20mm-umlaut-box') without saying what does
-// it, so a non-ASCII name may still be rewritten. See PLAN.md.
 const ILLEGAL_ON_SOME_FILESYSTEM = /[:*?"<>|\\]/;
+
+// AIDEV-NOTE: MEASURED, against OctoPrint 1.11.8 on a real machine, one character at a time in an
+// otherwise boring name. These three are taken out silently - `a&b.gcode` is stored as `ab.gcode` -
+// and a name the printer alters is a print whose completion event matches nothing and a bed held for
+// ever. Every other character this shop allows came back verbatim.
+//
+// The same run settled what the API docs had left open: a NON-ASCII name is not transliterated.
+// `20mm-ümläut-böx.gcode`, `ärger-straße.gcode` and a name with an emoji in it were each stored
+// exactly as given, so the docs' example does not describe this version and there is no rule here
+// for it. If that ever changes, this is the comment it changes under.
+const REMOVED_BY_A_PRINTER = /[&;$]/;
 
 // By code point rather than by regex, because a control character written into one is the mistake
 // `no-control-regex` exists to catch and this file would be the only place suppressing it.
@@ -92,6 +99,7 @@ function validateRemotePath(remotePath: string): void {
   if (ILLEGAL_ON_SOME_FILESYSTEM.test(remotePath) || hasControlCharacter(remotePath)) {
     refuse('a printer would not store it under this name');
   }
+  if (REMOVED_BY_A_PRINTER.test(remotePath)) refuse('a printer takes "&", ";" and "$" out of a name, so it would be stored under another');
 
   for (const segment of remotePath.split('/')) {
     if (segment === '') refuse('it has an empty folder or file name in it');

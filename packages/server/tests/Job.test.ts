@@ -67,15 +67,30 @@ describe('validateDetails', () => {
     const accepts = (remotePath: string): void => expect(() => validateDetails(details({ remotePath }))).not.toThrow();
     const refuses = (remotePath: string): void => expect(() => validateDetails(details({ remotePath }))).toThrow(InvalidSubmission);
 
+    // AIDEV-NOTE: every one of these was uploaded to a real OctoPrint (1.11.8) and read back under
+    // the name it was given. They are here rather than in a comment because what a printer does with
+    // a name is the whole of this rule, and the next version of one is free to disagree.
     it.each([
       ['gamekit/Gloomhaven (2nd ed) #3.gcode'],
-      ["gamekit/Sam & Ella's tray.gcode"],
+      ["gamekit/Sam and Ella's tray.gcode"],
       ['[GameKit] player-box_x4.gcode'],
       ['a/b/c/deeply/nested.gcode'],
       ['padded .gcode'],
+      ['percent%and!bang@at^hat~tilde.gcode'],
+      ['comma,brace{}plus+equals=.gcode'],
     ])('takes %p, which a printer stores as it was given', (remotePath) => {
       accepts(remotePath);
     });
+
+    // AIDEV-NOTE: the thing the API docs had left open, and the machine says no: a non-ASCII name is
+    // NOT transliterated. The docs show `20mm-ümläut-böx` stored as `20mm-umlaut-box`; on 1.11.8 it
+    // comes back exactly as sent, so there is no rule against one and these say so.
+    it.each([['20mm-ümläut-böx.gcode'], ['ärger-straße.gcode'], ['emoji-🖨.gcode'], ['日本語.gcode']])(
+      'takes %p, which a printer does not transliterate',
+      (remotePath) => {
+        accepts(remotePath);
+      }
+    );
 
     // Traversal, and the forms of it OctoPrint itself refuses or resolves away. The reason is
     // asserted, not just the refusal: more than one rule would reject these, and the one that does
@@ -107,6 +122,23 @@ describe('validateDetails', () => {
       ['trailing.gcode.'],
     ])('refuses %p, which a printer would rename', (remotePath) => {
       refuses(remotePath);
+    });
+
+    // AIDEV-NOTE: MEASURED. These three are taken out of a name silently by OctoPrint 1.11.8 -
+    // `a&b.gcode` is stored as `ab.gcode` - so a job asking for one would be watched for at a path
+    // the printer never used, and its bed held until somebody gave up on it. Nothing about them is
+    // illegal on a filesystem, which is why they are a rule of their own.
+    it.each([
+      ["gamekit/Sam & Ella's tray.gcode"],
+      ['semi;colon.gcode'],
+      ['dollar$sign.gcode'],
+      ['all&three;of$them.gcode'],
+    ])('refuses %p, which a printer would silently shorten', (remotePath) => {
+      refuses(remotePath);
+    });
+
+    it('says which characters a printer takes out, because a client has to choose another name', () => {
+      expect(() => validateDetails(details({ remotePath: 'a&b.gcode' }))).toThrow('takes "&", ";" and "$" out of a name');
     });
 
     it('refuses a newline, which has no place in a name and none in a header', () => {
