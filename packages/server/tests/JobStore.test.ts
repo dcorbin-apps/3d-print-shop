@@ -6,6 +6,9 @@ import { Readable } from 'node:stream';
 import { InvalidSubmission } from '../src/Job';
 import type { BuildVolume, Job, JobDetails, PrinterOutcome } from '../src/Job';
 import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, DataUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
+import { aDataDirectory, parentOf } from './aDataDirectory';
+import { layoutUnder } from '../src/dataLayout';
+import type { DataLayout } from '../src/dataLayout';
 
 async function readAll(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -16,7 +19,7 @@ async function readAll(stream: Readable): Promise<Buffer> {
 // AIDEV-NOTE: a real directory, not a mocked fs. Keeping jobs on disk IS what this unit does, so a
 // mock would test the mock - the same distinction design/testing.md draws for the golden store.
 describe('JobStore', () => {
-  let dataRoot: string;
+  let where: DataLayout;
   let shop: JobStore;
 
   const gcode = (text = 'G1 X0 Y0\n'): Readable => Readable.from([text]);
@@ -41,14 +44,14 @@ describe('JobStore', () => {
   }
 
   beforeEach(async () => {
-    dataRoot = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-'));
-    shop = new JobStore(dataRoot);
+    where = await aDataDirectory('print-shop-');
+    shop = new JobStore(where);
     // A shop with no printers accepts nothing, so every one of these needs one.
     await addPrinter('mk4', { x: 250, y: 210, z: 220 });
   });
 
   afterEach(async () => {
-    await fs.rm(dataRoot, { recursive: true, force: true });
+    await fs.rm(parentOf(where), { recursive: true, force: true });
   });
 
   describe('taking a job in', () => {
@@ -77,7 +80,7 @@ describe('JobStore', () => {
     it('records who submitted it, and still says so after a restart', async () => {
       const { id } = await submit(details(), gcode(), 'u-slicer');
 
-      expect((await new JobStore(dataRoot).find(id))?.owner).toBe('u-slicer');
+      expect((await new JobStore(where).find(id))?.owner).toBe('u-slicer');
     });
 
     it('starts a job queued, with nothing printed yet', async () => {
@@ -105,7 +108,7 @@ describe('JobStore', () => {
     it('records how long a client said the print takes', async () => {
       const job = await submit(details({ estimatedPrintSeconds: 20_460 }), gcode());
 
-      expect((await new JobStore(dataRoot).find(job.id))?.estimatedPrintSeconds).toBe(20_460);
+      expect((await new JobStore(where).find(job.id))?.estimatedPrintSeconds).toBe(20_460);
     });
 
     // Counted as it is written, rather than taken on trust from a client - what is recorded is what
@@ -152,7 +155,7 @@ describe('JobStore', () => {
       await expect(submit(details(), stream())).rejects.toThrow();
 
       expect(await shop.all()).toEqual([]);
-      await expect(fs.readdir(path.join(dataRoot, 'jobs'))).resolves.toEqual([]);
+      await expect(fs.readdir(where.jobs)).resolves.toEqual([]);
     });
 
     // AIDEV-NOTE: ten, because the directory names are read back as STRINGS and the disk hands them
@@ -175,7 +178,7 @@ describe('JobStore', () => {
   describe('through a print', () => {
     let id: number;
 
-    const recordOnDisk = (): Promise<string> => fs.readFile(path.join(dataRoot, 'jobs', String(id), 'job.json'), 'utf-8');
+    const recordOnDisk = (): Promise<string> => fs.readFile(path.join(where.jobs, String(id), 'job.json'), 'utf-8');
 
     beforeEach(async () => {
       id = (await submit(details(), gcode())).id;
@@ -273,7 +276,7 @@ describe('JobStore', () => {
       await shop.approve(id);
 
       expect(await shop.find(id)).toBeUndefined();
-      await expect(fs.readdir(path.join(dataRoot, 'jobs'))).resolves.toEqual([]);
+      await expect(fs.readdir(where.jobs)).resolves.toEqual([]);
       expect((await shop.printerNamed('mk4')).holding).toBeUndefined();
     });
 
@@ -342,7 +345,7 @@ describe('JobStore', () => {
     it('is still loaded after a restart', async () => {
       await shop.load('mk4', ['PLA-Red']);
 
-      expect((await new JobStore(dataRoot).printerNamed('mk4')).loaded).toEqual(['PLA-Red']);
+      expect((await new JobStore(where).printerNamed('mk4')).loaded).toEqual(['PLA-Red']);
     });
 
     // AIDEV-NOTE: the shop's list of machines is the SPOOL's, not a running process's - a printer
@@ -352,7 +355,7 @@ describe('JobStore', () => {
     it('is still one of the shop\'s printers after a restart, with what it was told about it', async () => {
       await shop.addPrinter({ name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, api: 'octoprint', address: 'http://mini' });
 
-      expect(await new JobStore(dataRoot).printers()).toEqual([
+      expect(await new JobStore(where).printers()).toEqual([
         expect.objectContaining({ name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini' }),
         expect.objectContaining({ name: 'mk4' }),
       ]);
@@ -475,7 +478,7 @@ describe('JobStore', () => {
     it('is still stopped after a restart', async () => {
       await shop.pause('mk4', 'out of filament');
 
-      expect((await new JobStore(dataRoot).printerNamed('mk4')).paused).toMatchObject({
+      expect((await new JobStore(where).printerNamed('mk4')).paused).toMatchObject({
         reason: 'out of filament',
       });
     });
@@ -506,7 +509,7 @@ describe('JobStore', () => {
     it('is still out of reach after a restart', async () => {
       await shop.couldNotReach('mk4', 'no API key for mk4');
 
-      expect((await new JobStore(dataRoot).printerNamed('mk4')).unreachable).toMatchObject({ reason: 'no API key for mk4' });
+      expect((await new JobStore(where).printerNamed('mk4')).unreachable).toMatchObject({ reason: 'no API key for mk4' });
     });
 
     it('is not a stop, because nobody is being asked to clear it', async () => {
@@ -624,7 +627,7 @@ describe('JobStore', () => {
   // A client told at submission can do something about it; one whose job silently starves cannot.
   describe('what the shop will accept', () => {
     it('refuses everything when it has no printers at all', async () => {
-      const empty = new JobStore(await fs.mkdtemp(path.join(tmpdir(), 'print-shop-empty-')));
+      const empty = new JobStore(await aDataDirectory('print-shop-empty-'));
 
       await expect(empty.submit(details(), gcode(), DAVE)).rejects.toThrow('no printers');
     });
@@ -661,19 +664,19 @@ describe('JobStore', () => {
       await submit(details(), gcode());
       await shop.startPrinting('mk4', printing.id);
 
-      expect(await held(new JobStore(dataRoot))).toEqual(['1:Player Box:printing', '2:Job 2:queued']);
+      expect(await held(new JobStore(where))).toEqual(['1:Player Box:printing', '2:Job 2:queued']);
     });
 
     it('goes on issuing ids where the previous run stopped', async () => {
       await submit(details(), gcode());
 
-      expect((await new JobStore(dataRoot).submit(details(), gcode(), DAVE)).id).toBe(2);
+      expect((await new JobStore(where).submit(details(), gcode(), DAVE)).id).toBe(2);
     });
 
     it('still has the gcode a previous run stored', async () => {
       const { id } = await submit(details(), gcode('G1 X42\n'));
 
-      expect((await readAll(await new JobStore(dataRoot).gcodeStream(id))).toString()).toBe('G1 X42\n');
+      expect((await readAll(await new JobStore(where).gcodeStream(id))).toString()).toBe('G1 X42\n');
     });
   });
 
@@ -683,36 +686,38 @@ describe('JobStore', () => {
   // AIDEV-NOTE: integrity before secrecy. A data directory another user can write is one where a job's gcode
   // can be swapped for different gcode, and the shop sends what is there to a printer unquestioned.
   describe('what the shop leaves on disk', () => {
-    async function modeOf(...where: string[]): Promise<string> {
-      return ((await fs.stat(path.join(dataRoot, ...where))).mode & 0o777).toString(8);
+    // Given the place rather than a name under one root: the three kinds live in three directories
+    // now, and which one each belongs to is the thing these are about.
+    async function modeOf(...inside: string[]): Promise<string> {
+      return ((await fs.stat(path.join(...inside))).mode & 0o777).toString(8);
     }
 
     it('keeps a job to itself, directory and contents', async () => {
       await submit(details({ displayName: 'Player Box' }), gcode());
 
-      expect(await modeOf('jobs', '1')).toBe('700');
-      expect(await modeOf('jobs', '1', 'print.gcode')).toBe('600');
-      expect(await modeOf('jobs', '1', 'job.json')).toBe('600');
+      expect(await modeOf(where.jobs, '1')).toBe('700');
+      expect(await modeOf(where.jobs, '1', 'print.gcode')).toBe('600');
+      expect(await modeOf(where.jobs, '1', 'job.json')).toBe('600');
     });
 
     it('keeps a printer to itself, record and status alike', async () => {
       await shop.load('mk4', ['PLA']);
 
-      expect(await modeOf('printers', 'mk4')).toBe('700');
-      expect(await modeOf('printers', 'mk4', 'printer.json')).toBe('600');
-      expect(await modeOf('printers', 'mk4', 'status.json')).toBe('600');
+      expect(await modeOf(where.state, 'printers', 'mk4')).toBe('700');
+      expect(await modeOf(where.state, 'printers', 'mk4', 'printer.json')).toBe('600');
+      expect(await modeOf(where.state, 'printers', 'mk4', 'status.json')).toBe('600');
     });
 
     // Written by the same atomic rename as everything else, so it is easy to miss.
     it('keeps the id counter to itself', async () => {
       await submit(details(), gcode());
 
-      expect(await modeOf('next-id')).toBe('600');
+      expect(await modeOf(where.state, 'next-id')).toBe('600');
     });
   });
 
   describe('when the data directory is not there', () => {
-    const absent = (): JobStore => new JobStore(path.join(tmpdir(), 'print-shop-that-was-never-installed'));
+    const absent = (): JobStore => new JobStore(layoutUnder(path.join(tmpdir(), 'print-shop-that-was-never-installed')));
 
     it.each([
       ['listing', (store: JobStore) => store.all()],
@@ -741,13 +746,13 @@ describe('JobStore', () => {
       ['its group', 0o770],
       ['anybody, without letting them look', 0o722],
     ])('refuses to start when %s could write it', async (_who, mode) => {
-      await fs.chmod(dataRoot, mode);
+      await fs.chmod(where.jobs, mode);
 
       await expect(shop.ready()).rejects.toThrow(DataUnavailable);
     });
 
     it('says the mode it found, which is what the operator has to change', async () => {
-      await fs.chmod(dataRoot, 0o777);
+      await fs.chmod(where.jobs, 0o777);
 
       await expect(shop.ready()).rejects.toThrow('(mode 777)');
     });
@@ -760,7 +765,7 @@ describe('JobStore', () => {
       ['a group that may read it', 0o750],
       ['anybody who may read it', 0o755],
     ])('starts over one %s could write', async (_who, mode) => {
-      await fs.chmod(dataRoot, mode);
+      await fs.chmod(where.jobs, mode);
 
       await expect(shop.ready()).resolves.toBeUndefined();
     });

@@ -60,68 +60,66 @@ get right; a live channel can be added when a GUI exists to want one.
 
 ## Where it keeps its work
 
-`/var/spool/3d-print-shop`, on macOS and Linux alike. macOS is BSD-derived and has `/var/spool` with
-the same occupants Linux does - `cups`, `postfix`, `mqueue`, `uucp` - so this is one path, not a
-platform branch. `PRINT_SHOP_DATA` overrides it, for installs that would rather not involve root
-(Homebrew keeps service state under its own prefix). The variable cannot be named for the service:
+**Three kinds of thing, and a system has somewhere for each.** Work waiting to be done, state that
+has to outlive a restart, and a claim that must not. On Linux that is three directories and the
+filesystem standard says which: `/var/spool/3d-print-shop/jobs`, `/var/lib/3d-print-shop`,
+`/var/run/3d-print-shop`. On macOS there is no `/var/lib` and no convention for splitting a daemon's
+files, so work and state live together under `/Library/Application Support/3d-print-shop` - and the
+claim is under `/var/run` on both, because that is the one directory a reboot is meant to empty and
+both platforms have it.
+
+**The store is handed the three and works out none of them.** `DataLayout` is three paths; the one
+function that knows a Linux from a Mac is `systemLayout`, called once at the edge. That is what keeps
+the platform out of the middle of the store - and it produces different SHAPES rather than one
+formula with a different prefix, which a single root could not have done.
+
+`--data <path>` puts all three under one directory instead, which is what somebody who names a place
+is asking for: a checkout, a Homebrew prefix that would rather not involve root, a test.
+`PRINT_SHOP_DATA` says the same from the environment. The variable cannot be named for the service:
 `3D_` is not a legal start for an environment variable.
 
 Not a per-user directory. A running service's work does not belong in somebody's home, and the
-service does not run as whoever submitted the job.
+service does not run as whoever submitted the job - which is also why `~/Library/Application Support`
+is wrong here however right it is for an app: the daemon runs as a user whose home is `/var/empty`.
 
-**The installer creates the root; the service never does.** `/var/spool/cups` is
-`drwx--x--- root:_lp` - made at install time, owned by the service's user. A missing root is a
-machine that was never set up, so the store refuses rather than creating one, which would put the
-shop's work somewhere nobody is looking.
+**The installer creates the first two; the service never does.** `/var/spool/cups` is
+`drwx--x--- root:_lp` - made at install time, owned by the service's user. A missing one is a machine
+that was never set up, so the store refuses rather than creating one, which would put the shop's work
+somewhere nobody is looking.
 
-**And `ready()` refuses a root somebody else could write.** The shop puts 0700 on every directory it
-creates and 0600 on every file, and none of that survives a root out of which a whole job directory
-can be renamed away or a new one put in its place - so the one mode the installer sets is the one
-the shop cannot set for itself, and the only one worth checking. Write, and deliberately not read: a
-root others may read gives up the ids of the jobs held and no more, and refusing that would stop a
-shop installed 0750 for an operators' group. `/var/spool/cups` is `drwx--x---` for the same reason -
-the group is let in to traverse, never to change what is there.
+**The runtime directory is the exception, and the exception proves the rule.** It lives where a boot
+empties it, so nothing that made it at install time would still be there - the shop makes it itself,
+every start, and `claimData` is what does it.
 
-**So there is an installer, and `@3d-print-shop/installer` is it** - one script that knows both machines,
-because the two directories and the mode on them are the same question wherever it runs and only the
-supervisor differs. It makes a system user that can be logged in as by nobody, gives it the data directory and
-`/etc/3d-print-shop` at 0700, and hands the process to `launchd` or to `systemd`.
+**And `ready()` refuses one somebody else could write.** The shop puts 0700 on every directory it
+creates and 0600 on every file, and none of that survives a parent out of which a whole job directory
+can be renamed away or a new one put in its place - so the one mode the installer sets is the one the
+shop cannot set for itself, and the only one worth checking. Write, and deliberately not read: a
+directory others may read gives up the ids of the jobs held and no more, and refusing that would stop
+a shop installed 0750 for an operators' group. `/var/spool/cups` is `drwx--x---` for the same reason.
 
-Three of its decisions are worth writing down. It **copies** the built shop to
-`/usr/local/lib/3d-print-shop` rather than pointing the service at a checkout: a service user is not
-the developer, and a home directory is not theirs to walk into - a macOS one is 0750, so a daemon
-aimed inside one cannot read a byte. It also means a `git checkout` of another branch is not a live
-change to a running service. It **will not start a shop that has no callers**, because one with none
-refuses to start and a supervisor would then restart it every few seconds for as long as the machine
-was up - a fault that reads like a bug. And it keeps the supervisor's restart **conditional on a
-failure**: `3d-print-shop shutdown` is somebody asking it to stop, and an unconditional `KeepAlive`
-would start it again a second later.
-
-It writes no credential. `init` does that, as the service user, and it is the one step that has to be
-a person's - the token it answers with exists nowhere else. What the installer does instead is say
-the command.
+What each of them holds, on a Linux:
 
 ```
-/var/spool/3d-print-shop/
-  next-id                     the id counter
-  running.sock                the claim on this directory, held by the shop serving it
-  jobs/
-    7/
-      job.json                what was submitted, and nothing else
-      print.gcode
+/var/spool/3d-print-shop/jobs/
+  7/
+    job.json                what was submitted, and nothing else
+    print.gcode
+/var/lib/3d-print-shop/
+  next-id                   the id counter
   printers/
     mk4/
-      printer.json            what the machine IS
-      status.json             what it is DOING
+      printer.json          what the machine IS
+      status.json           what it is DOING
+  sessions.json             who is logged in, by the digest of what they hold
+/var/run/3d-print-shop/
+  running.sock              the claim, held by the shop serving it
 ```
 
-One directory per job and one per printer. Reading the shop back is a scan, which is what makes
-surviving a restart cost nothing - there is no index to keep in step with the files.
-
-**One shop to a data directory, and the kernel enforces it.** The store's numbers are only unique while one
+**One shop to a set of directories, and the kernel enforces it.** The store's numbers are only unique while one
 process is handing them out: allocating an id is a read of `next-id`, an add and a write back, so
 two shops would both read 7, both write 8, and both hand out 7 - the second overwriting the first
-job's gcode and record with no error anywhere. `serve` claims the directory by LISTENING on a socket in
+job's gcode and record with no error anywhere. `serve` claims them by LISTENING on a socket in its runtime directory in
 it, and a second one is refused.
 
 A socket rather than a lock file, because the claim then belongs to the process rather than to the

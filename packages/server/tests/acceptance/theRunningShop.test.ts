@@ -5,6 +5,8 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { digestOf } from '../../src/secrets';
+import { aDataDirectory, parentOf } from '../aDataDirectory';
+import type { DataLayout } from '../../src/dataLayout';
 
 // AIDEV-NOTE: the shop as an operator gets it - a process started from a command line, holding a
 // data directory it was pointed at, answered over a socket. api.test.ts drives the same routes in-process and
@@ -48,6 +50,7 @@ describe('the shop, running as its own process', () => {
   const asAdmin = { authorization: `Bearer ${ADMIN}` };
 
   let dataRoot: string;
+  let where: DataLayout;
   let etc: string;
   let madeEtc: string[];
   // AIDEV-NOTE: every process this suite spawns, tracked from the spawn itself rather than from the
@@ -226,7 +229,8 @@ describe('the shop, running as its own process', () => {
   }
 
   beforeEach(async () => {
-    dataRoot = await mkdtemp(path.join(tmpdir(), 'print-shop-running-'));
+    where = await aDataDirectory('print-shop-running-');
+    dataRoot = parentOf(where);
     spawned = [];
     madeEtc = [];
     etc = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
@@ -247,7 +251,7 @@ describe('the shop, running as its own process', () => {
     await addMk4(shop);
 
     expect((await submitPlayerBox(shop)).status).toBe(201);
-    expect(await readFile(path.join(dataRoot, 'jobs', '1', 'print.gcode'), 'utf-8')).toBe(GCODE);
+    expect(await readFile(path.join(where.jobs, '1', 'print.gcode'), 'utf-8')).toBe(GCODE);
   }, 30_000);
 
   // The operator's commands are a CLIENT of the running shop rather than a second writer over its
@@ -409,7 +413,7 @@ describe('the shop, running as its own process', () => {
   // The other half of the same question: a data directory that IS there, and that anybody could rename a job
   // directory out of. The shop sets 0700 on everything below it, and none of that survives this.
   it('will not start over a data directory somebody else could write', async () => {
-    await chmod(dataRoot, 0o777);
+    await chmod(where.jobs, 0o777);
 
     await expect(startShop()).rejects.toThrow('may not be writable');
   }, 30_000);

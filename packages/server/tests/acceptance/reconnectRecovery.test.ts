@@ -1,7 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import * as path from 'node:path';
+import { rm } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { startOctoPrintServer } from '@3d-print-shop/octoprint-sim';
 import type { JobSubmittedHandler, OctoPrintServer } from '@3d-print-shop/octoprint-sim';
@@ -10,6 +8,8 @@ import { OctoPrint } from '../../src/OctoPrint';
 import { recordOutcome, startNextPrint } from '../../src/printing';
 import type { Printer } from '../../src/printing';
 import type { PrinterOutcome } from '../../src/Job';
+import { aDataDirectory, parentOf } from '../aDataDirectory';
+import type { DataLayout } from '../../src/dataLayout';
 
 // AIDEV-NOTE: real sockets against a real OctoPrint stand-in on an ephemeral port - no mocks. The
 // unit tests in OctoPrint.test.ts drive reconnect recovery through a fake WebSocket, which can only
@@ -18,7 +18,7 @@ import type { PrinterOutcome } from '../../src/Job';
 // shop that has to learn the outcome from what the server actually serves on reconnect.
 describe('recovering a print outcome across a dropped connection', () => {
   let server: OctoPrintServer | undefined;
-  let dataRoot: string;
+  let where: DataLayout;
   let shop: JobStore;
   let machine: OctoPrint | undefined;
 
@@ -39,8 +39,8 @@ describe('recovering a print outcome across a dropped connection', () => {
   }
 
   beforeEach(async () => {
-    dataRoot = await mkdtemp(path.join(tmpdir(), 'print-shop-reconnect-'));
-    shop = new JobStore(dataRoot);
+    where = await aDataDirectory('print-shop-reconnect-');
+    shop = new JobStore(where);
     await shop.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://mk4' });
     await shop.load('mk4', ['PLA']);
   });
@@ -54,7 +54,7 @@ describe('recovering a print outcome across a dropped connection', () => {
     machine = undefined;
     await server?.close();
     server = undefined;
-    await rm(dataRoot, { recursive: true, force: true });
+    await rm(parentOf(where), { recursive: true, force: true });
   });
 
   function connectedTo(port: number): OctoPrint {

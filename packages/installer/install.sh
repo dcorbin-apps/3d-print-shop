@@ -11,7 +11,13 @@ set -euo pipefail
 # that has to be a person's - the token it answers with exists nowhere else.
 
 LABEL=com.dcorbin.3d-print-shop
-DATA=/var/spool/3d-print-shop
+# AIDEV-NOTE: three places rather than one, because the three things a shop keeps are three kinds and
+# the system says where each goes: work awaiting processing, state that outlives a restart, and a
+# claim that must not. The service works these out itself from `systemLayout` - what the installer
+# does is MAKE the two that have to be there before it starts. The third is /var/run, which is
+# emptied by a boot and so is the shop's own to create every time.
+JOBS=/var/spool/3d-print-shop/jobs
+STATE=/var/lib/3d-print-shop
 ETC=/etc/3d-print-shop
 OUT_LOG=/var/log/3d-print-shop.log
 ERR_LOG=/var/log/3d-print-shop.err.log
@@ -305,12 +311,10 @@ wrotePlist() {
     <string>$node</string>
     <string>$SERVER</string>
     <string>serve</string>
-    <string>--data</string>
-    <string>$DATA</string>
 $(pageArguments)  </array>
   <key>UserName</key><string>$SHOP_USER</string>
   <key>GroupName</key><string>$SHOP_GROUP</string>
-  <key>WorkingDirectory</key><string>$DATA</string>
+  <key>WorkingDirectory</key><string>$STATE</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
   <dict>
@@ -353,11 +357,11 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=$node $SERVER serve --data $DATA$(pageOption)
+ExecStart=$node $SERVER serve$(pageOption)
 ExecReload=/bin/kill -HUP \$MAINPID
 User=$SHOP_USER
 Group=$SHOP_GROUP
-WorkingDirectory=$DATA
+WorkingDirectory=$STATE
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGTERM
@@ -435,7 +439,8 @@ install() {
   if [ "$PLATFORM" = macos ]; then madeServiceUserOnMacos; else madeServiceUserOnLinux; fi
 
   say 'what it keeps its work and its credentials in:'
-  madeDirectory "$DATA"
+  madeDirectory "$JOBS"
+  madeDirectory "$STATE"
   madeDirectory "$ETC"
 
   say 'the shop itself:'
@@ -541,7 +546,8 @@ uninstall() {
 
 Left alone, because they hold work and secrets rather than installation:
 
-  $DATA   what the shop was holding
+  $JOBS   the work it was holding
+  $STATE          its printers and sessions
   $ETC          its callers and its printer keys
   $SHOP_USER          the user that owns both
 

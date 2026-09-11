@@ -32,7 +32,7 @@ file, and read an environment variable for the shop's URL.
 ```
 yarn install
 yarn build
-yarn shop serve --data /var/spool/3d-print-shop
+yarn shop serve --data ./dev
 ```
 
 It will not start until `/etc/3d-print-shop/callers.json` names somebody who may call it: every
@@ -43,17 +43,30 @@ writes that file with one admin in it - see **Who may call it** below.
 `@3d-print-shop/server` declares. Either way it is a plain long-running process, so `launchd` and
 `systemd` can both supervise it, it stops on `SIGTERM`, and it re-reads its credentials on `SIGHUP`.
 
-**The data directory is the installer's to create, not the shop's.** `/var/spool/cups` is made at
-install time and owned by the service's user, and this is the same: a missing root is a machine that
-was never set up, so the shop refuses to start rather than putting its work somewhere nobody is
-looking. `PRINT_SHOP_SPOOL` overrides the path, for an install that would rather not involve root.
+**It keeps three kinds of thing, and a system has somewhere for each.** Work waiting to be done,
+state that has to outlive a restart, and a claim that must not:
 
-It must not be writable by its group or by anybody else, or the shop refuses to start: everything
-below it is 0700 and 0600, and none of that stops a job directory being renamed out of a root others
-can write. Being readable is allowed - 0750 for an operators' group is a working install.
+| | Linux | macOS |
+|---|---|---|
+| jobs | `/var/spool/3d-print-shop/jobs` | `/Library/Application Support/3d-print-shop/jobs` |
+| printers, sessions, the id counter | `/var/lib/3d-print-shop` | `/Library/Application Support/3d-print-shop/state` |
+| the claim on all of it | `/var/run/3d-print-shop` | `/var/run/3d-print-shop` |
 
-One shop to a data directory. `serve` claims it by listening on a socket inside it, so a second shop
-over the same one is refused and a crash leaves nothing to clean up.
+`--data <path>` puts all three under one directory instead - a checkout, a Homebrew prefix, a test -
+and `PRINT_SHOP_DATA` does the same from the environment. The store is handed the three places and
+works out none of them, so the only thing that knows a Linux from a Mac is one function.
+
+**The first two are the installer's to create, not the shop's.** `/var/spool/cups` is made at install
+time and owned by the service's user, and this is the same: a missing one is a machine that was never
+set up, so the shop refuses to start rather than putting its work somewhere nobody is looking. The
+third is the exception - it lives where a reboot empties it, so the shop makes it every time.
+
+They must not be writable by their group or by anybody else, or the shop refuses to start: everything
+below them is 0700 and 0600, and none of that stops a job directory being renamed out of a directory
+others can write. Being readable is allowed - 0750 for an operators' group is a working install.
+
+One shop to a set of directories. `serve` claims them by listening on a socket in its runtime
+directory, so a second shop over the same ones is refused and a crash leaves nothing to clean up.
 
 ## Installing it as a service
 
@@ -75,8 +88,8 @@ global directory is outside a home directory, for the same reason the node does.
 with the reason rather than installed into a daemon that could never start.
 
 It works out which machine it is on and does the same thing either way: a system user (`_printshop`
-on macOS, `printshop` on Linux) that can be logged in as by nobody; `/var/spool/3d-print-shop` and
-`/etc/3d-print-shop` owned by it at 0700; a copy of the built shop under `/usr/local/lib/3d-print-shop`
+on macOS, `printshop` on Linux) that can be logged in as by nobody; the directories it keeps things
+in and `/etc/3d-print-shop`, owned by it at 0700; a copy of the built shop under `/usr/local/lib/3d-print-shop`
 owned by root; and a `launchd` daemon or a `systemd` unit that runs it.
 
 If the page has been built it is copied too, and the service is pointed at it with `--page`. Without
@@ -126,7 +139,7 @@ dev server. `PRINT_SHOP_URL` points it at a shop somewhere else.
 
 ```
 yarn build
-3d-print-shop serve --data /var/spool/3d-print-shop --page packages/ui/dist
+3d-print-shop serve --page /usr/local/lib/3d-print-shop/packages/ui/dist
 ```
 
 `--page` is a DIRECTORY and the shop is told nothing else about it - it serves those files at the
@@ -169,7 +182,7 @@ shop answers with the printer, never with the key, and a key is redacted out of 
 
 ```
 3d-print-shop init dave                                the first admin, on a machine with none
-3d-print-shop serve --data /var/spool/3d-print-shop    run the shop, so clients can reach it
+3d-print-shop serve                                    run the shop, so clients can reach it
 3d-print-shop printer add mk4 250x210x220 http://octopi.local
 3d-print-shop printer list                             what it has, and what each is doing
 3d-print-shop printer load mk4 PLA-Red                 what is on the machine now

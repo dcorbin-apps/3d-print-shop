@@ -1,22 +1,22 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { HttpShop } from '@3d-print-shop/client';
 import type { PrinterRecord } from '@3d-print-shop/client';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
-import * as path from 'node:path';
 import { serve } from '../../src/api';
 import { JobStore } from '../../src/JobStore';
 import { Callers } from '../../src/credentials';
 import { digestOf } from '../../src/secrets';
+import { aDataDirectory, parentOf } from '../aDataDirectory';
+import type { DataLayout } from '../../src/dataLayout';
 
 // AIDEV-NOTE: the two halves of the contract against each other - the client from
 // @3d-print-shop/client, the real routes over a real socket. Neither side's own suite can catch the
 // two disagreeing: the client's is against a stand-in, and the shop's is against fetch by hand.
 // This is the only place both are true at once, which is what keeps a published client honest.
 describe('the shop and its client', () => {
-  let dataRoot: string;
+  let where: DataLayout;
   let store: JobStore;
   let server: Server;
   let shop: HttpShop;
@@ -40,8 +40,8 @@ describe('the shop and its client', () => {
   const TOKEN = 'dave-token';
 
   beforeEach(async () => {
-    dataRoot = await mkdtemp(path.join(tmpdir(), 'print-shop-contract-'));
-    store = new JobStore(dataRoot);
+    where = await aDataDirectory('print-shop-contract-');
+    store = new JobStore(where);
 
     const dave = { caller: { id: 'dave', name: 'dave', role: 'admin' as const }, credentials: [{ kind: 'token' as const, hash: digestOf(TOKEN) }] };
     server = await serve(store, 0, { callers: () => new Callers([dave]) });
@@ -50,7 +50,7 @@ describe('the shop and its client', () => {
 
   afterEach(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await rm(dataRoot, { recursive: true, force: true });
+    await rm(parentOf(where), { recursive: true, force: true });
   });
 
   describe('the printers', () => {

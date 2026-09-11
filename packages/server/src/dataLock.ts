@@ -1,4 +1,4 @@
-import { rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { createConnection, createServer } from 'node:net';
 import type { Server } from 'node:net';
 import * as path from 'node:path';
@@ -17,6 +17,13 @@ const LOCK_SOCKET = 'running.sock';
  */
 export async function claimData(root: string): Promise<() => void> {
   const socket = path.join(root, LOCK_SOCKET);
+
+  // AIDEV-NOTE: the one directory the shop makes for itself, and the exception is the point. Work
+  // and state are the installer's because a shop that created them would create them wherever it
+  // was mispointed - but this one is MEANT not to survive: it is /var/run on an installed machine,
+  // which is emptied by a boot, so nothing could have made it that would still be there.
+  await mkdir(root, { recursive: true, mode: 0o700 });
+
   const held = createServer();
 
   // AIDEV-NOTE: nothing may talk to it. This is a listening socket for the exclusivity alone: the

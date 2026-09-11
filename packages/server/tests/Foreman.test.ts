@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import * as fs from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { Foreman } from '../src/Foreman';
@@ -11,12 +10,14 @@ import type { PrinterOutcome } from '../src/Job';
 import { CouldNotReach } from '../src/printing';
 import type { Printer } from '../src/printing';
 import type { RegisteredPrinter } from '../src/Printer';
+import { aDataDirectory, parentOf } from './aDataDirectory';
+import type { DataLayout } from '../src/dataLayout';
 
 // AIDEV-NOTE: a real store on a real directory, because what the foreman does is decide from what
 // is written down and then write more down. The MACHINES are mocked - there is no printer here -
 // and that is the only seam.
 describe('the foreman', () => {
-  let dataRoot: string;
+  let where: DataLayout;
   let shop: JobStore;
   let foreman: Foreman;
   let mockSend: jest.Mock<(remotePath: string, gcode: Readable) => Promise<string>>;
@@ -75,8 +76,8 @@ describe('the foreman', () => {
   let stopWaiting: () => void;
 
   beforeEach(async () => {
-    dataRoot = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-foreman-'));
-    shop = new JobStore(dataRoot);
+    where = await aDataDirectory('print-shop-foreman-');
+    shop = new JobStore(where);
 
     mockSend = jest.fn<(remotePath: string, gcode: Readable) => Promise<string>>().mockImplementation((remotePath) => Promise.resolve(remotePath));
     // Never settles unless a test says so: a print that is still running is the ordinary case.
@@ -103,7 +104,7 @@ describe('the foreman', () => {
     await Promise.all(foremen.map((made) => made.watchersSettled()));
     foremen.length = 0;
 
-    await fs.rm(dataRoot, { recursive: true, force: true });
+    await fs.rm(parentOf(where), { recursive: true, force: true });
   });
 
   // AIDEV-NOTE: the machine's half of the story. The shop runs unattended for hours, and without
@@ -242,7 +243,7 @@ describe('the foreman', () => {
       await foreman.considerStarting();
       mockAwaitOutcome.mockResolvedValue('finished');
 
-      await aForeman(new JobStore(dataRoot), mockReach).resumeWatching();
+      await aForeman(new JobStore(where), mockReach).resumeWatching();
 
       await until(jobIs(id, 'awaiting-approval'));
     });
@@ -756,7 +757,7 @@ describe('the foreman', () => {
     });
 
     it('tries a machine it finds already out of reach', async () => {
-      const restarted = aForeman(new JobStore(dataRoot), mockReach, silent, () => clock);
+      const restarted = aForeman(new JobStore(where), mockReach, silent, () => clock);
 
       await restarted.reachForWhatIsLost();
 
@@ -799,7 +800,7 @@ describe('the foreman', () => {
 
       const id = await submit();
       mockReach.mockImplementation(async (): Promise<Printer> => {
-        await fs.rm(path.join(dataRoot, 'jobs', String(id)), { recursive: true, force: true });
+        await fs.rm(path.join(where.jobs, String(id)), { recursive: true, force: true });
 
         return { send: mockSend, awaitOutcome: mockAwaitOutcome };
       });

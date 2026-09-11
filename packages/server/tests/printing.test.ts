@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import * as fs from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { JobStore } from '../src/JobStore';
 import { recordOutcome, remotePathFor, startNextPrint } from '../src/printing';
 import type { Printer } from '../src/printing';
 import type { PrintAttempt } from '../src/printing';
 import type { Job, PrinterOutcome } from '../src/Job';
+import { aDataDirectory, parentOf } from './aDataDirectory';
+import type { DataLayout } from '../src/dataLayout';
 
 describe('printing the next job', () => {
-  let dataRoot: string;
+  let where: DataLayout;
   let shop: JobStore;
   let mockSend: jest.Mock<(remotePath: string, gcode: Readable) => Promise<string>>;
   let mockAwaitOutcome: jest.Mock<(remotePath: string) => Promise<PrinterOutcome>>;
@@ -33,8 +33,8 @@ describe('printing the next job', () => {
   }
 
   beforeEach(async () => {
-    dataRoot = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-printing-'));
-    shop = new JobStore(dataRoot);
+    where = await aDataDirectory('print-shop-printing-');
+    shop = new JobStore(where);
 
     // A machine that files a job where it was asked to, which is the ordinary case. A test about one
     // that files it somewhere else says so itself.
@@ -47,7 +47,7 @@ describe('printing the next job', () => {
   });
 
   afterEach(async () => {
-    await fs.rm(dataRoot, { recursive: true, force: true });
+    await fs.rm(parentOf(where), { recursive: true, force: true });
   });
 
   describe('when a job can be printed', () => {
@@ -228,9 +228,9 @@ describe('printing the next job', () => {
       await submit(['PLA-Red']);
       await printOn('mk4', ['PLA-Red']);
 
-      await recordOutcome(new JobStore(dataRoot), machine, 'mk4');
+      await recordOutcome(new JobStore(where), machine, 'mk4');
 
-      expect(await new JobStore(dataRoot).find(1)).toMatchObject({ state: 'awaiting-approval' });
+      expect(await new JobStore(where).find(1)).toMatchObject({ state: 'awaiting-approval' });
     });
 
     it('refuses to watch a printer that is printing nothing', async () => {

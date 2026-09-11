@@ -11,12 +11,15 @@ import { digestOf, hashPassword } from '../../src/secrets';
 import type { Job, JobDetails } from '../../src/Job';
 import { JobStore } from '../../src/JobStore';
 import { toStdout } from '../../src/log';
+import { aDataDirectory, parentOf } from '../aDataDirectory';
+import { layoutUnder } from '../../src/dataLayout';
+import type { DataLayout } from '../../src/dataLayout';
 
-// AIDEV-NOTE: real HTTP against a real listener on an ephemeral port, over a real dataRoot. There is no
+// AIDEV-NOTE: real HTTP against a real listener on an ephemeral port, over a real data directory. There is no
 // unit-level cover for the routes on purpose - what is worth proving here is what goes over the
 // wire, and a multipart body handed to a fake request would prove only that the test can build one.
 describe('the shop over HTTP', () => {
-  let dataRoot: string;
+  let where: DataLayout;
   let shop: JobStore;
   let server: Server;
   let shopUrl: string;
@@ -79,8 +82,8 @@ describe('the shop over HTTP', () => {
   }
 
   beforeEach(async () => {
-    dataRoot = await mkdtemp(path.join(tmpdir(), 'print-shop-api-'));
-    shop = new JobStore(dataRoot);
+    where = await aDataDirectory('print-shop-api-');
+    shop = new JobStore(where);
     await shop.addPrinter({ name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS });
 
     mockChanged = jest.fn<() => void>();
@@ -100,7 +103,7 @@ describe('the shop over HTTP', () => {
 
   afterEach(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await rm(dataRoot, { recursive: true, force: true });
+    await rm(parentOf(where), { recursive: true, force: true });
   });
 
   describe('submitting', () => {
@@ -299,7 +302,7 @@ describe('the shop over HTTP', () => {
     });
   });
 
-  // AIDEV-NOTE: the dataRoot IS the recovery model, so an upload that fills it loses every job the shop
+  // AIDEV-NOTE: the data directory IS the recovery model, so an upload that fills it loses every job the shop
   // is holding and not only the one that overflowed. These are the limits that stop that, driven
   // over real HTTP because what is being proven is where the bytes stop - not that a number was set.
   describe('a submission bigger than the shop will take', () => {
@@ -310,7 +313,7 @@ describe('the shop over HTTP', () => {
     const CAP = 64;
 
     beforeEach(async () => {
-      const store = new JobStore(dataRoot, { maxGcodeBytes: CAP });
+      const store = new JobStore(where, { maxGcodeBytes: CAP });
       await store.addPrinter({ name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS });
       small = await serve(store, 0, { callers: () => CALLERS });
       smallUrl = `http://127.0.0.1:${(small.address() as AddressInfo).port}`;
@@ -357,7 +360,7 @@ describe('the shop over HTTP', () => {
       await submitting(smallUrl, submission('G'.repeat(CAP + 1)));
 
       expect(await (await fetch(`${smallUrl}/jobs`, { headers: AS_ADMIN })).json()).toEqual({ accessibleJobs: [], totalJobs: 0 });
-      await expect(readdir(path.join(dataRoot, 'jobs'))).resolves.toEqual([]);
+      await expect(readdir(where.jobs)).resolves.toEqual([]);
     });
 
     // Past the part count busboy discards rather than raising, which is the same thing that already
@@ -375,10 +378,10 @@ describe('the shop over HTTP', () => {
 
   // A full disk is the machine's fault, not the client's, so it is told to come back rather than
   // told it did something wrong. Room for the BIGGEST job, because this one's size is not yet known.
-  describe('when the dataRoot has no room left', () => {
+  describe('when there is no room left', () => {
     it('takes nothing, and says to come back later without saying where it keeps its work', async () => {
       const lines: string[] = [];
-      const full = new JobStore(dataRoot, { maxGcodeBytes: 1024, freeBytes: () => Promise.resolve(512) });
+      const full = new JobStore(where, { maxGcodeBytes: 1024, freeBytes: () => Promise.resolve(512) });
       const server = await serve(full, 0, { callers: () => CALLERS, log: toStdout(() => new Date(), (line) => lines.push(line)) });
 
       try {
@@ -393,9 +396,9 @@ describe('the shop over HTTP', () => {
         // A 503 rather than a 4xx: a client that comes back later is doing the right thing.
         expect(response.status).toBe(503);
         expect(JSON.parse(said)).toEqual({ error: 'the shop cannot get at the work it keeps, and why is in its log' });
-        expect(said).not.toContain(dataRoot);
+        expect(said).not.toContain(where.jobs);
         // The operator's half of the same event: how much room there is, and which directory has it.
-        expect(lines.join('\n')).toContain(`${dataRoot} has 512 bytes free, and the shop keeps 1024 spare for a job`);
+        expect(lines.join('\n')).toContain(`${where.jobs} has 512 bytes free, and the shop keeps 1024 spare for a job`);
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
@@ -861,9 +864,9 @@ describe('the shop over HTTP', () => {
     // rewritten, so a job from then stays ownerless until it leaves - which is indistinguishable
     // from an owner who has since been revoked, and is handled as the same thing.
     async function aJobFromBeforeOwners(): Promise<number> {
-      await mkdir(path.join(dataRoot, 'jobs', '9'), { recursive: true });
+      await mkdir(path.join(where.jobs, '9'), { recursive: true });
       await writeFile(
-        path.join(dataRoot, 'jobs', '9', 'job.json'),
+        path.join(where.jobs, '9', 'job.json'),
         JSON.stringify({ id: 9, displayName: 'Old Box', filaments: ['PLA-SpaceGray'], submittedAt: new Date().toISOString(), gcodeBytes: 3 })
       );
 
@@ -1061,7 +1064,7 @@ describe('the shop over HTTP', () => {
     });
   });
 
-  // AIDEV-NOTE: a name reaches the dataRoot as a directory, and DELETE removes that directory
+  // AIDEV-NOTE: a name reaches the data directory as a directory, and DELETE removes that directory
   // recursively - so what a client may call a printer is a boundary, not a nicety. Driven over real
   // HTTP with the encoding a client would actually send: express decodes %2F before a handler sees
   // it, so a guard reading the raw URL would miss every one of these.
@@ -1124,25 +1127,25 @@ describe('the shop over HTTP', () => {
   // the path they failed on - so the message is the one thing that must not go back to a caller.
   describe('when something breaks that the shop did not expect', () => {
     it('says where to look rather than what broke', async () => {
-      // `jobs` as a FILE, so the mkdir every submission does fails with the dataRoot path in its message.
-      await rm(path.join(dataRoot, 'jobs'), { recursive: true, force: true });
-      await writeFile(path.join(dataRoot, 'jobs'), 'not a directory');
+      // A FILE standing where the next job's directory goes, so the mkdir every submission does
+      // fails with the path in its message - a fault of the machine rather than of the request.
+      await writeFile(path.join(where.jobs, '1'), 'not a directory');
 
       const response = await submit(playerBox);
       const said = await response.text();
 
       expect(response.status).toBe(500);
       expect(JSON.parse(said)).toEqual({ error: 'the shop could not do that, and why is in its log' });
-      expect(said).not.toContain(dataRoot);
+      expect(said).not.toContain(where.jobs);
     });
   });
 
-  // The dataRoot root is made when the shop is installed and never by the shop - so a missing one is a
+  // The data directory is made when the shop is installed and never by the shop - so a missing one is a
   // machine that was never set up, which is the service's fault and not the client's.
   describe('when the shop was never installed', () => {
     it('says a client may as well come back later, and tells the operator which directory is missing', async () => {
       const lines: string[] = [];
-      const missing = path.join(dataRoot, 'never-made');
+      const missing = layoutUnder(path.join(parentOf(where), 'never-made'));
       const unusable = await serve(new JobStore(missing), 0, {
         callers: () => CALLERS,
         log: toStdout(() => new Date(), (line) => lines.push(line)),
@@ -1154,8 +1157,8 @@ describe('the shop over HTTP', () => {
 
         expect(response.status).toBe(503);
         expect(JSON.parse(said)).toEqual({ error: 'the shop cannot get at the work it keeps, and why is in its log' });
-        expect(said).not.toContain(missing);
-        expect(lines.join('\n')).toContain(`${missing} is not there - it is created when the shop is installed`);
+        expect(said).not.toContain(missing.jobs);
+        expect(lines.join('\n')).toContain(`${missing.jobs} is not there - it is created when the shop is installed`);
       } finally {
         await new Promise<void>((resolve) => unusable.close(() => resolve()));
       }

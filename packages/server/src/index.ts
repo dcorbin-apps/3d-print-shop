@@ -44,4 +44,5 @@ export { CouldNotReach, recordOutcome, remotePathFor, startNextPrint } from './p
 export type { FilamentDemand } from './selection.js';
 export { nextToPrint, printableNow, startsWith, waitingOn } from './selection.js';
 export { DataInUse, claimData } from './dataLock.js';
-export { DATA_ROOT_ENV, defaultDataRoot } from './dataRoot.js';
+export { DATA_ROOT_ENV, defaultLayout, layoutUnder, systemLayout } from './dataLayout.js';
+export type { DataLayout } from './dataLayout.js';

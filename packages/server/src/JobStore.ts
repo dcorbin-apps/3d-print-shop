@@ -7,7 +7,8 @@ import { InvalidSubmission, generatedDisplayName, validateDetails } from './Job.
 import type { BuildVolume, Job, JobDetails, JobRecord, PrinterOutcome } from './Job.js';
 import { canTake, whereToWatch } from './Printer.js';
 import type { Holding, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
-import { defaultDataRoot } from './dataRoot.js';
+import { defaultLayout } from './dataLayout.js';
+import type { DataLayout } from './dataLayout.js';
 
 // AIDEV-NOTE: the largest gcode this shop will take, and so also the room it insists on having
 // before it takes any. A kit runs to tens of megabytes, so the default is several times the biggest
@@ -49,7 +50,6 @@ async function spaceFreeOn(root: string): Promise<number> {
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
 
-const JOBS_DIR = 'jobs';
 const PRINTERS_DIR = 'printers';
 const NEXT_ID_FILE = 'next-id';
 const RECORD_FILE = 'job.json';
@@ -91,8 +91,12 @@ export class JobStore {
 
   private readonly freeBytes: (root: string) => Promise<number>;
 
+  // AIDEV-NOTE: handed the three places rather than one root to derive them from. Where each kind of
+  // thing belongs is a question about the SYSTEM - a Linux keeps work, state and a runtime claim in
+  // three different places and a Mac keeps them in one - and a store that worked it out would be a
+  // store with a platform in it. See dataLayout.ts; this end just uses what it was given.
   constructor(
-    private readonly root: string = defaultDataRoot(),
+    private readonly where: DataLayout = defaultLayout(),
     limits: DataLimits = {}
   ) {
     this.maxGcodeBytes = limits.maxGcodeBytes ?? defaultMaxGcodeBytes();
@@ -170,7 +174,7 @@ export class JobStore {
     await this.requireDataRoot();
 
     const printers = await this.printers();
-    const entries = await readdir(path.join(this.root, JOBS_DIR)).catch(() => [] as string[]);
+    const entries = await readdir(this.where.jobs).catch(() => [] as string[]);
     const records = await Promise.all(entries.map((entry) => this.readRecord(Number(entry))));
 
     return records
@@ -294,7 +298,7 @@ export class JobStore {
 
     // Sorted, because readdir's order is the filesystem's and an operator reading a list twice
     // should not find it rearranged.
-    const names = (await readdir(path.join(this.root, PRINTERS_DIR)).catch(() => [] as string[])).sort();
+    const names = (await readdir(path.join(this.where.state, PRINTERS_DIR)).catch(() => [] as string[])).sort();
     const printers = await Promise.all(names.map((name) => this.readPrinter(name)));
 
     return printers.filter((printer): printer is RegisteredPrinter => printer !== undefined);
@@ -455,12 +459,14 @@ export class JobStore {
   // /var/spool/cups is - so a missing one is a machine that was never set up, not something to
   // quietly create. Creating it would put the shop's work somewhere nobody is looking.
   private async requireDataRoot(): Promise<void> {
-    const usable = await stat(this.root).then(
-      (entry) => entry.isDirectory(),
-      () => false
-    );
-    if (!usable) {
-      throw new DataUnavailable(`${this.root} is not there - it is created when the shop is installed`);
+    for (const kept of [this.where.jobs, this.where.state]) {
+      const usable = await stat(kept).then(
+        (entry) => entry.isDirectory(),
+        () => false
+      );
+      if (!usable) {
+        throw new DataUnavailable(`${kept} is not there - it is created when the shop is installed`);
+      }
     }
   }
 
@@ -475,13 +481,15 @@ export class JobStore {
   // held and no more - every record and every gcode is 0600 - and refusing that would stop a shop
   // installed 0750 for an operators' group, which is a working install rather than a fault.
   private async requireNobodyElseCanWriteIt(): Promise<void> {
-    const found = await stat(this.root);
+    for (const kept of [this.where.jobs, this.where.state]) {
+      const found = await stat(kept);
 
-    if ((found.mode & 0o022) !== 0) {
-      throw new DataUnavailable(
-        `${this.root} can be written by somebody other than its owner (mode ${(found.mode & 0o777).toString(8)}) - ` +
-          'a job could be swapped or taken out of it, so it may not be writable by its group or by anybody else'
-      );
+      if ((found.mode & 0o022) !== 0) {
+        throw new DataUnavailable(
+          `${kept} can be written by somebody other than its owner (mode ${(found.mode & 0o777).toString(8)}) - ` +
+            'a job could be swapped or taken out of it, so it may not be writable by its group or by anybody else'
+        );
+      }
     }
   }
 
@@ -491,15 +499,15 @@ export class JobStore {
   // not only the one that overflowed. A full disk is the machine's problem, so a client is told to
   // come back later rather than told it did something wrong.
   private async requireRoomForOne(): Promise<void> {
-    const free = await this.freeBytes(this.root);
+    const free = await this.freeBytes(this.where.jobs);
 
     if (free < this.maxGcodeBytes) {
-      throw new DataUnavailable(`${this.root} has ${free} bytes free, and the shop keeps ${this.maxGcodeBytes} spare for a job`);
+      throw new DataUnavailable(`${this.where.jobs} has ${free} bytes free, and the shop keeps ${this.maxGcodeBytes} spare for a job`);
     }
   }
 
   private async allocateId(): Promise<number> {
-    const file = path.join(this.root, NEXT_ID_FILE);
+    const file = path.join(this.where.state, NEXT_ID_FILE);
     const next = await readFile(file, 'utf-8')
       .then((contents) => Number.parseInt(contents.trim(), 10))
       .catch(() => 1);
@@ -528,11 +536,11 @@ export class JobStore {
   }
 
   private jobDir(id: number): string {
-    return path.join(this.root, JOBS_DIR, String(id));
+    return path.join(this.where.jobs, String(id));
   }
 
   private printerDir(name: string): string {
-    return path.join(this.root, PRINTERS_DIR, name);
+    return path.join(this.where.state, PRINTERS_DIR, name);
   }
 
   private printerFile(name: string): string {

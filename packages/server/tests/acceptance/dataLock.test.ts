@@ -1,45 +1,47 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { DataInUse, claimData } from '../../src/dataLock';
+import { aDataDirectory, parentOf } from '../aDataDirectory';
+import type { DataLayout } from '../../src/dataLayout';
 
 // AIDEV-NOTE: real sockets on a real directory - the whole point is what the KERNEL will and will
 // not allow, which nothing else can stand in for.
 describe('holding a data directory', () => {
-  let dataRoot: string;
+  let where: DataLayout;
   let held: (() => void)[];
 
-  const socket = (): string => path.join(dataRoot, 'running.sock');
+  const socket = (): string => path.join(where.run, 'running.sock');
 
   async function claim(): Promise<() => void> {
-    const release = await claimData(dataRoot);
+    const release = await claimData(where.run);
     held.push(release);
 
     return release;
   }
 
   beforeEach(async () => {
-    dataRoot = await mkdtemp(path.join(tmpdir(), 'print-shop-lock-'));
+    where = await aDataDirectory('print-shop-lock-');
     held = [];
   });
 
   afterEach(async () => {
     held.forEach((release) => release());
-    await rm(dataRoot, { recursive: true, force: true });
+    await rm(parentOf(where), { recursive: true, force: true });
   });
 
   // Two shops over one data directory would both read `next-id` as 7, both write 8, and both hand out 7.
   it('lets a second shop nowhere near a data directory that is already served', async () => {
     await claim();
 
-    await expect(claimData(dataRoot)).rejects.toThrow(DataInUse);
+    await expect(claimData(where.run)).rejects.toThrow(DataInUse);
   });
 
-  it('says which dataRoot, and why only one may have it', async () => {
+  it('says which directory, and why only one may have it', async () => {
     await claim();
 
-    await expect(claimData(dataRoot)).rejects.toThrow(`another shop is already serving ${dataRoot}`);
+    await expect(claimData(where.run)).rejects.toThrow(`another shop is already serving ${where.run}`);
   });
 
   // Two directories, because refusing every second claim would satisfy the test above.
@@ -66,6 +68,9 @@ describe('holding a data directory', () => {
   // outlives a process that died, but the claim does not - so nobody answering on it is what makes
   // the leftover safe to clear away.
   it('takes a data directory whose last shop died without tidying up', async () => {
+    // The runtime directory is the shop's own to make, so a leftover socket is only reachable once
+    // something has made one - which is exactly the state a machine is in after a shop died in it.
+    await mkdir(where.run, { recursive: true });
     await writeFile(socket(), 'left behind');
 
     await expect(claim()).resolves.toBeDefined();

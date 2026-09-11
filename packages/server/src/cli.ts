@@ -16,7 +16,7 @@ import { addSomebody, askForANewPassword, changePassword, giveAToken, listCaller
 import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { claimData } from './dataLock.js';
-import { DATA_ROOT_ENV, defaultDataRoot } from './dataRoot.js';
+import { DATA_ROOT_ENV, defaultLayout, layoutUnder } from './dataLayout.js';
 
 // AIDEV-NOTE: thin on purpose. Every printer command is a function in printerAdmin.ts answering with
 // lines, and serving is one call into api.ts; this only turns argv into a call and lines into
@@ -42,7 +42,7 @@ export function createCLI(): Command {
     .option('--port <port>', 'the port to listen on', readPort, DEFAULT_PORT)
     // No default here: serve() holds it, and a second copy of an address is a second thing to change.
     .option('--listen <address>', 'the address to listen on - loopback unless said otherwise, and anything else is on the network')
-    .option('--data <path>', `where the shop keeps everything it has (or ${DATA_ROOT_ENV}; defaults to ${defaultDataRoot()})`)
+    .option('--data <path>', `one directory to keep everything under (or ${DATA_ROOT_ENV}; otherwise this system's own places)`)
     .option(
       '--max-gcode <megabytes>',
       `the largest gcode it will take, and the room it keeps spare for one (or ${MAX_GCODE_ENV})`,
@@ -54,8 +54,11 @@ export function createCLI(): Command {
     // depending on a client, and that direction never runs.
     .option('--page <path>', 'a directory of files to serve beside the API, so a browser has somewhere to get the page')
     .action(async (options: { port: number; listen?: string; data?: string; maxGcode?: number; etc?: string; page?: string }) => {
-      const dataRoot = options.data ?? defaultDataRoot();
-      const store = new JobStore(dataRoot, { maxGcodeBytes: options.maxGcode });
+      // AIDEV-NOTE: named a place, everything goes under it; named none, each kind goes where this
+      // system keeps that kind. The branch is in dataLayout.ts and this is its first caller rather
+      // than its home - the server is a library too, and an embedder needs the same answer.
+      const where = options.data === undefined ? defaultLayout() : layoutUnder(options.data);
+      const store = new JobStore(where, { maxGcodeBytes: options.maxGcode });
       const etc = options.etc ?? defaultEtc();
 
       // AIDEV-NOTE: credentials come first, and a shop that has none does not start. Every route
@@ -77,7 +80,7 @@ export function createCLI(): Command {
       // Before anything else: a data directory that is not there, or is already being served, is a shop that
       // must refuse to start rather than start and do damage.
       await store.ready();
-      const releaseData = await claimData(dataRoot);
+      const releaseData = await claimData(where.run);
 
       const machines = new OctoPrintMachines(() => printerKeys);
       const foreman = new Foreman(store, machines.reach, log);
@@ -184,7 +187,7 @@ export function createCLI(): Command {
       // AIDEV-NOTE: which data directory and which credentials, because a process that outlives the run
       // started it is a process somebody has to identify later - and argv alone was not enough to do
       // that for two shops found still listening, one of them 14 hours old.
-      log.info('the shop is listening', { address: bound.address, port: bound.port, callers: callers.size, data: dataRoot, etc, page: options.page });
+      log.info('the shop is listening', { address: bound.address, port: bound.port, callers: callers.size, jobs: where.jobs, state: where.state, etc, page: options.page });
       say([`3d-print-shop is listening on ${bound.address}:${bound.port}`, `${callers.size} caller(s) may ask`]);
 
       // A restart does not stop a machine. Prints that were already running are picked up first,

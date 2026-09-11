@@ -2,25 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import {
-  AlreadyHasCallers,
-  CALLERS_FILE,
-  ETC_ENV,
-  PRINTER_KEYS_FILE,
-  UnusableCredentials,
-  callersIn,
-  defaultEtc,
-  printerKeysIn,
-  rereadCallers,
-  rereadPrinterKeys,
-  writeFirstCaller,
-  writePrinterKey,
-  Callers,
-  addCaller,
-  issueToken,
-  migrateCallers,
-  setPassword,
-} from '../src/credentials';
+import { AlreadyHasCallers, CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys, writeFirstCaller, writePrinterKey, Callers, addCaller, issueToken, migrateCallers, setPassword,  } from '../src/credentials';
 import { digestOf, hashPassword, isThePassword } from '../src/secrets';
 import { toStdout } from '../src/log';
 import type { Log } from '../src/log';

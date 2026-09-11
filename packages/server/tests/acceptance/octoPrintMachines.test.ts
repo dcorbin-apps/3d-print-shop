@@ -1,19 +1,19 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import * as path from 'node:path';
+import { rm } from 'node:fs/promises';
 import { startOctoPrintServer } from '@3d-print-shop/octoprint-sim';
 import type { OctoPrintServer } from '@3d-print-shop/octoprint-sim';
 import { JobStore } from '../../src/JobStore';
 import { OctoPrintMachines } from '../../src/OctoPrintMachines';
 import type { OctoPrint } from '../../src/OctoPrint';
+import { aDataDirectory, parentOf } from '../aDataDirectory';
+import type { DataLayout } from '../../src/dataLayout';
 
 // AIDEV-NOTE: a real socket to a real stand-in OctoPrint, because both claims here are about the
 // CONNECTION and neither is visible from a mock: that reaching a printer opens one before anything
 // is sent, and that reaching the same printer twice does not open a second.
 describe('reaching a printer', () => {
   let server: OctoPrintServer | undefined;
-  let dataRoot: string;
+  let where: DataLayout;
   let shop: JobStore;
   let machines: OctoPrintMachines;
   let keys: Map<string, string>;
@@ -24,8 +24,8 @@ describe('reaching a printer', () => {
 
   beforeEach(async () => {
     keys = new Map([['mk4', 'a-key']]);
-    dataRoot = await mkdtemp(path.join(tmpdir(), 'print-shop-machines-'));
-    shop = new JobStore(dataRoot);
+    where = await aDataDirectory('print-shop-machines-');
+    shop = new JobStore(where);
     machines = new OctoPrintMachines(() => keys);
 
     server = await startOctoPrintServer(0, () => undefined);
@@ -42,7 +42,7 @@ describe('reaching a printer', () => {
 
     await server?.close();
     server = undefined;
-    await rm(dataRoot, { recursive: true, force: true });
+    await rm(parentOf(where), { recursive: true, force: true });
   });
 
   // After a restart the first thing that happens to a printer already printing is being WATCHED,
