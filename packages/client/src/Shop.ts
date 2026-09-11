@@ -48,15 +48,21 @@ export interface Shop {
   waitingOn(printer?: string): Promise<FilamentDemand[]>;
 
   printers(): Promise<RegisteredPrinter[]>;
-  addPrinter(record: PrinterRecord): Promise<PrinterAdded>;
+  // AIDEV-NOTE: the key is a second ARGUMENT and not a field of the record, because it is not part
+  // of what a printer IS - the shop keeps it in a different file, and one that reached a record
+  // would reach the spool with it. One call rather than two, so that a printer cannot land without
+  // the key it is reached by; write-only, and there is nothing here that reads one back.
+  /**
+   * Add a printer, or change what the shop knows about one it already has.
+   *
+   * The key is what the shop reaches the machine with. Given, it is in force at once - nothing has
+   * to be signalled and nothing restarted. Left out, whatever key the shop already had is kept.
+   */
+  addPrinter(record: PrinterRecord, key?: string): Promise<PrinterAdded>;
   removePrinter(name: string): Promise<void>;
   pause(name: string, reason: string): Promise<RegisteredPrinter>;
   resume(name: string): Promise<RegisteredPrinter>;
   load(name: string, filaments: string[]): Promise<RegisteredPrinter>;
-  // AIDEV-NOTE: write-only, and there is no reading it back. A key opens a machine directly,
-  // bypassing the shop entirely, so what a caller may do is replace one - never ask what it is.
-  /** Give a printer the key the shop reaches it with. It takes effect at once; nothing is signalled. */
-  giveKey(name: string, key: string): Promise<RegisteredPrinter>;
 
   /** Answers once the shop has agreed to stop, which is before it has. */
   shutDown(): Promise<void>;

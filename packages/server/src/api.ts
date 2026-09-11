@@ -328,11 +328,24 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // Created or changed is worth saying: adding a printer that is already here silently replaces what
   // the shop knew about it, and an operator correcting a typo in a name would otherwise think they
   // had added a second machine.
+  // AIDEV-NOTE: the key comes in HERE rather than through a route of its own, because adding a
+  // printer is ONE act - two calls would let a machine land without the key it is reached by, and
+  // leave a client to unpick which half happened. It is read out of the body and never reaches the
+  // record: `printerIn` builds a fresh object of the four fields a printer IS, so a key cannot
+  // follow it into printer.json however the body was shaped.
+  //
+  // Both are judged before either is written, which is as close to one act as two files get. The
+  // record goes first: a key kept for a printer that was refused would be a key for nothing.
   api.post('/printers', async (request, response) => {
     const record = printerIn(request.body);
+    const key = keyIn(request.body);
+    if (key !== undefined && keyGiven === undefined) throw new UnusableRequest('this shop was not given anywhere to keep a printer key');
+
     const known = (await shop.printers()).some((printer) => printer.name === record.name);
 
     await shop.addPrinter(record);
+    if (key !== undefined) await keyGiven?.(record.name, key);
+
     response.status(known ? 200 : 201).json(await shop.printerNamed(record.name));
   });
 
@@ -345,22 +358,6 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
 
   // AIDEV-NOTE: the operator's word for what is on the machine, because no printer here reports its
   // own filament. It is also a wake-up: what a shop can print changes the instant this does.
-  // AIDEV-NOTE: PUT and not POST, because a printer has one key and this replaces it. Nothing reads
-  // one back: a key opens the machine directly, bypassing the shop, so it goes in and is never
-  // answered with - which is why this answers with the PRINTER, whose trouble is the thing the
-  // caller actually wants to watch clear.
-  api.put('/printers/:name/key', async (request, response) => {
-    const { key } = bodyOf(request);
-    if (typeof key !== 'string' || key.trim() === '') throw new UnusableRequest('a key is the string the shop reaches the printer with');
-    if (keyGiven === undefined) throw new UnusableRequest('this shop was not given anywhere to keep a printer key');
-
-    requireUsablePrinterName(request.params.name);
-    await shop.printerNamed(request.params.name);
-    await keyGiven(request.params.name, key);
-
-    response.json(await shop.printerNamed(request.params.name));
-  });
-
   api.put('/printers/:name/filament', async (request, response) => {
     const { loaded } = bodyOf(request);
     if (!Array.isArray(loaded) || loaded.some((filament) => typeof filament !== 'string' || filament.trim() === '')) {
@@ -543,6 +540,18 @@ function bodyOf(request: Request): Record<string, unknown> {
   const body = request.body as unknown;
 
   return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+}
+
+// AIDEV-NOTE: read apart from the record and never folded into it - a key is not what a printer IS,
+// it is what the shop reaches one with, and the two are kept in different files for that reason.
+// Absent is a printer whose key the shop already has, or one nobody has given a key to yet; empty is
+// somebody who meant to give one and did not, which is worth saying rather than storing.
+function keyIn(body: unknown): string | undefined {
+  const { key } = (body ?? {}) as { key?: unknown };
+  if (key === undefined) return undefined;
+  if (typeof key !== 'string' || key.trim() === '') throw new UnusableRequest('a key is the string the shop reaches the printer with');
+
+  return key;
 }
 
 function printerIn(body: unknown): PrinterRecord {

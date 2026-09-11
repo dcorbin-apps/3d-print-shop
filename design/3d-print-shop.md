@@ -165,9 +165,12 @@ unless nobody but its owner can. And it is a SECOND file rather than more of the
 because those tokens let somebody into the SHOP while these keys let somebody into the PRINTERS,
 bypassing it - so copying what a client machine needs must not hand over what it does not.
 
-**And the shop will write one, which is the one thing it writes into `/etc`.** `PUT
-/printers/<name>/key` puts a key where the shop already reads them and uses it from that moment, so a
-machine added from a browser can be printed on without anybody editing a file or signalling anything.
+**And the shop will write one, which is the one thing it writes into `/etc`.** `POST /printers`
+takes the key beside the record - one call, because adding a machine is one act and two would let a
+printer land without the key it is reached by - and puts it where the shop already reads them, then
+uses it from that moment: a machine added from a browser can be printed on without anybody editing a
+file or signalling anything. The key is read out of the body and never joins the record, which is
+built from the four fields a printer IS, so it cannot follow one into the spool.
 That is a real change of posture, and worth saying plainly: `/etc` was somewhere the running shop
 only ever read. What it does NOT change is the rule that put the key there in the first place - the
 file is still 0600, still apart from the printer's record, still never in shell history or in `ps` or

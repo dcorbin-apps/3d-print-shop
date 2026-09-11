@@ -64,18 +64,14 @@ export class HttpShop implements Shop {
     return (await this.answered('GET', `/filaments${forPrinter}`)) as FilamentDemand[];
   }
 
-  async giveKey(name: string, key: string): Promise<RegisteredPrinter> {
-    return asPrinter((await this.answered('PUT', `/printers/${encodeURIComponent(name)}/key`, { key })) as WirePrinter);
-  }
-
   async printers(): Promise<RegisteredPrinter[]> {
     return ((await this.answered('GET', '/printers')) as WirePrinter[]).map(asPrinter);
   }
 
   // 201 or 200: the shop says whether it made a printer or changed one it already had, and an
   // operator correcting a typo in a name needs to be told which.
-  async addPrinter(record: PrinterRecord): Promise<PrinterAdded> {
-    const response = await this.reach('POST', '/printers', record);
+  async addPrinter(record: PrinterRecord, key?: string): Promise<PrinterAdded> {
+    const response = await this.reach('POST', '/printers', key === undefined ? record : { ...record, key });
 
     return { printer: asPrinter((await bodyOf(response)) as WirePrinter), created: response.status === 201 };
   }

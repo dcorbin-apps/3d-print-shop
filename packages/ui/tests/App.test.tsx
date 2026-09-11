@@ -77,9 +77,9 @@ describe('the page, against a shop that answers', () => {
   });
 
   // AIDEV-NOTE: the whole point of the form, end to end from the page: a machine and the key the
-  // shop reaches it with, in the two calls the shop's own shape asks for - the record and the key
-  // are kept apart, and there is no route that takes both.
-  it('adds a printer and gives it its key, in that order', async () => {
+  // shop reaches it with, in ONE call - a printer must not be able to land without the key it is
+  // reached by and leave somebody to work out which half happened.
+  it('adds a printer and its key in one call', async () => {
     answering('admin');
     render(<App />);
 
@@ -101,9 +101,18 @@ describe('the page, against a shop that answers', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'add' }));
 
-    await waitFor(() => expect(asked('PUT', '/printers/mk4/key')).toBeDefined());
-    expect(asked('POST', '/printers')).toBeDefined();
-    expect(JSON.parse(String(asked('PUT', '/printers/mk4/key')?.body))).toEqual({ key: 'mk4-key' });
+    await waitFor(() => expect(asked('POST', '/printers')).toBeDefined());
+
+    expect(JSON.parse(String(asked('POST', '/printers')?.body))).toEqual({
+      name: 'mk4',
+      buildVolume: { x: 250, y: 210, z: 220 },
+      api: 'octoprint',
+      address: 'http://octopi.local',
+      key: 'mk4-key',
+    });
+
+    // One call, and only one: nothing else was asked of the shop to finish adding it.
+    expect(fetching.mock.calls.filter(([, sent]) => sent?.method !== 'GET')).toHaveLength(1);
   });
 
   it('carries the token this browser holds on every ask', async () => {

@@ -249,18 +249,16 @@ describe('the shop, running as its own process', () => {
   // AIDEV-NOTE: the shop WRITING its own credentials file, which is the one thing it does to /etc
   // and the reason a printer can be given its key from a browser. Provable only here: which file the
   // keys live in, and that the running process is told at the same moment, is main.ts's wiring.
-  it('writes a key it is given where it keeps them, and does not wait to be signalled', async () => {
+  it('writes a key it is given with a printer where it keeps them, and does not wait to be signalled', async () => {
     const credentials = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
     const shop = await startShopOver(spool, [], credentials);
 
-    expect(await runCommand(['printer', '--shop-url', shop.url, 'add', 'mk4', '250x210x220', 'http://mk4'])).toBe(0);
-
-    const given = await fetch(`${shop.url}/printers/mk4/key`, {
-      method: 'PUT',
+    const added = await fetch(`${shop.url}/printers`, {
+      method: 'POST',
       headers: { ...asAdmin, 'content-type': 'application/json' },
-      body: JSON.stringify({ key: 'a-key-from-a-browser' }),
+      body: JSON.stringify({ name: 'mk4', buildVolume: MK4, address: 'http://mk4', key: 'a-key-from-a-browser' }),
     });
-    expect(given.status).toBe(200);
+    expect(added.status).toBe(201);
 
     // On disk, in the file the shop reads its keys from, and only its owner can read it.
     const kept = path.join(credentials, 'printer-keys.json');
@@ -276,12 +274,11 @@ describe('the shop, running as its own process', () => {
   it('never writes a key it was given into its log', async () => {
     const credentials = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
     const shop = await startShopOver(spool, [], credentials);
-    await runCommand(['printer', '--shop-url', shop.url, 'add', 'mk4', '250x210x220', 'http://mk4']);
 
-    await fetch(`${shop.url}/printers/mk4/key`, {
-      method: 'PUT',
+    await fetch(`${shop.url}/printers`, {
+      method: 'POST',
       headers: { ...asAdmin, 'content-type': 'application/json' },
-      body: JSON.stringify({ key: 'a-key-from-a-browser' }),
+      body: JSON.stringify({ name: 'mk4', buildVolume: MK4, address: 'http://mk4', key: 'a-key-from-a-browser' }),
     });
     await shop.saysSomethingLike(/a printer was given its key/);
 

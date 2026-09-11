@@ -138,11 +138,11 @@ admin is not offered it: the page asks the shop who it is talking to, over `GET 
 offering everything and letting a 403 teach somebody they are not trusted. The shop refuses either
 way - withholding the button is manners, not the guard.
 
-The key goes in with the rest, and a machine added this way can be printed on straight away. It is
-still kept where every other key is - `printer-keys.json`, 0600, apart from the printer's record -
-but the shop writes it there itself and uses it from that moment: no editing a file, no `SIGHUP`, no
-restart. It is never read back; the shop answers with the printer, never with the key, and a key is
-redacted out of every line the shop logs.
+The key goes in with the rest, in the same call - adding a machine is one act, and two would let a
+printer land without the key it is reached by. It is still kept where every other key is
+(`printer-keys.json`, 0600, apart from the printer's record), but the shop writes it there itself
+and uses it from that moment: no editing a file, no `SIGHUP`, no restart. It is never read back; the
+shop answers with the printer, never with the key, and a key is redacted out of every line it logs.
 
 ## The operator's commands
 

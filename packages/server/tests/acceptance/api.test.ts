@@ -397,54 +397,67 @@ describe('the shop over HTTP', () => {
     });
   });
 
-  // AIDEV-NOTE: a key opens the machine DIRECTLY, bypassing the shop, so what a caller may do is
-  // replace one and never read one back. Where it is kept is the running shop's business rather than
-  // the store's - the API only hands it over, which is why this asserts on the hook.
-  describe('giving a printer its key', () => {
-    const givingMk4 = (key: unknown, token = ADMIN): Promise<Response> => as(token, 'PUT', '/printers/mk4/key', { key });
+  // AIDEV-NOTE: the key arrives WITH the printer, in one call, because adding a machine is one act -
+  // two would let a printer land without the key it is reached by. Where the key is kept is the
+  // running shop's business rather than the store's, so what is asserted here is the hand-over.
+  describe('the key a printer is reached by', () => {
+    const mini = { name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini' };
+    const adding = (body: unknown, token = ADMIN): Promise<Response> => as(token, 'POST', '/printers', body);
 
-    it('hands it to whoever keeps the keys', async () => {
-      expect((await givingMk4('mk4-key')).status).toBe(200);
-      expect(mockKeyGiven).toHaveBeenCalledWith('mk4', 'mk4-key');
+    it('is handed to whoever keeps the keys, in the call that adds the printer', async () => {
+      expect((await adding({ ...mini, key: 'mini-key' })).status).toBe(201);
+      expect(mockKeyGiven).toHaveBeenCalledWith('mini', 'mini-key');
     });
 
-    // The printer, because its trouble is the thing the caller is actually waiting to see clear.
-    it('answers with the printer rather than with the key', async () => {
-      const said = (await (await givingMk4('mk4-key')).json()) as Record<string, unknown>;
+    // The printer is what the caller gets back - its trouble is the thing they are waiting to clear -
+    // and the key is not in it. There is no reading one back at all.
+    it('is not in what the shop answers with', async () => {
+      const said = JSON.stringify(await (await adding({ ...mini, key: 'mini-key' })).json());
 
-      expect(said).toMatchObject({ name: 'mk4' });
-      expect(JSON.stringify(said)).not.toContain('mk4-key');
+      expect(said).toContain('mini');
+      expect(said).not.toContain('mini-key');
     });
 
-    it.each([[''], ['   '], [7], [null], [undefined]])('refuses %p as a key', async (key) => {
-      expect((await givingMk4(key)).status).toBe(400);
+    // AIDEV-NOTE: the record is built from the four fields a printer IS, so a key in the body cannot
+    // follow it into printer.json - which is a working directory rather than a credential store.
+    it('never reaches the printer the shop wrote down', async () => {
+      await adding({ ...mini, key: 'mini-key' });
+
+      expect(JSON.stringify(await (await ask('/printers')).json())).not.toContain('mini-key');
+    });
+
+    it('is not required, because a printer the shop already has a key for keeps it', async () => {
+      expect((await adding(mini)).status).toBe(201);
       expect(mockKeyGiven).not.toHaveBeenCalled();
     });
 
-    it('refuses one for a printer the shop does not have', async () => {
-      expect((await as(ADMIN, 'PUT', '/printers/ghost/key', { key: 'k' })).status).toBe(404);
+    it.each([[''], ['   '], [7], [null]])('refuses %p as a key, and adds nothing', async (key) => {
+      expect((await adding({ ...mini, key })).status).toBe(400);
       expect(mockKeyGiven).not.toHaveBeenCalled();
+      expect(JSON.stringify(await (await ask('/printers')).json())).not.toContain('mini');
     });
 
     // A key is an admin's, like every other thing about a printer.
-    it('refuses a user outright', async () => {
-      expect((await givingMk4('mk4-key', USER)).status).toBe(403);
+    it('is refused to a user outright', async () => {
+      expect((await adding({ ...mini, key: 'mini-key' }, USER)).status).toBe(403);
       expect(mockKeyGiven).not.toHaveBeenCalled();
     });
 
-    // A shop served without anywhere to keep one says so rather than answering as though it had.
-    it('says so when the shop was given nowhere to keep it', async () => {
+    // A shop served without anywhere to keep one says so rather than taking the printer and losing
+    // the key, which would be the half-added machine this route exists to avoid.
+    it('is refused by a shop that was given nowhere to keep it', async () => {
       const plain = await serve(shop, 0, { callers: () => CALLERS });
 
       try {
         const url = `http://127.0.0.1:${(plain.address() as AddressInfo).port}`;
-        const response = await fetch(`${url}/printers/mk4/key`, {
-          method: 'PUT',
+        const response = await fetch(`${url}/printers`, {
+          method: 'POST',
           headers: { ...AS_ADMIN, 'content-type': 'application/json' },
-          body: JSON.stringify({ key: 'mk4-key' }),
+          body: JSON.stringify({ ...mini, key: 'mini-key' }),
         });
 
         expect(response.status).toBe(400);
+        expect(JSON.stringify(await (await ask('/printers')).json())).not.toContain('mini');
       } finally {
         await new Promise<void>((resolve) => plain.close(() => resolve()));
       }
