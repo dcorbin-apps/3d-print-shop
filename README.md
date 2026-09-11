@@ -132,6 +132,14 @@ wrong above it, so a shop being restarted does not blank a display somebody is w
 is a token in `callers.json` - so this is the honest interim rather than a design, and it goes when
 the shop can issue one. See PLAN.md.
 
+**An admin gets a `+` at the end of the printer row**, which opens a form in the row itself and adds
+a machine while the shop runs. A caller who is not an admin is not offered it: the page asks the
+shop who it is talking to, over `GET /me`, rather than offering everything and letting a 403 teach
+somebody they are not trusted. The shop refuses either way - withholding the button is manners, not
+the guard. There is no key field and there cannot be one: a printer's key is read from a file only
+the shop's own user can read, so a printer added here is out of reach until its key is in
+`printer-keys.json` and the shop has been signalled.
+
 ## The operator's commands
 
 ```

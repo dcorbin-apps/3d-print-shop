@@ -1,6 +1,6 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { RegisteredPrinter } from '@3d-print-shop/client/browser';
+import type { PrinterRecord, RegisteredPrinter } from '@3d-print-shop/client/browser';
 import { PrinterGallery, stillHere } from '../src/components/PrinterGallery';
 
 describe('the gallery of printers', () => {
@@ -24,6 +24,43 @@ describe('the gallery of printers', () => {
     render(<PrinterGallery printers={[]} onSelect={nobodyChooses} />);
 
     expect(screen.getByText(/printer add/)).toBeDefined();
+  });
+
+  // AIDEV-NOTE: adding a printer is an admin's, and the page is told which the caller is rather than
+  // offering it to everybody and letting the shop's 403 teach them. The shop refuses either way -
+  // withholding the button is manners, not the guard.
+  describe('the way to add one', () => {
+    const takesIt = jest.fn<(record: PrinterRecord) => Promise<void>>();
+    const addsOne = (): HTMLElement | null => screen.queryByRole('button', { name: 'add a printer' });
+
+    it('is not offered to a caller who was given no way to add one', () => {
+      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+
+      expect(addsOne()).toBeNull();
+    });
+
+    it('is offered beside the machines to a caller who was', () => {
+      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} onAdd={takesIt} />);
+
+      expect(addsOne()).not.toBeNull();
+    });
+
+    // The emptiest shop is where it matters most, and the one place the old wording sent somebody
+    // to a terminal instead.
+    it('is offered in a shop with no printers at all', () => {
+      render(<PrinterGallery printers={[]} onSelect={nobodyChooses} onAdd={takesIt} />);
+
+      expect(addsOne()).not.toBeNull();
+    });
+
+    // It comes after them: what an operator is looking at is the machines, not the way to add one.
+    it('comes after the machines rather than before them', () => {
+      render(<PrinterGallery printers={[printer('mk4'), printer('mini')]} onSelect={nobodyChooses} onAdd={takesIt} />);
+
+      const last = screen.getAllByRole('button').at(-1);
+
+      expect(last?.getAttribute('aria-label')).toBe('add a printer');
+    });
   });
 
   it('shows one tile for each machine', () => {

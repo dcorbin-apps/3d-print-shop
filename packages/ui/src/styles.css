@@ -344,3 +344,107 @@ body {
 .ask-for-token .aside {
   font-size: 12px;
 }
+
+/* ------------------------------------------------------ adding a machine, from where they are shown */
+
+.printer-tile.add {
+  flex: 0 0 150px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-style: dashed;
+  color: var(--dim);
+}
+
+.printer-tile.add:hover {
+  border-color: var(--live);
+  color: var(--live);
+}
+
+.printer-tile.add .plus {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.add-what {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.printer-tile.adding {
+  flex: 0 0 300px;
+  gap: 6px;
+  cursor: default;
+  border-color: var(--live);
+  overflow-y: auto;
+}
+
+.printer-tile.adding label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.printer-tile.adding input {
+  padding: 5px 7px;
+  color: var(--ink);
+  font: inherit;
+  background: var(--ground);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  min-width: 0;
+}
+
+.volume {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.printer-tile.adding .aside {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.refused {
+  margin: 0;
+  font-size: 12px;
+  color: var(--wrong);
+}
+
+.buttons {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.buttons button {
+  flex: 1;
+  padding: 6px;
+  color: var(--ground);
+  font: inherit;
+  font-weight: 600;
+  background: var(--live);
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.buttons button:disabled {
+  background: var(--edge);
+  color: var(--dim);
+  cursor: default;
+}
+
+.buttons button.quiet {
+  color: var(--dim);
+  font-weight: 400;
+  background: none;
+  border: 1px solid var(--edge);
+}

@@ -1,3 +1,4 @@
+import type { Caller } from './Caller.js';
 import type { FilamentDemand, Job, JobDetails, JobsHeld, Verdict } from './Job.js';
 import type { PrinterRecord, RegisteredPrinter } from './Printer.js';
 
@@ -12,6 +13,13 @@ export interface PrinterAdded {
 // covered different halves of the same API, duplicated the same fetch-and-explain plumbing, and
 // covered the job side between them not at all.
 export interface Shop {
+  // AIDEV-NOTE: the only route that answers with a NAME, which is safe because it is the name of
+  // whoever asked. It exists because a client showing a person what they may do has to know what
+  // that is, and the alternative - offer everything, let the refusal teach them - is a UI that
+  // hands an operator a button and then says no.
+  /** Who the shop takes this caller to be, by the token they presented. */
+  whoAmI(): Promise<Caller>;
+
   /**
    * What this caller may see, and how many jobs the shop holds altogether. An admin sees a list as
    * long as the total; everybody else sees their own beside a number that says how busy it is.

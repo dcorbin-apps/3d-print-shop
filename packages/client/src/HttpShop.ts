@@ -1,3 +1,4 @@
+import type { Caller } from './Caller.js';
 import type { FilamentDemand, Job, JobDetails, JobsHeld, Verdict } from './Job.js';
 import type { PrinterRecord, RegisteredPrinter } from './Printer.js';
 import type { PrinterAdded, Shop } from './Shop.js';
@@ -20,6 +21,10 @@ export class HttpShop implements Shop {
     private readonly url: string,
     private readonly token?: string
   ) {}
+
+  async whoAmI(): Promise<Caller> {
+    return (await this.answered('GET', '/me')) as Caller;
+  }
 
   async jobs(): Promise<JobsHeld> {
     const held = (await this.answered('GET', '/jobs')) as { accessibleJobs: WireJob[]; totalJobs: number };

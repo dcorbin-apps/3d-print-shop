@@ -47,9 +47,10 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   to be served from, and anything else serving it would need the API to grow CORS - which is a way
   in that nothing has asked for. What is undecided is whether the server depends on the ui package
   to find its files, or is pointed at a directory
-- [ ] The UI can only READ. Every route it needs is a GET, and the verdict a person gives - the one
-  thing that frees a bed - is still `job approve` at a terminal. That is the first thing to add once
-  the page is in front of somebody
+- [ ] The verdict a person gives - the one thing that frees a bed - is still `job approve` at a
+  terminal. Adding a printer is the only thing the page can change today, and judging a print is the
+  one worth having next: a bed is held until somebody says, and a page somebody is already watching
+  the print on is where they would say it
 
 ### Installation
 

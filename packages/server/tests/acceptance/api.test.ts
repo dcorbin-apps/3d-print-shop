@@ -388,6 +388,29 @@ describe('the shop over HTTP', () => {
     });
   });
 
+  // AIDEV-NOTE: a client that shows a person what they may do has to be able to ask what that is.
+  // The one route that answers with a name, and it is the name of whoever asked.
+  describe('who the shop takes the caller to be', () => {
+    it('says the caller back to them, by the token they presented', async () => {
+      expect(await (await as(ADMIN, 'GET', '/me')).json()).toEqual({ id: 'dave', name: 'dave', role: 'admin' });
+    });
+
+    // The role is the whole point: it is what a UI offers or withholds a printer command by.
+    it('says a user is a user', async () => {
+      expect(await (await as(USER, 'GET', '/me')).json()).toEqual({ id: 'slicer', name: 'slicer', role: 'user' });
+    });
+
+    // It answers about the TOKEN, and a shop that cannot name one answers nothing at all.
+    it('tells a caller it cannot name nothing', async () => {
+      expect((await as('made-up', 'GET', '/me')).status).toBe(401);
+    });
+
+    // Whatever else a token buys, it does not buy the list of who else is here.
+    it('says nothing about anybody else', async () => {
+      expect(Object.keys((await (await as(ADMIN, 'GET', '/me')).json()) as object)).toEqual(['id', 'name', 'role']);
+    });
+  });
+
   // AIDEV-NOTE: over real HTTP because what is being proven is what a request carrying a token does,
   // and every route is reached the way a caller reaches it. The permission table is the security
   // boundary, so what a `user` may NOT do is asserted route by route rather than in the general.
@@ -416,6 +439,7 @@ describe('the shop over HTTP', () => {
       ['GET', '/jobs'],
       ['GET', '/jobs/1'],
       ['GET', '/printers'],
+      ['GET', '/me'],
     ])('lets a user %s %s', async (method, path) => {
       expect((await as(USER, method, path)).status).not.toBe(403);
     });

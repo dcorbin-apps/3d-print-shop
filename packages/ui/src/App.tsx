@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { PrinterRecord } from '@3d-print-shop/client/browser';
 import { AskForToken } from './components/AskForToken.js';
 import { JobsByFilament } from './components/JobsByFilament.js';
 import { PrinterGallery, stillHere } from './components/PrinterGallery.js';
@@ -33,8 +34,16 @@ export function App(): React.JSX.Element {
 // Apart from App so that the hooks below are not written after a conditional return, and so that
 // arriving with a token and typing one in reach exactly the same component.
 function Shop({ token }: { token: string }): React.JSX.Element {
-  const { printers, jobs, totalJobs, trouble, answered } = useShop(token);
+  const { printers, jobs, totalJobs, caller, shop, askAgain, trouble, answered } = useShop(token);
   const [chosen, setChosen] = useState(() => remembered(SELECTED_KEY));
+
+  // AIDEV-NOTE: asked for again rather than added to what is on the screen - the shop is the one
+  // that knows what a printer looks like once it has one, and a page that drew its own version of
+  // the answer would be showing something the shop never said.
+  const addPrinter = async (record: PrinterRecord): Promise<void> => {
+    await shop.addPrinter(record);
+    askAgain();
+  };
 
   const selected = stillHere(printers, chosen);
 
@@ -51,7 +60,12 @@ function Shop({ token }: { token: string }): React.JSX.Element {
   return (
     <div className="shop">
       <TopBar summary={summarise(printers, jobs)} trouble={trouble} />
-      <PrinterGallery printers={printers} selected={selected} onSelect={setChosen} />
+      <PrinterGallery
+        printers={printers}
+        selected={selected}
+        onSelect={setChosen}
+        onAdd={caller?.role === 'admin' ? addPrinter : undefined}
+      />
       <JobsByFilament jobs={jobs} totalJobs={totalJobs} selected={printers.find((printer) => printer.name === selected)} />
 
       {!answered && <p className="asking">asking the shop...</p>}

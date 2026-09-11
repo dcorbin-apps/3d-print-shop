@@ -76,6 +76,8 @@ const OPEN_TO_EVERY_CALLER: ReadonlyArray<{ method: string; path: RegExp }> = [
   // role - so the route is open here and the ownership of it is decided in the route itself.
   { method: 'PUT', path: /^\/jobs\/[^/]+\/verdict$/ },
   { method: 'GET', path: /^\/printers$/ },
+  // Themselves, and nobody else. See the route.
+  { method: 'GET', path: /^\/me$/ },
 ];
 
 // AIDEV-NOTE: matched against the request the way EXPRESS routed it, not the way it was typed.
@@ -222,6 +224,16 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     });
 
     response.status(201).json(job);
+  });
+
+  // AIDEV-NOTE: the only route that answers with a NAME, and safe for that reason alone - it is the
+  // name of whoever asked, which they already know. Nothing is looked up: the guard above resolved
+  // this caller before any route was reached, so this says back what the token was worth.
+  //
+  // It exists so that a client can show a person what they may do rather than offering everything
+  // and letting the refusal teach them, which is a UI that hands an operator a button and says no.
+  api.get('/me', (request, response) => {
+    response.json(request.caller);
   });
 
   api.get('/jobs', async (request, response) => {

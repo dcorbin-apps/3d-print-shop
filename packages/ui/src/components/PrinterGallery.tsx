@@ -1,17 +1,26 @@
-import type { RegisteredPrinter } from '@3d-print-shop/client/browser';
+import type { PrinterRecord, RegisteredPrinter } from '@3d-print-shop/client/browser';
+import { AddPrinterTile } from './AddPrinterTile.js';
 import { PrinterTile } from './PrinterTile.js';
 
 interface PrinterGalleryProps {
   printers: RegisteredPrinter[];
   selected?: string;
   onSelect: (name: string) => void;
+  // AIDEV-NOTE: absent is what an ordinary caller gets, because adding a printer is an admin's.
+  // Withheld rather than offered-and-refused: a button that answers 403 teaches somebody they are
+  // not trusted by letting them press it. The shop refuses either way - this is not the guard.
+  /** How a printer is added, when this caller may add one. */
+  onAdd?: (record: PrinterRecord) => Promise<void>;
 }
 
-export function PrinterGallery({ printers, selected, onSelect }: PrinterGalleryProps): React.JSX.Element {
+export function PrinterGallery({ printers, selected, onSelect, onAdd }: PrinterGalleryProps): React.JSX.Element {
+  // An empty shop is the one place the add tile matters most, so it is said beside it rather than
+  // instead of it.
   if (printers.length === 0) {
     return (
-      <section className="gallery empty">
-        <p>No printers. `3d-print-shop printer add` is how one gets here.</p>
+      <section className="gallery empty" aria-label="printers">
+        <p>No printers{onAdd === undefined && '. `3d-print-shop printer add` is how one gets here.'}</p>
+        {onAdd !== undefined && <AddPrinterTile onAdd={onAdd} />}
       </section>
     );
   }
@@ -21,6 +30,7 @@ export function PrinterGallery({ printers, selected, onSelect }: PrinterGalleryP
       {printers.map((printer) => (
         <PrinterTile key={printer.name} printer={printer} selected={printer.name === selected} onSelect={onSelect} />
       ))}
+      {onAdd !== undefined && <AddPrinterTile onAdd={onAdd} />}
     </section>
   );
 }

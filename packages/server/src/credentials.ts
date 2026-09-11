@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
+import type { Caller } from '@3d-print-shop/client';
 import type { Log } from './log.js';
 
 // AIDEV-NOTE: two files, not one, and deliberately. `callers` lets somebody into the SHOP; `printer
@@ -19,8 +20,9 @@ export function defaultEtc(): string {
   return process.env[ETC_ENV] ?? SYSTEM_ETC;
 }
 
-/** What a caller may do. Authority, not occupation - a script can be an admin and a person a user. */
-export type Role = 'admin' | 'user';
+// The wire contract, so the shop and everything that talks to it cannot drift apart - a caller is
+// answered to a client by `whoAmI`, and what it is told has to be what the shop holds.
+export type { Caller, Role } from '@3d-print-shop/client';
 
 // AIDEV-NOTE: what a file that is not there MEANS is the reader's to say, and the two readers below
 // say opposite things. No printer keys is a shop that has not been pointed at a machine yet, which
@@ -28,16 +30,6 @@ export type Role = 'admin' | 'user';
 // route names its caller that is a shop that cannot answer anybody - so it refuses to start rather
 // than starting open, which is the failure nobody would notice.
 const MISSING = Symbol('no such file');
-
-// AIDEV-NOTE: an id is what a job record will say it is OWNED by, and a record is written once and
-// never rewritten - so the id may never change, and the name is free to. An operator retyping
-// `name` renames a person; retyping `id` makes them a stranger to every job they submitted.
-/** Who is asking. The id is what outlives them; the name is what a log and a UI say. */
-export interface Caller {
-  id: string;
-  name: string;
-  role: Role;
-}
 
 // AIDEV-NOTE: narrow on purpose. An id reaches disk in a record nothing rewrites, so this rule can
 // be LOOSENED later and never tightened - whatever a query string, a log format or a path wants of
