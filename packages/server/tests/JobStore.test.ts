@@ -344,6 +344,19 @@ describe('JobStore', () => {
 
       expect((await new JobStore(spool).printerNamed('mk4')).loaded).toEqual(['PLA-Red']);
     });
+
+    // AIDEV-NOTE: the shop's list of machines is the SPOOL's, not a running process's - a printer
+    // added over the API is added for good, and adding one is a thing an operator does once. Every
+    // other restart test here is about what a printer is DOING; this is about it being here at all,
+    // which nothing pinned until a printer could be added from somewhere other than a terminal.
+    it('is still one of the shop\'s printers after a restart, with what it was told about it', async () => {
+      await shop.addPrinter({ name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, api: 'octoprint', address: 'http://mini' });
+
+      expect(await new JobStore(spool).printers()).toEqual([
+        expect.objectContaining({ name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini' }),
+        expect.objectContaining({ name: 'mk4' }),
+      ]);
+    });
   });
 
   describe('a move the lifecycle does not allow', () => {
