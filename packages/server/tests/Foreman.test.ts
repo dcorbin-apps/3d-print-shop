@@ -55,22 +55,54 @@ describe('the foreman', () => {
     return (await shop.submit({ filaments: ['PLA-Red'], ...overrides }, Readable.from(['G1 X0 Y0\n']), DAVE)).id;
   }
 
+  // AIDEV-NOTE: every foreman this file makes, remembered so that the teardown can stop it. One that
+  // is still watching is one still WRITING, and the teardown deletes the spool out from under it -
+  // which surfaces as `ENOTEMPTY` from rmdir, in whichever test was unlucky, about one full run in
+  // eight. A test that starts something is a test that has to stop it.
+  const foremen: Foreman[] = [];
+
+  function aForeman(...how: ConstructorParameters<typeof Foreman>): Foreman {
+    const made = new Foreman(...how);
+    foremen.push(made);
+
+    return made;
+  }
+
+  // AIDEV-NOTE: the waiting is released rather than abandoned. `awaitOutcome` never settles unless a
+  // test says so - a print still running is the ordinary case - so waiting on the watchers without
+  // this would wait for ever. Stopped FIRST, so that what this releases is written down by nobody:
+  // a foreman on its way out treats a lost print as the shutdown taking it, which is what it is.
+  let stopWaiting: () => void;
+
   beforeEach(async () => {
     spool = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-foreman-'));
     shop = new JobStore(spool);
 
     mockSend = jest.fn<(remotePath: string, gcode: Readable) => Promise<string>>().mockImplementation((remotePath) => Promise.resolve(remotePath));
     // Never settles unless a test says so: a print that is still running is the ordinary case.
-    mockAwaitOutcome = jest.fn<(remotePath: string) => Promise<PrinterOutcome>>().mockReturnValue(new Promise(() => {}));
+    const stillPrinting = new Promise<PrinterOutcome>((_heard, never) => {
+      stopWaiting = () => never(new Error('the test ended'));
+    });
+
+    // Caught here because most tests never ask for it, and a rejection nobody is waiting on is an
+    // unhandled one - which jest reports against whichever test happened to be running.
+    stillPrinting.catch(() => undefined);
+
+    mockAwaitOutcome = jest.fn<(remotePath: string) => Promise<PrinterOutcome>>().mockReturnValue(stillPrinting);
     mockReach = jest.fn<Machines>().mockImplementation(async (_printer: RegisteredPrinter): Promise<Printer> => {
       return { send: mockSend, awaitOutcome: mockAwaitOutcome };
     });
 
-    foreman = new Foreman(shop, mockReach);
+    foreman = aForeman(shop, mockReach);
     await addPrinter('mk4');
   });
 
   afterEach(async () => {
+    foremen.forEach((made) => made.stop());
+    stopWaiting();
+    await Promise.all(foremen.map((made) => made.watchersSettled()));
+    foremen.length = 0;
+
     await fs.rm(spool, { recursive: true, force: true });
   });
 
@@ -83,7 +115,7 @@ describe('the foreman', () => {
 
     beforeEach(() => {
       lines = [];
-      watched = new Foreman(shop, mockReach, toStdout(() => new Date(), (line) => lines.push(line)));
+      watched = aForeman(shop, mockReach, toStdout(() => new Date(), (line) => lines.push(line)));
     });
 
     it('says what it started, on which printer, and how much gcode went over', async () => {
@@ -210,7 +242,7 @@ describe('the foreman', () => {
       await foreman.considerStarting();
       mockAwaitOutcome.mockResolvedValue('finished');
 
-      await new Foreman(new JobStore(spool), mockReach).resumeWatching();
+      await aForeman(new JobStore(spool), mockReach).resumeWatching();
 
       await until(jobIs(id, 'awaiting-approval'));
     });
@@ -295,7 +327,7 @@ describe('the foreman', () => {
 
     beforeEach(async () => {
       clock = new Date('2026-09-09T09:00:00.000Z');
-      patient = new Foreman(shop, mockReach, silent, () => clock);
+      patient = aForeman(shop, mockReach, silent, () => clock);
       await submit();
       mockAwaitOutcome.mockResolvedValue('finished');
       mockAwaitOutcome.mockRejectedValueOnce(new Error('lost contact for too long'));
@@ -477,7 +509,7 @@ describe('the foreman', () => {
     // given its answer, and asking again costs a whole plate to be told the same thing.
     it('does not reach for it again on the clock', async () => {
       await submit();
-      const patient = new Foreman(shop, mockReach, silent, () => new Date('2026-09-09T23:00:00.000Z'));
+      const patient = aForeman(shop, mockReach, silent, () => new Date('2026-09-09T23:00:00.000Z'));
       await patient.considerStarting();
       mockReach.mockClear();
 
@@ -528,7 +560,7 @@ describe('the foreman', () => {
     it('reaches for it again once it has waited', async () => {
       await submit();
       let clock = new Date('2026-09-09T23:00:00.000Z');
-      const patient = new Foreman(shop, mockReach, silent, () => clock);
+      const patient = aForeman(shop, mockReach, silent, () => clock);
       await patient.considerStarting();
       mockReach.mockClear();
 
@@ -623,7 +655,7 @@ describe('the foreman', () => {
     // before they did.
     it('forgets what the printer was waiting out', async () => {
       let clock = new Date('2026-09-09T09:00:00.000Z');
-      const patient = new Foreman(shop, mockReach, silent, () => clock);
+      const patient = aForeman(shop, mockReach, silent, () => clock);
       await submit();
       mockReach.mockRejectedValue(new Error('no API key for mk4'));
       await patient.considerStarting();
@@ -659,7 +691,7 @@ describe('the foreman', () => {
 
     beforeEach(async () => {
       clock = new Date('2026-09-09T09:00:00.000Z');
-      patient = new Foreman(shop, mockReach, silent, () => clock);
+      patient = aForeman(shop, mockReach, silent, () => clock);
       await submit();
       await couldNotBeReached();
     });
@@ -724,7 +756,7 @@ describe('the foreman', () => {
     });
 
     it('tries a machine it finds already out of reach', async () => {
-      const restarted = new Foreman(new JobStore(spool), mockReach, silent, () => clock);
+      const restarted = aForeman(new JobStore(spool), mockReach, silent, () => clock);
 
       await restarted.reachForWhatIsLost();
 
@@ -763,7 +795,7 @@ describe('the foreman', () => {
     // where a store read or a spool that went away would: inside the start, past the machine.
     beforeEach(async () => {
       lines = [];
-      watched = new Foreman(shop, mockReach, toStdout(() => new Date(), (line) => lines.push(line)));
+      watched = aForeman(shop, mockReach, toStdout(() => new Date(), (line) => lines.push(line)));
 
       const id = await submit();
       mockReach.mockImplementation(async (): Promise<Printer> => {
