@@ -36,11 +36,13 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The page in a browser
 
-- [ ] The shop serves the built UI itself, so there is one origin and one thing to install. Today
-  `yarn ui` is a Vite dev server proxying the shop's routes; a built `@3d-print-shop/ui` has nowhere
-  to be served from, and anything else serving it would need the API to grow CORS - which is a way
-  in that nothing has asked for. What is undecided is whether the server depends on the ui package
-  to find its files, or is pointed at a directory
+- [ ] The camera is fetched by the BROWSER, from the printer, so whether it appears is a question
+  about that browser rather than about the shop. Firefox's HTTPS-Only Mode upgrades the request and
+  the printer serves no TLS, so it fails - and an exception has to be added per browser, per machine,
+  against the page's own origin. A route on the shop that piped the stream would end the whole class:
+  the browser would only ever fetch from the origin it loaded the page from. What it costs is the
+  shop holding an open connection per viewer per printer, and knowing that a camera exists
+
 - [ ] The verdict a person gives - the one thing that frees a bed - is still `job approve` at a
   terminal. Adding a printer is the only thing the page can change today, and judging a print is the
   one worth having next: a bed is held until somebody says, and a page somebody is already watching

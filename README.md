@@ -79,6 +79,9 @@ on macOS, `printshop` on Linux) that can be logged in as by nobody; `/var/spool/
 `/etc/3d-print-shop` owned by it at 0700; a copy of the built shop under `/usr/local/lib/3d-print-shop`
 owned by root; and a `launchd` daemon or a `systemd` unit that runs it.
 
+If the page has been built it is copied too, and the service is pointed at it with `--page`. Without
+one the shop answers its API and serves nothing, which it says at the time.
+
 **It refuses rather than guesses.** No node outside a home directory that is new enough, no build to
 install, or a shop with no callers yet: each stops it, and each says what to do about it. The node it
 looks for has to be a system one - a daemon runs as `_printshop`, which cannot read into your home
@@ -118,6 +121,23 @@ yarn ui
 Vite on `http://localhost:5173`, proxying the shop's own routes to `http://localhost:7373` so the
 browser makes same-origin requests - the API has no CORS handling and should not grow any to suit a
 dev server. `PRINT_SHOP_URL` points it at a shop somewhere else.
+
+**Installed, the shop serves the page itself** and there is no second process:
+
+```
+yarn build
+3d-print-shop serve --spool /var/spool/3d-print-shop --page packages/ui/dist
+```
+
+`--page` is a DIRECTORY and the shop is told nothing else about it - it serves those files at the
+root, and whatever is not one of its own routes gets `index.html`, so reloading on any path works.
+That is deliberate: the page is a client of this shop, reaching it through `@3d-print-shop/client`
+like any other, and a server that resolved the page through the ui package would be the server
+depending on a client. The installer passes it for you.
+
+The page is served **without a credential**, and has to be: the page nobody is logged in to yet is
+the page they log in on. There is nothing in it worth one - a bundle and a stylesheet - and the API
+beside it refuses every route as it always did.
 
 Three bands, top to bottom: the shop's name and what it is doing, counted; the printers, each with
 its name, what it is doing and its camera, one of them selected and remembered across a reload; and

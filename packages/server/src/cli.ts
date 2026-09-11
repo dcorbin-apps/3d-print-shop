@@ -49,7 +49,11 @@ export function createCLI(): Command {
       readMegabytes
     )
     .option('--etc <path>', `where its credentials are kept (or ${ETC_ENV}; defaults to ${defaultEtc()})`)
-    .action(async (options: { port: number; listen?: string; spool?: string; maxGcode?: number; etc?: string }) => {
+    // AIDEV-NOTE: a directory, and the server is told nothing else about it. It is the built page,
+    // which is a client of this shop - so finding it through the ui package would be the server
+    // depending on a client, and that direction never runs.
+    .option('--page <path>', 'a directory of files to serve beside the API, so a browser has somewhere to get the page')
+    .action(async (options: { port: number; listen?: string; spool?: string; maxGcode?: number; etc?: string; page?: string }) => {
       const spool = options.spool ?? defaultSpoolRoot();
       const store = new JobStore(spool, { maxGcodeBytes: options.maxGcode });
       const etc = options.etc ?? defaultEtc();
@@ -141,7 +145,15 @@ export function createCLI(): Command {
       const shopServer = await serve(
         store,
         options.port,
-        { changed: lookForWork, started: tryEverythingAgain, shutDown: stopTheShop, callers: () => callers, keyGiven: keepTheKey, log },
+        {
+          changed: lookForWork,
+          started: tryEverythingAgain,
+          shutDown: stopTheShop,
+          callers: () => callers,
+          keyGiven: keepTheKey,
+          page: options.page,
+          log,
+        },
         listenOn
       );
 
@@ -172,7 +184,7 @@ export function createCLI(): Command {
       // AIDEV-NOTE: which spool and which credentials, because a process that outlives the run that
       // started it is a process somebody has to identify later - and argv alone was not enough to do
       // that for two shops found still listening, one of them 14 hours old.
-      log.info('the shop is listening', { address: bound.address, port: bound.port, callers: callers.size, spool, etc });
+      log.info('the shop is listening', { address: bound.address, port: bound.port, callers: callers.size, spool, etc, page: options.page });
       say([`3d-print-shop is listening on ${bound.address}:${bound.port}`, `${callers.size} caller(s) may ask`]);
 
       // A restart does not stop a machine. Prints that were already running are picked up first,

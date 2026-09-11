@@ -555,6 +555,21 @@ And the ranking is decided over the whole answer - one filament without a total 
 them back on counting, because otherwise a single job that said how long it takes would outrank six
 that did not.
 
+**The shop will serve a page, and is told nothing about it but where it is.** `serve --page <dir>`
+puts those files at the root, under the API rather than over it: a path the shop answers is the
+shop's whatever a browser thinks, and everything else that is not a file gets `index.html` so a
+reload works wherever somebody was. The list of the shop's own paths is the CLIENT's - `SHOP_ROUTES`
+- so a route added to the contract cannot quietly start being answered with a page.
+
+It is a directory rather than a package for one reason: the page is a CLIENT of this shop. It
+reaches the API through `@3d-print-shop/client` exactly as a slicer would, and a server that
+resolved the page's files through the ui package would be the server depending on one of its
+clients. The dependency runs one way, and pointing it at a path is what keeps it that way.
+
+And it is served without a credential, because the page nobody has logged in to yet is the page they
+log in ON. There is nothing in it worth protecting - a bundle and a stylesheet - and requiring one
+would be a login screen that cannot be fetched without having logged in.
+
 ## Sending a job to a printer
 
 **Every printer has a name, and the operator adds it.** There is no anonymous printer: a shop that

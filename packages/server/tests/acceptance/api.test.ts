@@ -469,6 +469,75 @@ describe('the shop over HTTP', () => {
     });
   });
 
+  // AIDEV-NOTE: a shop with somewhere to serve a page from. The files are made here rather than
+  // taken from the ui package, because what the shop is given is a DIRECTORY - it knows nothing
+  // about what is in one, and a test that reached for the real page would be the dependency this
+  // deliberately does not have.
+  describe('serving a page beside the API', () => {
+    let withAPage: Server;
+    let pageUrl: string;
+    let page: string;
+
+    const get = (path: string, token?: string): Promise<Response> =>
+      fetch(`${pageUrl}${path}`, { headers: token === undefined ? {} : { authorization: `Bearer ${token}` } });
+
+    beforeEach(async () => {
+      page = await mkdtemp(path.join(tmpdir(), 'print-shop-page-'));
+      await writeFile(path.join(page, 'index.html'), '<!doctype html><title>the page</title>');
+      await mkdir(path.join(page, 'assets'));
+      await writeFile(path.join(page, 'assets', 'shop.js'), 'console.log("hello")');
+
+      withAPage = await serve(shop, 0, { callers: () => CALLERS, page });
+      pageUrl = `http://127.0.0.1:${(withAPage.address() as AddressInfo).port}`;
+    });
+
+    afterEach(async () => {
+      await new Promise<void>((resolve) => withAPage.close(() => resolve()));
+      await rm(page, { recursive: true, force: true });
+    });
+
+    // AIDEV-NOTE: without a credential, and that is the point - the page nobody is logged in to yet
+    // is the page they log in ON. Requiring one would be a login screen that cannot be fetched
+    // without having logged in.
+    it('gives the page to somebody the shop does not know', async () => {
+      const response = await get('/');
+
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('the page');
+    });
+
+    it('gives what the page asks for next, equally', async () => {
+      const response = await get('/assets/shop.js');
+
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('hello');
+    });
+
+    // A page a browser navigated INTO rather than loaded at the root, then reloaded. Deliberately
+    // NOT a path under one of the shop's own routes: those belong to the API whatever a browser
+    // thinks, which is the next test.
+    it('gives the page for a path inside it, so a reload is not a 404', async () => {
+      expect(await (await get('/somewhere/the/page/went')).text()).toContain('the page');
+    });
+
+    // AIDEV-NOTE: the thing that would be a hole. Serving files at the root is one mistake away from
+    // answering an API path with a page - or worse, from answering one WITHOUT the guard.
+    it('does not answer the shop own routes with a page', async () => {
+      expect((await get('/jobs')).status).toBe(401);
+      expect((await get('/printers')).status).toBe(401);
+    });
+
+    it('still answers them properly to somebody it knows', async () => {
+      expect((await get('/printers', ADMIN)).status).toBe(200);
+    });
+
+    // Nothing is served at all unless the shop was pointed somewhere, which is what a shop with no
+    // page installed looks like.
+    it('serves nothing of the sort when it was given nowhere to serve from', async () => {
+      expect((await ask('/')).status).toBe(404);
+    });
+  });
+
   // AIDEV-NOTE: the one route reached before the shop knows who is asking, which is what makes it
   // the one worth being careful about. Over real HTTP, because half of what is being proven is in
   // the headers: what the cookie says, and that a write carrying one has to come from here.

@@ -37,12 +37,30 @@ if [ "$MODE" = package ]; then
   BUILT="$HERE/../server/dist/main.js"
   SERVER=$BUILT
   MANIFEST="$HERE/package.json"
+  PAGE="$HERE/../ui/dist"
 else
   REPO=$(cd "$HERE/../.." && pwd)
   BUILT="$REPO/packages/server/dist/main.js"
   SERVER="$INSTALL_DIR/packages/server/dist/main.js"
   MANIFEST="$REPO/package.json"
+  PAGE="$INSTALL_DIR/packages/ui/dist"
 fi
+
+# AIDEV-NOTE: the page is optional, and a shop without one is a shop that answers its API and serves
+# nothing - which is what an install with no `yarn build` of the ui looks like. Said as an ARGUMENT
+# only when there is something there, because a shop pointed at a directory that is not there would
+# answer every page request with a failure to read index.html.
+pageArguments() {
+  [ -d "$PAGE" ] || return 0
+
+  printf '    <string>--page</string>\n    <string>%s</string>\n' "$PAGE"
+}
+
+pageOption() {
+  [ -d "$PAGE" ] || return 0
+
+  printf ' --page %s' "$PAGE"
+}
 
 PLIST="/Library/LaunchDaemons/$LABEL.plist"
 UNIT=/etc/systemd/system/3d-print-shop.service
@@ -189,6 +207,10 @@ copiedTheBuild() {
     copiedIn "$REPO/packages/$package/package.json" "packages/$package"
     copiedIn "$REPO/packages/$package/dist" "packages/$package"
   done
+
+  # The page, if it has been built. Files rather than a module: the shop is pointed at the directory
+  # and told nothing about what is in it.
+  if [ -d "$REPO/packages/ui/dist" ]; then copiedIn "$REPO/packages/ui/dist" 'packages/ui'; fi
 }
 
 # AIDEV-NOTE: node_modules whole, symlinks and all. Yarn links a workspace as a RELATIVE symlink
@@ -285,7 +307,7 @@ wrotePlist() {
     <string>serve</string>
     <string>--spool</string>
     <string>$SPOOL</string>
-  </array>
+$(pageArguments)  </array>
   <key>UserName</key><string>$SHOP_USER</string>
   <key>GroupName</key><string>$SHOP_GROUP</string>
   <key>WorkingDirectory</key><string>$SPOOL</string>
@@ -331,7 +353,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=$node $SERVER serve --spool $SPOOL
+ExecStart=$node $SERVER serve --spool $SPOOL$(pageOption)
 ExecReload=/bin/kill -HUP \$MAINPID
 User=$SHOP_USER
 Group=$SHOP_GROUP
@@ -423,6 +445,12 @@ install() {
   else
     copiedEverything
     say "  $INSTALL_DIR  (root, and readable by everybody - there is nothing secret in it)"
+  fi
+
+  if [ -d "$PAGE" ]; then
+    say "  $PAGE  (the page it serves beside the API)"
+  else
+    say '  no page built, so it will answer its API and serve nothing - run yarn build and install again'
   fi
 
   say 'what supervises it:'

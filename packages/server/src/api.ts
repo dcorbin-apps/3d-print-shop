@@ -2,6 +2,8 @@ import busboy from 'busboy';
 import express from 'express';
 import type { Express, NextFunction, Request, Response } from 'express';
 import type { Server } from 'node:http';
+import * as path from 'node:path';
+import { SHOP_ROUTES } from '@3d-print-shop/client';
 import { InvalidSubmission } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
 import { NoSuchJob, NoSuchPrinter, SpoolUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
@@ -173,6 +175,13 @@ export interface ShopHooks {
   // that is serving, not to anything outside it - there is nowhere else for one to live.
   /** Where the sessions a browser holds are kept. Its own, unless a caller wants to watch the time. */
   sessions?: Sessions;
+  // AIDEV-NOTE: a DIRECTORY, and the server is told nothing else about it. What is in there is the
+  // browser page, and the page is a CLIENT of this shop - it reaches the API through
+  // @3d-print-shop/client like any other. So the server resolving those files through the ui package
+  // would be the server depending on a client, which is the direction that may never run. It serves
+  // files at a path; whoever installed it knows which files those are.
+  /** A directory of files to serve beside the API, for a browser that has to get the page somewhere. */
+  page?: string;
   /** Where the running service writes down what it did. Silent unless somebody supplies one. */
   log?: Log;
 }
@@ -194,6 +203,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   const started = hooks.started ?? ((): void => undefined);
   const callers = hooks.callers;
   const keyGiven = hooks.keyGiven;
+  const page = hooks.page;
   const sessions = hooks.sessions ?? new Sessions();
   const attempts = new Attempts();
 
@@ -230,7 +240,13 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     next();
   });
 
-  // AIDEV-NOTE: BEFORE the guard, and the only route that is - there is nowhere else for somebody
+  // AIDEV-NOTE: BEFORE the guard, deliberately: the page nobody is logged in to yet is the page
+  // somebody logs in ON. There is nothing in it worth a credential - a bundle and a stylesheet,
+  // which every visitor needs before they can present anything - and requiring one would be a login
+  // screen that cannot be fetched without having logged in.
+  if (page !== undefined) servePageFrom(api, path.resolve(page));
+
+  // AIDEV-NOTE: BEFORE the guard, and the only ROUTE that is - there is nowhere else for somebody
   // with a password and no session to start. Everything about it is deliberately slow and vague: one
   // answer for a name nobody has and for a password that is wrong, a wait that widens with every
   // miss, and scrypt in the middle whatever happens, so that "how long did it take" says nothing
@@ -526,6 +542,27 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
 // which cli.ts's `serve` gives to a Foreman - so a job submitted over HTTP is started as soon as
 // there is a free printer with its filament loaded, and sits queued only while there is not.
 // Nothing here reaches a machine itself, which is what keeps the store's one writer one writer.
+// AIDEV-NOTE: static first, then everything the static did not have - which is how a page a browser
+// navigated INTO rather than loaded at the root survives a reload. What it must never swallow is one
+// of the shop's own paths: those are the client's list, so a route added there cannot quietly start
+// being answered with a page.
+function servePageFrom(api: Express, page: string): void {
+  api.use(express.static(page, { index: false }));
+
+  api.use((request, response, next) => {
+    if (request.method !== 'GET' || isTheShops(request.path)) {
+      next();
+      return;
+    }
+
+    response.sendFile(path.join(page, 'index.html'));
+  });
+}
+
+function isTheShops(asked: string): boolean {
+  return SHOP_ROUTES.some((route) => asked === route || asked.startsWith(`${route}/`));
+}
+
 export function serve(shop: JobStore, port: number, hooks: ShopHooks, address: string = LOOPBACK): Promise<Server> {
   return new Promise((resolve, reject) => {
     const server = createApi(shop, hooks).listen(port, address, () => resolve(server));
