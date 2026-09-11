@@ -744,10 +744,8 @@ function printerIn(body: unknown): PrinterRecord {
 // AIDEV-NOTE: a refusal the shop MEANT says why - a printer that is not here, a bed nothing has room
 // for. A 500 is the one it did not mean, and its message is written by whatever actually broke:
 // node's filesystem errors carry the path they failed on, so a client asking for job 7 would be
-// handed the spool's location. Out goes a sentence saying where to look; the real one goes to
-// stderr, which is what launchd and systemd capture.
-//
-// AIDEV-TODO: console.error until there is a Log port to hand this to. See PLAN.md.
+// handed the spool's location. Out goes a sentence saying where to look; the real one goes to the
+// shop's log, which is what launchd and systemd capture.
 function explainRefusal(log: Log, error: unknown, _request: Request, response: Response, _next: NextFunction): void {
   const status = statusFor(error);
 
