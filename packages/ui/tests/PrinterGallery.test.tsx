@@ -1,7 +1,8 @@
-import { describe, it, expect, jest, afterEach } from '@jest/globals';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, jest, afterEach, beforeEach } from '@jest/globals';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { PrinterRecord, RegisteredPrinter } from '@3d-print-shop/client/browser';
 import { PrinterGallery, stillHere } from '../src/components/PrinterGallery';
+import { BEFORE_TRYING_AGAIN_MS, TRIES } from '../src/components/PrinterTile';
 
 describe('the gallery of printers', () => {
   afterEach(cleanup);
@@ -102,13 +103,66 @@ describe('the gallery of printers', () => {
       expect(screen.getByText('no camera')).toBeDefined();
     });
 
-    // The ordinary state of a machine that is switched off, rather than a fault worth shouting about.
-    it('says so when the machine does not answer', () => {
-      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+    // AIDEV-NOTE: a stream has more ways of failing once than of being unavailable - a machine still
+    // booting, a connection dropped, a moment when something else had it. Giving up on the first
+    // left a tile saying "no picture" at a working camera until somebody reloaded the page.
+    describe('when a try fails', () => {
+      beforeEach(() => jest.useFakeTimers());
+      afterEach(() => jest.useRealTimers());
 
-      fireEvent.error(screen.getByRole('img'));
+      const andWait = (): void => act(() => void jest.advanceTimersByTime(BEFORE_TRYING_AGAIN_MS));
 
-      expect(screen.getByText('no picture')).toBeDefined();
+      const failed = (): void => {
+        act(() => void fireEvent.error(screen.getByRole('img')));
+        andWait();
+      };
+
+      it('tries again rather than giving up', () => {
+        render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+
+        failed();
+
+        expect(screen.getByRole('img')).toBeDefined();
+      });
+
+      // The same URL would not be fetched again - a browser that has just failed one has it cached
+      // as a failure - so each try has to be a different one.
+      it('asks for something the browser has not already failed', () => {
+        render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+        const first = screen.getByRole('img').getAttribute('src');
+
+        failed();
+
+        expect(screen.getByRole('img').getAttribute('src')).not.toBe(first);
+      });
+
+      // A camera whose address already carries a query keeps it.
+      it('keeps the address the shop gave it', () => {
+        render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+
+        failed();
+
+        expect(screen.getByRole('img').getAttribute('src')).toContain('action=stream');
+      });
+
+      it('waits before trying again rather than hammering the machine', () => {
+        render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+        const first = screen.getByRole('img').getAttribute('src');
+
+        act(() => void fireEvent.error(screen.getByRole('img')));
+
+        expect(screen.getByRole('img').getAttribute('src')).toBe(first);
+      });
+
+      // It does stop: a camera that is really not there must not be asked for ever.
+      it('says so once enough of them have failed', () => {
+        render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+
+        for (let attempt = 0; attempt < TRIES; attempt += 1) failed();
+
+        expect(screen.queryByRole('img')).toBeNull();
+        expect(screen.getByText('no picture')).toBeDefined();
+      });
     });
   });
 
