@@ -4,6 +4,7 @@ import type { ChildProcess } from 'node:child_process';
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
+import { digestOf } from '../../src/secrets';
 
 // AIDEV-NOTE: the shop as an operator gets it - a process started from a command line, holding a
 // spool it was pointed at, answered over a socket. api.test.ts drives the same routes in-process and
@@ -126,10 +127,16 @@ describe('the shop, running as its own process', () => {
 
   function runCommandSaying(
     args: string[],
-    carrying: Record<string, string> = { PRINT_SHOP_TOKEN: ADMIN }
+    carrying: Record<string, string> = { PRINT_SHOP_TOKEN: ADMIN },
+    // AIDEV-NOTE: what a command asks for rather than takes as an argument - a password, which is
+    // never in argv because argv is `ps` and shell history. Not a terminal here, so it is read as a
+    // line, which is the path that lets this be driven at all.
+    typing?: string
   ): Promise<{ code: number; stdout: string }> {
     return new Promise((resolve, reject) => {
       const command = spawn('node', ['--import', 'tsx', SHOP, ...args], { env: { ...process.env, ...carrying } });
+      if (typing !== undefined) command.stdin.write(typing);
+      command.stdin.end();
       let stdout = '';
 
       command.stdout.on('data', (said: Buffer) => (stdout += said.toString()));
@@ -183,8 +190,18 @@ describe('the shop, running as its own process', () => {
     return written;
   }
 
+  // AIDEV-NOTE: written the way the shop reads it - a token is held as a DIGEST, so what goes in the
+  // file is what `digestOf` makes of the token a test then presents. A file with a token in the
+  // clear is one this shop refuses to start on, which is the point of that refusal.
   async function writeCallers(credentials: string, callers: WrittenCaller[]): Promise<void> {
-    await writeFile(path.join(credentials, 'callers.json'), JSON.stringify(callers), { mode: 0o600 });
+    const held = callers.map(({ id, name, role, token }) => ({
+      id,
+      name,
+      role,
+      credentials: [{ kind: 'token', hash: digestOf(token) }],
+    }));
+
+    await writeFile(path.join(credentials, 'callers.json'), JSON.stringify(held), { mode: 0o600 });
   }
 
   async function writePrinterKeys(credentials: string, keys: Record<string, string>): Promise<void> {
@@ -245,6 +262,74 @@ describe('the shop, running as its own process', () => {
       { name: 'mk4', buildVolume: MK4, api: 'octoprint', address: 'http://mk4', camera: 'http://mk4/webcam/?action=stream', loaded: [] },
     ]);
   }, 30_000);
+
+  const A_PASSWORD = 'a password of some length';
+
+  // AIDEV-NOTE: a person logging in to the real thing - the file written by the command an operator
+  // actually runs, read by a shop started the way one is started, over a socket. Everything else
+  // about passwords is unit-tested; what is proved here is that those pieces are the ones wired up.
+  describe('somebody logging in', () => {
+    const PASSWORD = A_PASSWORD;
+
+    async function shopSomebodyCanLogInTo(): Promise<RunningShop> {
+      const credentials = await mkdtemp(path.join(tmpdir(), 'print-shop-etc-'));
+      madeEtc.push(credentials);
+
+      // The operator's own command, not a file written by this test - so what is being logged in to
+      // is what `init` makes, hashing and all.
+      await runCommandSaying(['init', 'dave', '--etc', credentials], {}, `${PASSWORD}\n${PASSWORD}\n`);
+
+      return startShopOver(spool, [], credentials);
+    }
+
+    const logIn = (shop: RunningShop, id: string, password: string): Promise<Response> =>
+      fetch(`${shop.url}/sessions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id, password }),
+      });
+
+    it('is let in by the password the operator set, and named by the session after it', async () => {
+      const shop = await shopSomebodyCanLogInTo();
+
+      const said = await logIn(shop, 'dave', PASSWORD);
+      expect(said.status).toBe(201);
+
+      const cookie = (said.headers.get('set-cookie') ?? '').split(';')[0];
+      const asked = await fetch(`${shop.url}/me`, { headers: { cookie } });
+
+      expect(await asked.json()).toEqual({ id: 'dave', name: 'dave', role: 'admin' });
+    }, 60_000);
+
+    it('is refused by the wrong one', async () => {
+      const shop = await shopSomebodyCanLogInTo();
+
+      expect((await logIn(shop, 'dave', 'not the password')).status).toBe(401);
+    }, 60_000);
+
+    // AIDEV-NOTE: the file holds a hash, so this is the check that the shop is not simply comparing
+    // what it was given against what is written down - which would be a file of passwords.
+    it('is not let in by presenting what the file holds', async () => {
+      const shop = await shopSomebodyCanLogInTo();
+      const credentials = madeEtc[madeEtc.length - 1];
+      const written = JSON.parse(await readFile(path.join(credentials, 'callers.json'), 'utf-8')) as {
+        credentials: { kind: string; hash: string }[];
+      }[];
+      const hash = written[0].credentials.find(({ kind }) => kind === 'password')?.hash ?? '';
+
+      expect(hash).toContain('scrypt$');
+      expect((await logIn(shop, 'dave', hash)).status).toBe(401);
+    }, 60_000);
+
+    it('says nothing of the password in its log, whatever it was asked', async () => {
+      const shop = await shopSomebodyCanLogInTo();
+      await logIn(shop, 'dave', PASSWORD);
+
+      await shop.saysSomethingLike(/somebody logged in/);
+
+      expect(shop.hasSaid(new RegExp(PASSWORD))).toBe(false);
+    }, 60_000);
+  });
 
   // AIDEV-NOTE: the shop WRITING its own credentials file, which is the one thing it does to /etc
   // and the reason a printer can be given its key from a browser. Provable only here: which file the
@@ -564,13 +649,44 @@ describe('the shop, running as its own process', () => {
       madeEtc.push(machine);
       const fresh = path.join(machine, 'etc');
 
-      const { stdout } = await runCommandSaying(['init', 'dave', '--etc', fresh], {});
+      const { stdout } = await runCommandSaying(['init', 'dave', '--etc', fresh], {}, `${A_PASSWORD}\n${A_PASSWORD}\n`);
       const token = /\b[0-9a-f]{64}\b/.exec(stdout)?.[0];
 
       const shop = await startShopOver(spool, [], fresh);
 
       expect(token).toBeDefined();
       expect((await fetch(`${shop.url}/jobs`, { headers: { authorization: `Bearer ${token as string}` } })).status).toBe(200);
-    }, 30_000);
+    }, 60_000);
+
+    // The other half of what init writes, and the half a person uses.
+    it('is set up by init with a password that then logs somebody in', async () => {
+      const machine = await mkdtemp(path.join(tmpdir(), 'print-shop-fresh-'));
+      madeEtc.push(machine);
+      const fresh = path.join(machine, 'etc');
+
+      await runCommandSaying(['init', 'dave', '--etc', fresh], {}, `${A_PASSWORD}\n${A_PASSWORD}\n`);
+      const shop = await startShopOver(spool, [], fresh);
+
+      const said = await fetch(`${shop.url}/sessions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'dave', password: A_PASSWORD }),
+      });
+
+      expect(said.status).toBe(201);
+    }, 60_000);
+
+    // Typed twice because nobody can see what they typed the first time, and a machine set up with
+    // a password nobody knows is a machine nobody can log in to.
+    it('is not set up at all when the two passwords do not match', async () => {
+      const machine = await mkdtemp(path.join(tmpdir(), 'print-shop-fresh-'));
+      madeEtc.push(machine);
+      const fresh = path.join(machine, 'etc');
+
+      const { code } = await runCommandSaying(['init', 'dave', '--etc', fresh], {}, `${A_PASSWORD}\nsomething else\n`);
+
+      expect(code).toBe(1);
+      await expect(readFile(path.join(fresh, 'callers.json'), 'utf-8')).rejects.toThrow();
+    }, 60_000);
   });
 });

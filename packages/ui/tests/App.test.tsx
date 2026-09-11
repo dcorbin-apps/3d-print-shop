@@ -1,7 +1,7 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Role } from '@3d-print-shop/client/browser';
-import { App, TOKEN_KEY } from '../src/App';
+import { App } from '../src/App';
 
 // AIDEV-NOTE: fetch is stubbed rather than the client mocked, so what is under test is the page AND
 // the contract it speaks - a route renamed at one end would be caught here. What the shop does with
@@ -14,6 +14,9 @@ describe('the page, against a shop that answers', () => {
   // stub that threw would be indistinguishable from a shop that could not be reached, because
   // `attempt` rewrites anything fetch throws into exactly that.
   const answered = (body: unknown): Response => ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as Response;
+
+  const refused = (status: number): Response =>
+    ({ ok: false, status, json: () => Promise.resolve({ error: 'this shop does not know that token' }) }) as Response;
 
   const answering = (as: Role): void => {
     fetching.mockImplementation((asked: Parameters<typeof fetch>[0]) => {
@@ -29,7 +32,6 @@ describe('the page, against a shop that answers', () => {
     fetching.mock.calls.find(([where, sent]) => String(where) === path && sent?.method === method)?.[1];
 
   beforeEach(() => {
-    window.localStorage.setItem(TOKEN_KEY, 'a-token');
     global.fetch = fetching;
   });
 
@@ -38,13 +40,64 @@ describe('the page, against a shop that answers', () => {
     window.localStorage.clear();
   });
 
-  it('asks for a token when this browser has none', () => {
-    window.localStorage.clear();
+  // AIDEV-NOTE: a browser nobody has logged in on, and a browser whose session expired while it sat
+  // there, are the same thing to this page - both are a stranger, and both want a login where the
+  // page was rather than an error.
+  it('asks a stranger to log in', async () => {
+    fetching.mockImplementation(() => Promise.resolve(refused(401)));
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByLabelText('Who')).toBeDefined());
+    expect(screen.getByLabelText('Password')).toBeDefined();
+  });
+
+  it('logs in with what was typed, and asks the shop again once it is in', async () => {
+    fetching.mockImplementation(() => Promise.resolve(refused(401)));
+    render(<App />);
+    await waitFor(() => expect(screen.getByLabelText('Who')).toBeDefined());
+
+    answering('admin');
+    fireEvent.change(screen.getByLabelText('Who'), { target: { value: 'dave' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'a password of some length' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+
+    await waitFor(() => expect(asked('POST', '/sessions')).toBeDefined());
+    expect(JSON.parse(String(asked('POST', '/sessions')?.body))).toEqual({ id: 'dave', password: 'a password of some length' });
+  });
+
+  // Nothing is kept: what logging in produces is a cookie the shop set, which this page cannot read.
+  it('keeps nothing of the password or the session in the browser', async () => {
+    fetching.mockImplementation(() => Promise.resolve(refused(401)));
+    render(<App />);
+    await waitFor(() => expect(screen.getByLabelText('Who')).toBeDefined());
+
+    answering('admin');
+    fireEvent.change(screen.getByLabelText('Who'), { target: { value: 'dave' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'a password of some length' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+
+    await waitFor(() => expect(asked('POST', '/sessions')).toBeDefined());
+    expect(JSON.stringify(window.localStorage)).not.toContain('a password of some length');
+  });
+
+  it('says who it is logged in as, on a screen anybody may walk up to', async () => {
     answering('admin');
 
     render(<App />);
 
-    expect(screen.getByLabelText('Token')).toBeDefined();
+    await waitFor(() => expect(screen.getByText('dave')).toBeDefined());
+    expect(screen.getByRole('button', { name: 'log out' })).toBeDefined();
+  });
+
+  it('logs out at the shop rather than only in the browser', async () => {
+    answering('admin');
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'log out' })).toBeDefined());
+
+    fireEvent.click(screen.getByRole('button', { name: 'log out' }));
+
+    await waitFor(() => expect(asked('DELETE', '/sessions')).toBeDefined());
   });
 
   it('asks the shop who the caller is before deciding what to offer', async () => {
@@ -115,14 +168,18 @@ describe('the page, against a shop that answers', () => {
     expect(fetching.mock.calls.filter(([, sent]) => sent?.method !== 'GET')).toHaveLength(1);
   });
 
-  it('carries the token this browser holds on every ask', async () => {
+  // AIDEV-NOTE: no token and no Authorization header - a browser is named by the session cookie the
+  // shop set, which this page never sees. `credentials: 'include'` is what makes a browser send it.
+  it('carries nothing of its own, and lets the browser send the cookie', async () => {
     answering('admin');
 
     render(<App />);
 
     await waitFor(() => expect(fetching).toHaveBeenCalled());
     const [, sent] = fetching.mock.calls[0];
-    expect((sent?.headers as Record<string, string>).authorization).toBe('Bearer a-token');
+
+    expect((sent?.headers as Record<string, string>).authorization).toBeUndefined();
+    expect(sent?.credentials).toBe('include');
   });
 
   // A shop that is being restarted, or a token it no longer knows.

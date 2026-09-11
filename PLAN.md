@@ -22,18 +22,12 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### Security
 
-- [ ] `callers.json` is shaped for machine callers and nothing else, which is what a web UI exposes.
-  The token is the map's KEY, so the credential is the identity: a caller holds exactly one token,
-  and a person who wants a second for another machine or a browser has to become a second person.
-  A caller now has a stable id, which is what ownership needed and what a job records. Three faults
-  left, none of which blocks a web UI:
-  - a credential wants to be a LIST on an identity, so one can be added or revoked without changing
-    who the person is
-  - the file mixes what an OPERATOR writes with what the SHOP would write. Sessions are what a
-    login produces, they are the shop's, they expire, and they cannot live in a file a person
-    hand-edits and the shop re-reads on SIGHUP
-  - tokens are stored in the clear. Tolerable for 32 random bytes in a 0600 file, wrong the moment
-    a human chooses one - and hashing breaks lookup-by-token, which is the first fault again
+- [ ] Sessions do not survive a restart, so restarting the shop logs everybody out. In memory is
+  the honest first answer - they are the shop's rather than the file's, and a file of them is a
+  second thing to get the mode of right - but a shop restarted by an update at 2am is a wall display
+  asking to be logged in to in the morning
+- [ ] Nobody can change their own password. `caller password` is an operator at a terminal, which is
+  right for setting one and wrong for the person who wants to change theirs
 
 - [ ] Confirm the `remotePath` rule against a real OctoPrint - the printer here is offline, so the
   rule in `validateDetails` was written from the API docs and pathvalidate's, not from a machine.

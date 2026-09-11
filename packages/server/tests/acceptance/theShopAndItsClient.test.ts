@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { serve } from '../../src/api';
 import { JobStore } from '../../src/JobStore';
+import { Callers } from '../../src/credentials';
+import { digestOf } from '../../src/secrets';
 
 // AIDEV-NOTE: the two halves of the contract against each other - the client from
 // @3d-print-shop/client, the real routes over a real socket. Neither side's own suite can catch the
@@ -41,7 +43,8 @@ describe('the shop and its client', () => {
     spool = await mkdtemp(path.join(tmpdir(), 'print-shop-contract-'));
     store = new JobStore(spool);
 
-    server = await serve(store, 0, { callers: () => new Map([[TOKEN, { id: 'dave', name: 'dave', role: 'admin' }]]) });
+    const dave = { caller: { id: 'dave', name: 'dave', role: 'admin' as const }, credentials: [{ kind: 'token' as const, hash: digestOf(TOKEN) }] };
+    server = await serve(store, 0, { callers: () => new Callers([dave]) });
     shop = new HttpShop(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, TOKEN);
   });
 

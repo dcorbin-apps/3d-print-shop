@@ -15,7 +15,13 @@ import {
   rereadPrinterKeys,
   writeFirstCaller,
   writePrinterKey,
+  Callers,
+  addCaller,
+  issueToken,
+  migrateCallers,
+  setPassword,
 } from '../src/credentials';
+import { digestOf, hashPassword, isThePassword } from '../src/secrets';
 import { toStdout } from '../src/log';
 import type { Log } from '../src/log';
 
@@ -23,8 +29,21 @@ describe('the credentials a shop is given', () => {
   let etc: string;
 
   // The id is deliberately not the name: nothing may pass by treating the two as one field.
-  const dave = { id: 'u-1', name: 'dave', role: 'admin', token: 'dave-token' };
-  const slicer = { id: 'u-2', name: 'slicer', role: 'user', token: 'slicer-token' };
+  const DAVE_TOKEN = 'dave-token';
+  const SLICER_TOKEN = 'slicer-token';
+  const PASSWORD = 'a password of some length';
+
+  const holding = (id: string, name: string, role: string, ...credentials: { kind: string; hash: string }[]): object => ({
+    id,
+    name,
+    role,
+    credentials,
+  });
+
+  const carrying = (token: string): { kind: string; hash: string } => ({ kind: 'token', hash: digestOf(token) });
+
+  const dave = holding('u-1', 'dave', 'admin', carrying(DAVE_TOKEN));
+  const slicer = holding('u-2', 'slicer', 'user', carrying(SLICER_TOKEN));
 
   async function write(file: string, contents: unknown, mode = 0o600): Promise<void> {
     await writeFile(path.join(etc, file), typeof contents === 'string' ? contents : JSON.stringify(contents), { mode });
@@ -38,72 +57,92 @@ describe('the credentials a shop is given', () => {
     await rm(etc, { recursive: true, force: true });
   });
 
+  // AIDEV-NOTE: a credential HANGS OFF an identity rather than being one. That is the whole of what
+  // changed: a token used to BE the caller, so a person with two machines was two people and the
+  // jobs one of them submitted were a stranger's to the other.
   describe('who may call it', () => {
     it('knows each caller by the token they present', async () => {
       await write(CALLERS_FILE, [dave, slicer]);
 
       const callers = await callersIn(etc);
 
-      expect(callers.get('dave-token')).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
-      expect(callers.get('slicer-token')).toEqual({ id: 'u-2', name: 'slicer', role: 'user' });
+      expect(callers.presenting(DAVE_TOKEN)).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
+      expect(callers.presenting(SLICER_TOKEN)).toEqual({ id: 'u-2', name: 'slicer', role: 'user' });
     });
 
     it('knows nobody by a token it was not given', async () => {
       await write(CALLERS_FILE, [dave]);
 
-      expect((await callersIn(etc)).get('some-other-token')).toBeUndefined();
+      expect((await callersIn(etc)).presenting('made-up')).toBeUndefined();
     });
 
-    it('takes a file naming nobody, which is a shop nobody may call', async () => {
-      await write(CALLERS_FILE, []);
+    // The point of a list: one person, one id, and a token per machine they slice from - so losing
+    // a laptop costs that laptop's token rather than everything they can reach.
+    it('knows one caller by any of the tokens they hold', async () => {
+      await write(CALLERS_FILE, [holding('u-1', 'dave', 'admin', carrying('at-the-bench'), carrying('at-the-desk'))]);
 
-      expect((await callersIn(etc)).size).toBe(0);
+      const callers = await callersIn(etc);
+
+      expect(callers.presenting('at-the-bench')).toEqual(callers.presenting('at-the-desk'));
     });
 
-    // An id outlives the name beside it, so what one may look like is fixed before any job is
-    // written with one - a rule this narrow can be relaxed later, and never the other way.
-    it.each([['dave'], ['slicer-v3'], ['a.b_c-1'], ['7'], ['x'.repeat(64)]])('takes %j as an id', async (id) => {
-      await write(CALLERS_FILE, [{ ...dave, id }]);
+    // Nothing in the file is what was presented: a stolen copy is not a set of working credentials.
+    it('holds no token as it was given', async () => {
+      await write(CALLERS_FILE, [dave]);
 
-      expect((await callersIn(etc)).get('dave-token')?.id).toBe(id);
+      expect(await readFile(path.join(etc, CALLERS_FILE), 'utf-8')).not.toContain(DAVE_TOKEN);
     });
 
-    it.each([[''], ['-leading'], ['.leading'], ['has space'], ['slash/es'], ['\u00fcber'], ['x'.repeat(65)]])(
-      'refuses %j as an id',
-      async (id) => {
-        await write(CALLERS_FILE, [{ ...dave, id }]);
+    it('finds the password a caller would be recognised by', async () => {
+      const hash = await hashPassword(PASSWORD);
+      await write(CALLERS_FILE, [holding('u-1', 'dave', 'admin', { kind: 'password', hash })]);
 
-        await expect(callersIn(etc)).rejects.toThrow('an id is up to 64');
-      },
-    );
-
-    // Two callers on one id are one owner, and no later reading of the records could say which of
-    // them meant any given job - the shop cannot rewrite one to find out.
-    it('refuses two callers sharing an id, saying a job could not say which owns it', async () => {
-      await write(CALLERS_FILE, [dave, { ...slicer, id: 'u-1' }]);
-
-      await expect(callersIn(etc)).rejects.toThrow('gives the id u-1 to both dave and slicer');
+      expect((await callersIn(etc)).named('u-1')?.password).toBe(hash);
     });
 
-    // The audit trail is the point of a name, and two callers on one token would put one caller's
-    // actions under the other's name - which is worse than having no name at all.
-    it('refuses two callers sharing a token, saying it could not tell them apart', async () => {
-      await write(CALLERS_FILE, [dave, { ...slicer, token: 'dave-token' }]);
+    // Somebody who exists and cannot get in: their jobs still say who owns them, which is the whole
+    // reason an id is not a credential.
+    it('knows a caller with no password as one who cannot log in', async () => {
+      await write(CALLERS_FILE, [dave]);
 
-      await expect(callersIn(etc)).rejects.toThrow('the same token, so neither could be told apart');
+      expect((await callersIn(etc)).named('u-1')).toEqual({ caller: { id: 'u-1', name: 'dave', role: 'admin' }, password: undefined });
+    });
+
+    it('knows nobody by a name it was not given', async () => {
+      await write(CALLERS_FILE, [dave]);
+
+      expect((await callersIn(etc)).named('nobody')).toBeUndefined();
+    });
+
+    it('counts the callers rather than the credentials', async () => {
+      await write(CALLERS_FILE, [holding('u-1', 'dave', 'admin', carrying('one'), carrying('two')), slicer]);
+
+      expect((await callersIn(etc)).size).toBe(2);
     });
 
     it.each([
-      [[{ name: 'dave', role: 'admin', token: 't' }], 'the id undefined'],
-      [[{ id: 'u-1', role: 'admin', token: 't' }], 'gives u-1 no name'],
-      [[{ id: 'u-1', name: 'dave', token: 't' }], 'a role is "admin" or "user"'],
-      [[{ id: 'u-1', name: 'dave', role: 'wheel', token: 't' }], 'a role is "admin" or "user"'],
-      [[{ id: 'u-1', name: 'dave', role: 'admin' }], 'gives dave no token'],
+      [[{ id: 'dave' }], 'no name'],
+      [[{ id: 'dave', name: 'dave' }], 'the role'],
+      [[{ id: 'has space', name: 'dave', role: 'admin', credentials: [] }], 'an id is up to 64'],
+      [[{ id: 'dave', name: 'dave', role: 'root', credentials: [] }], 'a role is'],
+      [[{ id: 'dave', name: 'dave', role: 'admin' }], 'no credentials'],
+      [[{ id: 'dave', name: 'dave', role: 'admin', credentials: 'a-token' }], 'no credentials'],
+      [[{ id: 'dave', name: 'dave', role: 'admin', credentials: [{ kind: 'fingerprint', hash: 'x' }] }], 'a kind is'],
+      [[{ id: 'dave', name: 'dave', role: 'admin', credentials: [{ kind: 'token' }] }], 'with nothing stored for it'],
+      [[{ id: 'dave', name: 'dave', role: 'admin', credentials: [{ kind: 'token', hash: '  ' }] }], 'with nothing stored for it'],
       [{ dave: 'token' }, 'a list of callers'],
     ])('refuses %j', async (written, complaint) => {
       await write(CALLERS_FILE, written);
 
       await expect(callersIn(etc)).rejects.toThrow(complaint);
+    });
+
+    // Either might let somebody in, which is one more way in than anybody meant to leave open.
+    it('refuses a caller with two passwords', async () => {
+      const two = [{ kind: 'password', hash: 'one' }, { kind: 'password', hash: 'other' }];
+      await write(CALLERS_FILE, [{ id: 'u-1', name: 'dave', role: 'admin', credentials: two }]);
+
+      await expect(callersIn(etc)).rejects.toThrow('two passwords');
     });
 
     it('refuses a file that is not JSON at all', async () => {
@@ -121,21 +160,71 @@ describe('the credentials a shop is given', () => {
 
     it.each([
       ['not JSON', 'dave: admin', 0o600],
-      ['a duplicate token', JSON.stringify([dave, { ...slicer, token: dave.token }]), 0o600],
+      ['a duplicate token', JSON.stringify([dave, holding('u-3', 'else', 'user', carrying(DAVE_TOKEN))]), 0o600],
       ['a mode anybody can read', JSON.stringify([dave]), 0o644],
     ])('is a refusal and not an empty shop when the file is there with %s', async (_why, contents, mode) => {
       await write(CALLERS_FILE, contents, mode);
 
       await expect(callersIn(etc)).rejects.toBeInstanceOf(UnusableCredentials);
     });
+
+    // AIDEV-NOTE: the old shape, refused rather than quietly read. A shop that went on accepting a
+    // token in the clear would keep every install that has ever run on plaintext for ever.
+    describe('a file still holding a token in the clear', () => {
+      const asItWas = [{ id: 'u-1', name: 'dave', role: 'admin', token: DAVE_TOKEN }];
+
+      it('is refused rather than read', async () => {
+        await write(CALLERS_FILE, asItWas);
+
+        await expect(callersIn(etc)).rejects.toThrow('in the clear');
+      });
+
+      // A refusal that stops a shop from starting has to say what to type next.
+      it('says what fixes it', async () => {
+        await write(CALLERS_FILE, asItWas);
+
+        await expect(callersIn(etc)).rejects.toThrow('callers migrate');
+      });
+
+      it('is read again once it has been migrated', async () => {
+        await write(CALLERS_FILE, asItWas);
+
+        expect(await migrateCallers(etc)).toBe(1);
+        expect((await callersIn(etc)).presenting(DAVE_TOKEN)).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
+      });
+
+      // The whole point of migrating rather than reissuing: nobody has to go round the machines.
+      it('leaves every token that was in it working', async () => {
+        await write(CALLERS_FILE, [
+          { id: 'u-1', name: 'dave', role: 'admin', token: DAVE_TOKEN },
+          { id: 'u-2', name: 'slicer', role: 'user', token: SLICER_TOKEN },
+        ]);
+
+        expect(await migrateCallers(etc)).toBe(2);
+        const callers = await callersIn(etc);
+
+        expect(callers.presenting(DAVE_TOKEN)?.name).toBe('dave');
+        expect(callers.presenting(SLICER_TOKEN)?.name).toBe('slicer');
+      });
+
+      it('leaves nothing in the clear behind it', async () => {
+        await write(CALLERS_FILE, asItWas);
+        await migrateCallers(etc);
+
+        expect(await readFile(path.join(etc, CALLERS_FILE), 'utf-8')).not.toContain(DAVE_TOKEN);
+      });
+
+      it('has nothing to do to a file that is already hashed', async () => {
+        await write(CALLERS_FILE, [dave]);
+
+        expect(await migrateCallers(etc)).toBe(0);
+        expect((await callersIn(etc)).presenting(DAVE_TOKEN)?.name).toBe('dave');
+      });
+    });
   });
 
-  // AIDEV-NOTE: the way into a fresh machine. There is no anonymous mode, so a shop with no callers
-  // answers nobody and refuses to start - which leaves writing the first one as the one thing that
-  // cannot be done by asking the shop.
-  // AIDEV-NOTE: what SIGHUP does. A token is added or revoked by editing the file the shop already
-  // reads, so what matters is which of the two lists a running shop ends up with - the new one, or
-  // the one it already had.
+  // AIDEV-NOTE: what SIGHUP does. A credential is added or revoked by editing the file the shop
+  // already reads, so what matters is which of the two lists a running shop ends up with.
   describe('reading the callers again while the shop is running', () => {
     let lines: string[];
     let log: Log;
@@ -150,7 +239,7 @@ describe('the credentials a shop is given', () => {
       const before = await callersIn(etc);
       await write(CALLERS_FILE, [dave, slicer]);
 
-      expect((await rereadCallers(etc, before, log)).get('slicer-token')).toEqual({ id: 'u-2', name: 'slicer', role: 'user' });
+      expect((await rereadCallers(etc, before, log)).presenting(SLICER_TOKEN)).toEqual({ id: 'u-2', name: 'slicer', role: 'user' });
     });
 
     it('no longer knows a caller the file has stopped naming', async () => {
@@ -158,7 +247,7 @@ describe('the credentials a shop is given', () => {
       const before = await callersIn(etc);
       await write(CALLERS_FILE, [dave]);
 
-      expect((await rereadCallers(etc, before, log)).get('slicer-token')).toBeUndefined();
+      expect((await rereadCallers(etc, before, log)).presenting(SLICER_TOKEN)).toBeUndefined();
     });
 
     // A stray comma, or a file caught halfway through being replaced: read as "nobody may call this
@@ -177,7 +266,7 @@ describe('the credentials a shop is given', () => {
     it('says it kept them, and what was wrong with the file', async () => {
       await write(CALLERS_FILE, '{ not json');
 
-      await rereadCallers(etc, new Map(), log);
+      await rereadCallers(etc, new Callers([]), log);
 
       expect(lines.join('\n')).toContain('ERROR could not re-read the callers, so the shop keeps the ones it has');
       expect(lines.join('\n')).toContain('is not JSON');
@@ -187,7 +276,7 @@ describe('the credentials a shop is given', () => {
     it('says how many it re-read', async () => {
       await write(CALLERS_FILE, [dave, slicer]);
 
-      await rereadCallers(etc, new Map(), log);
+      await rereadCallers(etc, new Callers([]), log);
 
       expect(lines.join('\n')).toContain('INFO  callers re-read');
       expect(lines.join('\n')).toContain('callers=2');
@@ -196,55 +285,185 @@ describe('the credentials a shop is given', () => {
 
   describe('the first caller a machine is given', () => {
     it('writes an admin the shop then knows by the token it answered with', async () => {
-      const token = await writeFirstCaller(etc, 'u-1', 'dave');
+      const token = await writeFirstCaller(etc, 'u-1', 'dave', PASSWORD);
 
-      expect((await callersIn(etc)).get(token)).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
-    });
+      expect((await callersIn(etc)).presenting(token)).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
+    }, 10_000);
+
+    // Both, because they are two different things: the password logs a person in to the page, and
+    // the token is how a program calls a shop it has no browser for.
+    it('gives them a password to log in with as well as a token to call with', async () => {
+      await writeFirstCaller(etc, 'u-1', 'dave', PASSWORD);
+
+      const found = (await callersIn(etc)).named('u-1');
+
+      expect(await isThePassword(PASSWORD, found?.password ?? '')).toBe(true);
+    }, 10_000);
 
     // Nothing reads it back out of the file, so the value answered here is the only copy there will
     // ever be - and it has to be unguessable, because it is the whole of what a caller presents.
     it('answers 32 random bytes, and different ones every time', async () => {
-      const mine = await writeFirstCaller(etc, 'u-1', 'dave');
-      const theirs = await writeFirstCaller(await mkdtemp(path.join(tmpdir(), 'print-shop-etc-')), 'u-1', 'dave');
+      const mine = await writeFirstCaller(etc, 'u-1', 'dave', PASSWORD);
+      const theirs = await writeFirstCaller(await mkdtemp(path.join(tmpdir(), 'print-shop-etc-')), 'u-1', 'dave', PASSWORD);
 
       expect(mine).toMatch(/^[0-9a-f]{64}$/);
       expect(theirs).not.toBe(mine);
-    });
+    }, 15_000);
+
+    it('writes neither the token nor the password as it was given', async () => {
+      const token = await writeFirstCaller(etc, 'u-1', 'dave', PASSWORD);
+      const written = await readFile(path.join(etc, CALLERS_FILE), 'utf-8');
+
+      expect(written).not.toContain(token);
+      expect(written).not.toContain(PASSWORD);
+    }, 10_000);
 
     it('writes it 0600, which is the mode the shop refuses to read one without', async () => {
-      await writeFirstCaller(etc, 'u-1', 'dave');
+      await writeFirstCaller(etc, 'u-1', 'dave', PASSWORD);
 
       expect((await stat(path.join(etc, CALLERS_FILE))).mode & 0o777).toBe(0o600);
-    });
+    }, 10_000);
 
     // The credentials directory is what setting a machine up MEANS, so this makes it - unlike the
     // spool, which is the installer's because work put where nobody is looking is work lost.
     it('makes the directory when the machine has none', async () => {
       const never = path.join(etc, 'not-yet');
 
-      const token = await writeFirstCaller(never, 'u-1', 'dave');
+      const token = await writeFirstCaller(never, 'u-1', 'dave', PASSWORD);
 
-      expect((await callersIn(never)).get(token)?.name).toBe('dave');
-    });
+      expect((await callersIn(never)).presenting(token)?.name).toBe('dave');
+    }, 10_000);
 
-    // This file holds every token the shop knows, so writing over one revokes every caller at once
-    // and orphans every job their ids own.
+    // This file holds every credential the shop knows, so writing over one revokes every caller at
+    // once and orphans every job their ids own.
     it('refuses to write over callers already there, and leaves them exactly as they were', async () => {
       await write(CALLERS_FILE, [dave, slicer]);
 
-      await expect(writeFirstCaller(etc, 'u-3', 'someone')).rejects.toBeInstanceOf(AlreadyHasCallers);
+      await expect(writeFirstCaller(etc, 'u-3', 'someone', PASSWORD)).rejects.toBeInstanceOf(AlreadyHasCallers);
       expect(JSON.parse(await readFile(path.join(etc, CALLERS_FILE), 'utf-8'))).toEqual([dave, slicer]);
-    });
+    }, 10_000);
 
     // Refused here rather than written and refused at the next start, when whoever typed it has
     // gone - and an id in particular can never be corrected once a job records it.
     it.each([
-      ['has space', 'dave', 'is not an id'],
-      ['-leading', 'dave', 'is not an id'],
-      ['x'.repeat(65), 'dave', 'is not an id'],
-      ['u-1', '  ', 'needs a name'],
-    ])('refuses %j as an id and %j as a name', async (id, name, complaint) => {
-      await expect(writeFirstCaller(etc, id, name)).rejects.toThrow(complaint);
+      ['has space', 'dave', PASSWORD, 'is not an id'],
+      ['-leading', 'dave', PASSWORD, 'is not an id'],
+      ['x'.repeat(65), 'dave', PASSWORD, 'is not an id'],
+      ['u-1', '  ', PASSWORD, 'needs a name'],
+      ['u-1', 'dave', 'short', 'at least 12 characters'],
+    ])('refuses %j as an id, %j as a name and %j as a password', async (id, name, password, complaint) => {
+      await expect(writeFirstCaller(etc, id, name, password)).rejects.toThrow(complaint);
+    });
+  });
+
+  // AIDEV-NOTE: the commands that change who this shop answers. They write the file rather than
+  // asking a running shop, because a shop cannot be asked to let in somebody it does not yet answer.
+  describe('changing who the shop answers', () => {
+    beforeEach(async () => {
+      await write(CALLERS_FILE, [dave]);
+    });
+
+    describe('adding somebody', () => {
+      it('adds a person with the password they will log in with, and no token', async () => {
+        expect(await addCaller(etc, 'u-2', 'ada', 'user', PASSWORD)).toBeUndefined();
+
+        const added = (await callersIn(etc)).named('u-2');
+
+        expect(added?.caller).toEqual({ id: 'u-2', name: 'ada', role: 'user' });
+        expect(await isThePassword(PASSWORD, added?.password ?? '')).toBe(true);
+      }, 10_000);
+
+      // A program has no browser to log in with, so what it gets is a token and no password.
+      it('adds a machine with a token it answers with, and no password', async () => {
+        const token = await addCaller(etc, 'u-2', 'slicer', 'user');
+
+        expect((await callersIn(etc)).presenting(token ?? '')?.name).toBe('slicer');
+        expect((await callersIn(etc)).named('u-2')?.password).toBeUndefined();
+      });
+
+      it('leaves everybody already there exactly as they were', async () => {
+        await addCaller(etc, 'u-2', 'ada', 'user', PASSWORD);
+
+        expect((await callersIn(etc)).presenting(DAVE_TOKEN)?.name).toBe('dave');
+      }, 10_000);
+
+      // Two callers on one id are one owner, and no job could say which of them meant it.
+      it('refuses an id the shop already knows', async () => {
+        await expect(addCaller(etc, 'u-1', 'somebody else', 'user', PASSWORD)).rejects.toThrow('already somebody this shop knows');
+      }, 10_000);
+
+      it.each([['has space'], ['-leading']])('refuses %p as an id', async (id) => {
+        await expect(addCaller(etc, id, 'ada', 'user', PASSWORD)).rejects.toThrow('is not an id');
+      });
+
+      it('refuses a password too short to be one', async () => {
+        await expect(addCaller(etc, 'u-2', 'ada', 'user', 'short')).rejects.toThrow('at least 12 characters');
+      });
+    });
+
+    describe('changing a password', () => {
+      it('is what they are recognised by afterwards', async () => {
+        await addCaller(etc, 'u-2', 'ada', 'user', PASSWORD);
+        await setPassword(etc, 'u-2', 'a different password');
+
+        expect(await isThePassword('a different password', (await callersIn(etc)).named('u-2')?.password ?? '')).toBe(true);
+      }, 20_000);
+
+      it('is the only one they have afterwards', async () => {
+        await addCaller(etc, 'u-2', 'ada', 'user', PASSWORD);
+        await setPassword(etc, 'u-2', 'a different password');
+
+        expect(await isThePassword(PASSWORD, (await callersIn(etc)).named('u-2')?.password ?? '')).toBe(false);
+      }, 20_000);
+
+      // A password is a person's and a token is a machine's: changing one is not a reason to go
+      // round every machine they slice with.
+      it('leaves their tokens alone', async () => {
+        await setPassword(etc, 'u-1', PASSWORD);
+
+        expect((await callersIn(etc)).presenting(DAVE_TOKEN)?.name).toBe('dave');
+      }, 10_000);
+
+      it('refuses somebody the shop does not know', async () => {
+        await expect(setPassword(etc, 'nobody', PASSWORD)).rejects.toThrow('nobody this shop knows');
+      }, 10_000);
+    });
+
+    describe('issuing another token', () => {
+      it('is another way in for the same caller', async () => {
+        const token = await issueToken(etc, 'u-1');
+
+        expect((await callersIn(etc)).presenting(token)).toEqual({ id: 'u-1', name: 'dave', role: 'admin' });
+      });
+
+      // Another, not a replacement: one per machine is the point of a list.
+      it('leaves the ones they already had working', async () => {
+        await issueToken(etc, 'u-1');
+
+        expect((await callersIn(etc)).presenting(DAVE_TOKEN)?.name).toBe('dave');
+      });
+
+      it('is a different token every time', async () => {
+        expect(await issueToken(etc, 'u-1')).not.toBe(await issueToken(etc, 'u-1'));
+      });
+
+      it('refuses somebody the shop does not know', async () => {
+        await expect(issueToken(etc, 'nobody')).rejects.toThrow('nobody this shop knows');
+      });
+    });
+
+    // Written beside and renamed over: a crash part way through would otherwise leave a shop with a
+    // file naming nobody, which is a shop that will not start.
+    it('leaves nothing behind it', async () => {
+      await issueToken(etc, 'u-1');
+
+      expect(await readdir(etc)).toEqual([CALLERS_FILE]);
+    });
+
+    it('keeps the file only its owner can read', async () => {
+      await issueToken(etc, 'u-1');
+
+      expect((await stat(path.join(etc, CALLERS_FILE))).mode & 0o077).toBe(0);
     });
   });
 
@@ -387,7 +606,7 @@ describe('the credentials a shop is given', () => {
       await write(CALLERS_FILE, [dave]);
       await chmod(path.join(etc, CALLERS_FILE), mode);
 
-      await expect(callersIn(etc)).resolves.toBeInstanceOf(Map);
+      await expect(callersIn(etc)).resolves.toBeInstanceOf(Callers);
     });
 
     it('is checked for the printer keys too, which open the machines directly', async () => {

@@ -5,6 +5,9 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { serve } from '../../src/api';
+import { FREELY } from '../../src/attempts';
+import { Callers } from '../../src/credentials';
+import { digestOf, hashPassword } from '../../src/secrets';
 import type { Job, JobDetails } from '../../src/Job';
 import { JobStore } from '../../src/JobStore';
 import { toStdout } from '../../src/log';
@@ -32,9 +35,11 @@ describe('the shop over HTTP', () => {
   // test is about what a user may do.
   const ADMIN = 'dave-token';
   const USER = 'slicer-token';
-  const CALLERS = new Map([
-    [ADMIN, { id: 'dave', name: 'dave', role: 'admin' as const }],
-    [USER, { id: 'slicer', name: 'slicer', role: 'user' as const }],
+  // AIDEV-NOTE: a token is held as a DIGEST now, so these are built the way the file is read rather
+  // than keyed by what a request carries - `presenting()` is what turns the one into the other.
+  const CALLERS = new Callers([
+    { caller: { id: 'dave', name: 'dave', role: 'admin' }, credentials: [{ kind: 'token', hash: digestOf(ADMIN) }] },
+    { caller: { id: 'slicer', name: 'slicer', role: 'user' }, credentials: [{ kind: 'token', hash: digestOf(USER) }] },
   ]);
   const AS_ADMIN = { authorization: `Bearer ${ADMIN}` };
 
@@ -461,6 +466,186 @@ describe('the shop over HTTP', () => {
       } finally {
         await new Promise<void>((resolve) => plain.close(() => resolve()));
       }
+    });
+  });
+
+  // AIDEV-NOTE: the one route reached before the shop knows who is asking, which is what makes it
+  // the one worth being careful about. Over real HTTP, because half of what is being proven is in
+  // the headers: what the cookie says, and that a write carrying one has to come from here.
+  describe('logging in', () => {
+    const PASSWORD = 'a password of some length';
+    let withPasswords: Server;
+    let loginUrl: string;
+
+    const logIn = (id: string, password: string, headers: Record<string, string> = {}): Promise<Response> =>
+      fetch(`${loginUrl}/sessions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify({ id, password }),
+      });
+
+    const cookieFrom = (response: Response): string => (response.headers.get('set-cookie') ?? '').split(';')[0];
+
+    beforeEach(async () => {
+      const hash = await hashPassword(PASSWORD);
+      const known = new Callers([
+        { caller: { id: 'dave', name: 'dave', role: 'admin' }, credentials: [{ kind: 'password', hash }] },
+        { caller: { id: 'slicer', name: 'slicer', role: 'user' }, credentials: [{ kind: 'token', hash: digestOf(USER) }] },
+      ]);
+
+      withPasswords = await serve(shop, 0, { callers: () => known });
+      loginUrl = `http://127.0.0.1:${(withPasswords.address() as AddressInfo).port}`;
+    }, 15_000);
+
+    afterEach(async () => {
+      await new Promise<void>((resolve) => withPasswords.close(() => resolve()));
+    });
+
+    it('answers with the caller, so the page knows what to offer', async () => {
+      const response = await logIn('dave', PASSWORD);
+
+      expect(response.status).toBe(201);
+      expect(await response.json()).toEqual({ id: 'dave', name: 'dave', role: 'admin' });
+    }, 15_000);
+
+    // AIDEV-NOTE: the three that matter, and the reason this is a cookie at all. HttpOnly is what a
+    // script on the page cannot read - which a token kept by the page always could. SameSite=Strict
+    // is what another site's form cannot make a browser send. Secure is left OFF here because the
+    // request arrived over http: a shop on loopback would otherwise set a cookie never sent back.
+    it('sets a session a script cannot read and another site cannot send', async () => {
+      const said = (await logIn('dave', PASSWORD)).headers.get('set-cookie') ?? '';
+
+      expect(said).toContain('HttpOnly');
+      expect(said).toContain('SameSite=Strict');
+      expect(said).not.toContain('Secure');
+    }, 15_000);
+
+    it('is a session that then names the caller without a token', async () => {
+      const cookie = cookieFrom(await logIn('dave', PASSWORD));
+
+      const asked = await fetch(`${loginUrl}/me`, { headers: { cookie } });
+
+      expect(await asked.json()).toEqual({ id: 'dave', name: 'dave', role: 'admin' });
+    }, 15_000);
+
+    it('is a different session every time, so an old cookie is not the one in use', async () => {
+      expect(cookieFrom(await logIn('dave', PASSWORD))).not.toBe(cookieFrom(await logIn('dave', PASSWORD)));
+    }, 20_000);
+
+    // AIDEV-NOTE: the same answer for a name nobody has and for a password that is wrong. Otherwise
+    // the refusals are a list of which names exist, which is the half of a credential an attacker
+    // does not have to guess.
+    it('says the same thing to a wrong password as to a name it does not know', async () => {
+      const wrong = await logIn('dave', 'not the password');
+      const nobody = await logIn('nobody at all', 'not the password');
+
+      expect(wrong.status).toBe(nobody.status);
+      expect(await wrong.json()).toEqual(await nobody.json());
+    }, 20_000);
+
+    it('gives a refused login no session at all', async () => {
+      expect((await logIn('dave', 'not the password')).headers.get('set-cookie')).toBeNull();
+    }, 15_000);
+
+    // A machine's token is not a password: presenting it here must not be a way in.
+    it('refuses a caller who has a token and no password', async () => {
+      expect((await logIn('slicer', USER)).status).toBe(401);
+    }, 15_000);
+
+    it.each([[{ id: 'dave' }], [{ password: PASSWORD }], [{ id: 7, password: PASSWORD }]])('refuses %j as a login', async (body) => {
+      const response = await fetch(`${loginUrl}/sessions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      expect(response.status).toBe(400);
+    });
+
+    // AIDEV-NOTE: what stands between a password and somebody working through a list of them.
+    it('makes somebody wait after enough wrong ones, and says so', async () => {
+      for (let tried = 0; tried <= FREELY; tried += 1) await logIn('dave', 'not the password');
+
+      const turned = await logIn('dave', 'not the password');
+
+      expect(turned.status).toBe(429);
+      expect(((await turned.json()) as { error: string }).error).toContain('wait');
+    }, 60_000);
+
+    // The person who has just proved who they are is not the attacker, and leaving the count
+    // standing would let somebody else lock them out by guessing wrong on purpose.
+    it('forgets what was counted against somebody who then gets it right', async () => {
+      await logIn('dave', 'not the password');
+      await logIn('dave', 'not the password');
+      expect((await logIn('dave', PASSWORD)).status).toBe(201);
+
+      for (let tried = 0; tried < FREELY; tried += 1) expect((await logIn('dave', 'not the password')).status).toBe(401);
+    }, 60_000);
+
+    describe('and logging out', () => {
+      it('ends the session it was holding', async () => {
+        const cookie = cookieFrom(await logIn('dave', PASSWORD));
+
+        const out = await fetch(`${loginUrl}/sessions`, { method: 'DELETE', headers: { cookie, origin: loginUrl } });
+        expect(out.status).toBe(204);
+
+        expect((await fetch(`${loginUrl}/me`, { headers: { cookie } })).status).toBe(401);
+      }, 15_000);
+
+      it('clears the cookie as well as ending it', async () => {
+        const cookie = cookieFrom(await logIn('dave', PASSWORD));
+
+        const out = await fetch(`${loginUrl}/sessions`, { method: 'DELETE', headers: { cookie, origin: loginUrl } });
+
+        expect(out.headers.get('set-cookie')).toContain('print-shop-session=;');
+      }, 15_000);
+    });
+
+    // AIDEV-NOTE: SameSite is a rule the BROWSER keeps; this is the shop keeping it too. A cookie is
+    // sent by whatever page asked, so a WRITE that arrived with one has to have come from here.
+    describe('a write carrying a session', () => {
+      it('is taken when it came from this shop', async () => {
+        const cookie = cookieFrom(await logIn('dave', PASSWORD));
+
+        const response = await fetch(`${loginUrl}/printers/mk4/filament`, {
+          method: 'PUT',
+          headers: { cookie, origin: loginUrl, 'content-type': 'application/json' },
+          body: JSON.stringify({ loaded: ['PLA-Red'] }),
+        });
+
+        expect(response.status).toBe(200);
+      }, 15_000);
+
+      it('is refused when it came from somewhere else', async () => {
+        const cookie = cookieFrom(await logIn('dave', PASSWORD));
+
+        const response = await fetch(`${loginUrl}/printers/mk4/filament`, {
+          method: 'PUT',
+          headers: { cookie, origin: 'http://somewhere.else', 'content-type': 'application/json' },
+          body: JSON.stringify({ loaded: ['PLA-Red'] }),
+        });
+
+        expect(response.status).toBe(403);
+      }, 15_000);
+
+      it('is refused when it will not say where it came from', async () => {
+        const cookie = cookieFrom(await logIn('dave', PASSWORD));
+
+        const response = await fetch(`${loginUrl}/printers/mk4/filament`, {
+          method: 'PUT',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ loaded: ['PLA-Red'] }),
+        });
+
+        expect(response.status).toBe(403);
+      }, 15_000);
+
+      // A token is not sent by a browser on anybody's behalf, so none of this applies to one.
+      it('is nothing a token has to answer for', async () => {
+        const response = await as(USER, 'GET', '/jobs');
+
+        expect(response.status).toBe(200);
+      });
     });
   });
 

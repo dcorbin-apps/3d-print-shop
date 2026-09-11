@@ -2,15 +2,17 @@
 import { Command, InvalidArgumentError } from 'commander';
 import type { AddressInfo } from 'node:net';
 import { HttpShop, SHOP_URL_ENV, defaultShopUrl, defaultToken } from '@3d-print-shop/client';
+import type { Role } from '@3d-print-shop/client';
 import { DEFAULT_PORT, LOOPBACK, serve } from './api.js';
 import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
 import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
 import { ETC_ENV, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys, writePrinterKey } from './credentials.js';
-import type { Caller } from './credentials.js';
+import type { Callers } from './credentials.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 import { redacting, toStdout } from './log.js';
+import { addSomebody, askForANewPassword, changePassword, giveAToken, listCallers, migrateTheCallers } from './callerAdmin.js';
 import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { claimSpool } from './spoolLock.js';
@@ -57,16 +59,16 @@ export function createCLI(): Command {
       // missing file as "nobody configured yet" is how a fresh machine ends up serving anybody who
       // reaches the port. A file that is THERE and wrong stops it for the same reason: answering a
       // typo in the security file by removing the security is the failure nobody notices.
-      let callers: ReadonlyMap<string, Caller> = await callersIn(etc);
+      let callers: Callers = await callersIn(etc);
       let printerKeys: ReadonlyMap<string, string> = await printerKeysIn(etc);
       const listenOn = options.listen ?? LOOPBACK;
 
-      // AIDEV-NOTE: built from every secret this process holds - each printer's key, and every
-      // caller's token - so that neither can reach a line whatever a failure happens to be carrying.
-      // Built HERE because this is the only place that has both, and after the credentials are read
-      // because there is nothing to redact until they are. Asked for the secrets afresh on each
-      // line, because a re-read adds tokens this process did not hold when the log was made.
-      const log = redacting(toStdout(), () => [...printerKeys.values(), ...callers.keys()]);
+      // AIDEV-NOTE: built from every secret this process HOLDS, which is now the printer keys and
+      // nothing else - a caller's token is kept as a digest and a session as a digest of one, so
+      // there is no token here to leak. What is left are the keys, which cannot be hashed because
+      // the shop has to present them to a machine. Asked for afresh on each line, because a key
+      // given while the shop runs is one this process did not hold when the log was made.
+      const log = redacting(toStdout(), () => printerKeys.values());
 
       // Before anything else: a spool that is not there, or is already being served, is a shop that
       // must refuse to start rather than start and do damage.
@@ -186,7 +188,44 @@ export function createCLI(): Command {
     .description('Set a fresh machine up with one admin, so there is somebody this shop may answer')
     .argument('[name]', 'what to call them, and the id every job of theirs is owned by', 'admin')
     .option('--etc <path>', `where its credentials are kept (or ${ETC_ENV}; defaults to ${defaultEtc()})`)
-    .action(async (name: string, options: { etc?: string }) => say(await initialiseShop(options.etc ?? defaultEtc(), name)));
+    .action(async (name: string, options: { etc?: string }) =>
+      say(await initialiseShop(options.etc ?? defaultEtc(), name, await askForANewPassword()))
+    );
+
+  // AIDEV-NOTE: these write the credentials file rather than asking a running shop, and they are the
+  // only operator commands that do. A shop cannot be asked to give somebody a way in that it does
+  // not yet answer - and the file is the thing it re-reads, so every one of them ends by saying so.
+  const caller = program.command('caller').description('Who this shop answers, and what they present');
+  const whereCredentialsAre = (command: Command): Command =>
+    command.option('--etc <path>', `where its credentials are kept (or ${ETC_ENV}; defaults to ${defaultEtc()})`);
+
+  whereCredentialsAre(
+    caller
+      .command('add')
+      .description('Add somebody this shop may answer - a person with a password, or a machine with a token')
+      .argument('<id>', 'what every job of theirs is owned by, and what they log in as')
+      .argument('[name]', 'what a log and the page call them')
+      .option('--role <role>', 'admin or user', readRole, 'user')
+      .option('--machine', 'a program rather than a person: issue a token instead of asking for a password')
+  ).action(async (id: string, name: string | undefined, options: { role: Role; machine?: boolean; etc?: string }) =>
+    say(await addSomebody(options.etc ?? defaultEtc(), id, name ?? id, options.role, options.machine === true))
+  );
+
+  whereCredentialsAre(caller.command('password').description('Set what somebody logs in with').argument('<id>', 'which caller')).action(
+    async (id: string, options: { etc?: string }) => say(await changePassword(options.etc ?? defaultEtc(), id))
+  );
+
+  whereCredentialsAre(
+    caller.command('token').description('Issue another token, for another machine').argument('<id>', 'which caller')
+  ).action(async (id: string, options: { etc?: string }) => say(await giveAToken(options.etc ?? defaultEtc(), id)));
+
+  whereCredentialsAre(caller.command('list').description('Who this shop answers, and what each of them has')).action(
+    async (options: { etc?: string }) => say(await listCallers(options.etc ?? defaultEtc()))
+  );
+
+  whereCredentialsAre(
+    caller.command('migrate').description('Hash the tokens in a credentials file that still holds them in the clear')
+  ).action(async (options: { etc?: string }) => say(await migrateTheCallers(options.etc ?? defaultEtc())));
 
   const reachingTheShop = (command: Command): Command =>
     command.option('--shop-url <url>', `where the shop answers (or ${SHOP_URL_ENV}; defaults to ${defaultShopUrl()})`);
@@ -346,6 +385,14 @@ export function readMegabytes(value: string): number {
   }
 
   return Number(value) * 1024 * 1024;
+}
+
+// The two there are, said back rather than let through as whatever was typed - a role nobody
+// recognises would be written into the file and refused by the shop on its next read.
+export function readRole(value: string): Role {
+  if (value !== 'admin' && value !== 'user') throw new InvalidArgumentError(`a role is "admin" or "user", not ${JSON.stringify(value)}`);
+
+  return value;
 }
 
 // Digits and nothing else, because Number() reads an empty --port as 0 - which listens on whatever

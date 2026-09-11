@@ -1,40 +1,23 @@
 import { useEffect, useState } from 'react';
 import type { PrinterRecord } from '@3d-print-shop/client/browser';
-import { AskForToken } from './components/AskForToken.js';
+import { LogIn } from './components/LogIn.js';
 import { JobsByFilament } from './components/JobsByFilament.js';
 import { PrinterGallery, stillHere } from './components/PrinterGallery.js';
 import { TopBar } from './components/TopBar.js';
 import { summarise } from './shopSummary.js';
 import { useShop } from './useShop.js';
 
-export const TOKEN_KEY = 'print-shop-token';
 export const SELECTED_KEY = 'print-shop-selected-printer';
 
 function remembered(key: string): string | undefined {
   return window.localStorage.getItem(key) ?? undefined;
 }
 
+// AIDEV-NOTE: one component, and the login is a state of it rather than a door in front of it -
+// because a session expires while somebody is watching a print, and what should happen then is a
+// login where the page was, not a page that breaks.
 export function App(): React.JSX.Element {
-  const [token, setToken] = useState(() => remembered(TOKEN_KEY));
-
-  if (token === undefined) {
-    return (
-      <AskForToken
-        onGiven={(given) => {
-          window.localStorage.setItem(TOKEN_KEY, given);
-          setToken(given);
-        }}
-      />
-    );
-  }
-
-  return <Shop token={token} />;
-}
-
-// Apart from App so that the hooks below are not written after a conditional return, and so that
-// arriving with a token and typing one in reach exactly the same component.
-function Shop({ token }: { token: string }): React.JSX.Element {
-  const { printers, jobs, totalJobs, caller, shop, askAgain, trouble, answered } = useShop(token);
+  const { printers, jobs, totalJobs, caller, shop, askAgain, trouble, answered, strangers } = useShop();
   const [chosen, setChosen] = useState(() => remembered(SELECTED_KEY));
 
   // AIDEV-NOTE: asked for again rather than added to what is on the screen - the shop is the one
@@ -59,9 +42,20 @@ function Shop({ token }: { token: string }): React.JSX.Element {
     }
   }, [selected, chosen]);
 
+  if (strangers) {
+    return (
+      <LogIn
+        onIn={async (id, password) => {
+          await shop.logIn(id, password);
+          askAgain();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="shop">
-      <TopBar summary={summarise(printers, jobs)} trouble={trouble} />
+      <TopBar summary={summarise(printers, jobs)} trouble={trouble} caller={caller} onOut={() => void shop.logOut().then(askAgain)} />
       <PrinterGallery
         printers={printers}
         selected={selected}

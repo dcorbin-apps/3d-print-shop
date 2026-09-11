@@ -6,6 +6,12 @@ import type { PrinterAdded, Shop } from './Shop.js';
 const DESCRIPTION_PART = 'job';
 const GCODE_PART = 'gcode';
 
+// AIDEV-NOTE: apart from every other refusal because a page has something to DO about this one -
+// show somebody a login rather than an error. Everything else the shop says no to is a thing the
+// caller got wrong; this is the shop not knowing who they are yet.
+/** The shop does not know who is asking. A browser answers this by logging in. */
+export class NotAuthenticated extends Error {}
+
 /** The shop over its HTTP API, which is the only way in - it runs as its own process. */
 export class HttpShop implements Shop {
   // AIDEV-NOTE: the token is taken once, here, so every request carries it without a caller
@@ -24,6 +30,20 @@ export class HttpShop implements Shop {
 
   async whoAmI(): Promise<Caller> {
     return (await this.answered('GET', '/me')) as Caller;
+  }
+
+  // AIDEV-NOTE: nothing is answered with but the caller. The session is a cookie the shop set, which
+  // this never sees and could not read if it tried - that is the whole reason it is a cookie rather
+  // than something a page keeps: a script that can read a credential is a script that can send one
+  // somewhere else.
+  /** Log in, and answer with who the shop takes you to be. The session rides on a cookie. */
+  async logIn(id: string, password: string): Promise<Caller> {
+    return (await this.answered('POST', '/sessions', { id, password })) as Caller;
+  }
+
+  /** End the session, at the shop as well as in this browser. */
+  async logOut(): Promise<void> {
+    await this.reach('DELETE', '/sessions');
   }
 
   async jobs(): Promise<JobsHeld> {
@@ -105,6 +125,7 @@ export class HttpShop implements Shop {
   // that something was refused.
   private async reach(method: string, path: string, body?: unknown): Promise<Response> {
     const response = await this.attempt(method, path, body);
+    if (response.status === 401) throw new NotAuthenticated(await refusal(response));
     if (!response.ok) throw new Error(await refusal(response));
 
     return response;
@@ -117,6 +138,9 @@ export class HttpShop implements Shop {
       return await fetch(`${this.url}${path}`, {
         method,
         ...sent,
+        // AIDEV-NOTE: so that a browser sends the session cookie the shop set. In node there is no
+        // cookie store for this to mean anything, and a token is what names a caller there.
+        credentials: 'include',
         headers: { ...sent.headers, ...(this.token === undefined ? {} : { authorization: `Bearer ${this.token}` }) },
       });
     } catch {

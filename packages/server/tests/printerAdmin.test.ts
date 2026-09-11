@@ -56,6 +56,8 @@ describe('minding the printers', () => {
     load: mockLoad,
     shutDown: mockShutDown,
     whoAmI: jest.fn<Shop['whoAmI']>(),
+    logIn: jest.fn<Shop['logIn']>(),
+    logOut: jest.fn<Shop['logOut']>(),
     jobs: jest.fn<Shop['jobs']>(),
     waitingOn: jest.fn<Shop['waitingOn']>(),
     job: jest.fn<Shop['job']>(),

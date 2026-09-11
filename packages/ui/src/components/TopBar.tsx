@@ -1,11 +1,15 @@
+import type { Caller } from '@3d-print-shop/client/browser';
 import type { ShopSummary } from '../shopSummary.js';
 
 interface TopBarProps {
   summary: ShopSummary;
   trouble?: string;
+  /** Who is looking at this, so a shared screen says whose session it is showing. */
+  caller?: Caller;
+  onOut?: () => void;
 }
 
-export function TopBar({ summary, trouble }: TopBarProps): React.JSX.Element {
+export function TopBar({ summary, trouble, caller, onOut }: TopBarProps): React.JSX.Element {
   const { printers, printing, needingSomebody, queued, awaitingApproval } = summary;
 
   return (
@@ -24,6 +28,21 @@ export function TopBar({ summary, trouble }: TopBarProps): React.JSX.Element {
         <Count label="queued" of={queued} />
         <Count label="to judge" of={awaitingApproval} urgent={awaitingApproval > 0} />
       </dl>
+
+      {/* AIDEV-NOTE: whose session this is, said out loud. A screen in a workshop is a screen
+          anybody walks up to, and somebody who does not know who it is logged in as cannot know to
+          log it out - which is how an admin's session ends up being everybody's. */}
+      {caller !== undefined && (
+        <div className="whoami">
+          <span className="who">{caller.name}</span>
+          <span className="role">{caller.role}</span>
+          {onOut !== undefined && (
+            <button type="button" className="log-out" onClick={onOut}>
+              log out
+            </button>
+          )}
+        </div>
+      )}
 
       {/* The last good answer stays on the screen beneath this - see useShop. */}
       {trouble !== undefined && <p className="trouble">{trouble}</p>}

@@ -128,9 +128,10 @@ It asks the shop again every two seconds, because every route is a question a cl
 is nothing to push. An ask that fails leaves the last good answer on the screen and says what went
 wrong above it, so a shop being restarted does not blank a display somebody is watching a print on.
 
-**It asks for a token and keeps it in the browser.** The shop has no notion of a session - a caller
-is a token in `callers.json` - so this is the honest interim rather than a design, and it goes when
-the shop can issue one. See PLAN.md.
+**Somebody logs in to it**, with the id and password the operator set. What that produces is a
+session cookie the shop set, which the page cannot read and therefore cannot leak - see **Who may
+call it** below. The top bar says who the screen is logged in as, because a screen in a workshop is
+one anybody walks up to.
 
 **An admin gets a `+` at the end of the printer row**, which opens a form in the row itself and adds
 a machine while the shop runs - name, build volume, address and the API key. A caller who is not an
@@ -182,10 +183,47 @@ A `user` submits jobs and reads them back. An `admin` does everything else - pri
 down. A caller presents its token as `Authorization: Bearer ...`, which `HttpShop` sends for you
 from `PRINT_SHOP_TOKEN` or `~/.config/3d-print-shop/token`.
 
-**A caller is added or revoked while the shop runs**: edit the file and send `SIGHUP` - `kill -HUP
-<pid>`, or `launchctl kill HUP ...` / `systemctl reload ...` - and the next request is judged against
-what it now says. A file it cannot read leaves the callers as they were, and the shop says so in its
-log rather than locking everybody out over a stray comma.
+**A credential hangs off an identity rather than being one.** One person, one id, and a list of what
+they may present: a password for the browser, and a token per machine that calls. That is why losing
+a laptop costs that laptop's token rather than everything somebody can reach, and why a slicer and
+the person who owns it are one owner whose jobs all belong to the same id.
+
+Nothing is stored as it was presented. A **password** is hashed with `scrypt` - memory-hard, salted
+per password, the cost written beside it so it can be raised later - because a person chose it and a
+person's choice is guessable. A **token** is 32 random bytes of the shop's own making, so guessing is
+not a thing that happens: its digest is enough, and being a plain digest is what keeps naming a
+caller a map lookup rather than a memory-hard function in front of every request.
+
+```
+3d-print-shop caller add ada --role admin      a person: asks for a password, twice
+3d-print-shop caller add slicer --machine      a program: prints a token, once
+3d-print-shop caller password ada              set what somebody logs in with
+3d-print-shop caller token ada                 another token, for another machine
+3d-print-shop caller list                      who this shop answers, and what each of them has
+3d-print-shop caller migrate                   hash the tokens in a file that still holds them plain
+```
+
+A password is never an argument - argv is `ps` and shell history - so these ask for one and the
+terminal is told not to echo it.
+
+**Logging in** is `POST /sessions`, and the session comes back as a cookie that is `HttpOnly` (no
+script on the page can read it), `SameSite=Strict` (no other site can make a browser send it), and
+`Secure` when the request arrived over TLS. It expires after 12 hours idle and 7 days whatever
+happens, a new one is issued on every login, and `DELETE /sessions` ends it at the shop rather than
+only in the browser. Sessions are held in memory, so restarting the shop logs everybody out.
+
+A wrong password and a name the shop does not know get the same answer, after the same delay -
+otherwise the fast refusals are a list of which names exist. After a few wrong ones the shop makes
+that name and that address wait, and the wait doubles.
+
+**A caller is added or revoked while the shop runs**: edit the file, or use the commands above, and
+send `SIGHUP` - `kill -HUP <pid>`, or `launchctl kill HUP ...` / `systemctl reload ...` - and the
+next request is judged against what it now says. A file it cannot read leaves the callers as they
+were, and the shop says so in its log rather than locking everybody out over a stray comma.
+
+**Upgrading a shop that already has callers**: the old file held tokens in the clear and this one
+refuses to read that, naming the command that fixes it. `3d-print-shop caller migrate` hashes what is
+there, and every token in it goes on working - nothing has to be reissued to anybody.
 
 **A printer's key is corrected the same way**, in the same signal: `printer-keys.json` is re-read
 too, and each file is read on its own, so one that is mistyped does not hold up the other. A key

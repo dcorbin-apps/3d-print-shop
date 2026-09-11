@@ -1,8 +1,8 @@
-import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
-import type { Caller } from '@3d-print-shop/client';
+import type { Caller, Role } from '@3d-print-shop/client';
 import type { Log } from './log.js';
+import { digestOf, hashPassword, newToken } from './secrets.js';
 
 // AIDEV-NOTE: two files, not one, and deliberately. `callers` lets somebody into the SHOP; `printer
 // keys` let somebody into the PRINTERS, bypassing the shop entirely. One file holding both means
@@ -41,75 +41,283 @@ export class UnusableCredentials extends Error {}
 /** A shop that already has callers. Writing over them would revoke every one of them at once. */
 export class AlreadyHasCallers extends Error {}
 
-// 32 random bytes, which is the whole of what a token is: unguessable, and nothing about it meant
-// to be read or remembered. Hex rather than base64url so that a token copied out of a terminal
-// cannot pick up a character whose case or punctuation matters on the way.
-const TOKEN_BYTES = 32;
-
 const FILE_MODE = 0o600;
 const DIRECTORY_MODE = 0o700;
 
+/** What a caller is on disk. The credentials are hashes; nothing here is ever what was presented. */
+interface WrittenCaller {
+  id: string;
+  name: string;
+  role: Role;
+  credentials: { kind: 'token' | 'password'; hash: string }[];
+}
+
 /**
- * Give a shop its first admin, and answer with their token.
+ * Give a shop its first admin - a password to log in with, and a token to call it with - and answer
+ * with the token.
  *
  * The token is answered rather than kept: this is the only moment it exists anywhere but the file,
- * and nothing here can read it back out of one, so whoever asked says it once or not at all.
+ * and nothing here can read it back out of one, so whoever asked says it once or not at all. The
+ * password is not answered at all, because whoever typed it already has it.
  */
-export async function writeFirstCaller(etc: string, id: string, name: string): Promise<string> {
-  if (!AN_ID.test(id)) {
-    throw new UnusableCredentials(
-      `${JSON.stringify(id)} is not an id - an id is up to 64 of letters, digits, dot, dash and underscore, beginning with a letter or a digit`,
-    );
-  }
-  if (name.trim() === '') {
-    throw new UnusableCredentials('a caller needs a name, which is what a log and a UI say');
-  }
+export async function writeFirstCaller(etc: string, id: string, name: string, password: string): Promise<string> {
+  requireAnId(id);
+  requireAName(name);
+  requireAPassword(password);
 
   const file = path.join(etc, CALLERS_FILE);
-  const token = randomBytes(TOKEN_BYTES).toString('hex');
+  const token = newToken();
+  const first: WrittenCaller = {
+    id,
+    name,
+    role: 'admin',
+    credentials: [
+      { kind: 'password', hash: await hashPassword(password) },
+      { kind: 'token', hash: digestOf(token) },
+    ],
+  };
 
   // The credentials directory is this command's to make - it is what setting a machine up MEANS,
   // where the spool is the installer's because work put somewhere nobody is looking is work lost.
   await mkdir(etc, { recursive: true, mode: DIRECTORY_MODE });
 
   try {
-    // AIDEV-NOTE: 'wx' rather than a look and then a write. This file holds every token the shop
-    // knows, so writing over one would revoke every caller at once and orphan every job their ids
-    // own - and asking first leaves a window in which two of these both find nothing.
-    await writeFile(file, `${JSON.stringify([{ id, name, role: 'admin', token }], null, 2)}\n`, { mode: FILE_MODE, flag: 'wx' });
+    // AIDEV-NOTE: 'wx' rather than a look and then a write. This file holds every credential the
+    // shop knows, so writing over one would revoke every caller at once and orphan every job their
+    // ids own - and asking first leaves a window in which two of these both find nothing.
+    await writeFile(file, `${JSON.stringify([first], null, 2)}\n`, { mode: FILE_MODE, flag: 'wx' });
   } catch (failure) {
     if ((failure as NodeJS.ErrnoException).code !== 'EEXIST') throw failure;
 
-    throw new AlreadyHasCallers(`${file} is already there, and it holds every token this shop knows - so this will not write over it`);
+    throw new AlreadyHasCallers(`${file} is already there, and it holds every credential this shop knows - so this will not write over it`);
   }
 
   return token;
 }
 
+// AIDEV-NOTE: every change to this file goes through here - read, change, write beside and rename
+// over. Read first so that a change made while the shop is running is made to what is THERE rather
+// than to what this process last saw, and renamed over so a crash part way through cannot leave a
+// shop with a file naming nobody, which is a shop that will not start.
+async function changeCallers(etc: string, changing: (known: WrittenCaller[]) => Promise<WrittenCaller[]>): Promise<void> {
+  const file = path.join(etc, CALLERS_FILE);
+  const known = (await callersIn(etc)).all().map(({ caller, credentials }) => ({ ...caller, credentials }));
+  const changed = await changing(known);
+
+  const being = `${file}.new`;
+  await writeFile(being, `${JSON.stringify(changed, null, 2)}\n`, { mode: FILE_MODE });
+  await rename(being, file);
+}
+
+/** Add somebody this shop may answer, with a password for a person or a token for a machine. */
+export async function addCaller(etc: string, id: string, name: string, role: Role, password?: string): Promise<string | undefined> {
+  requireAnId(id);
+  requireAName(name);
+  if (password !== undefined) requireAPassword(password);
+
+  const token = password === undefined ? newToken() : undefined;
+
+  await changeCallers(etc, async (known) => {
+    if (known.some((caller) => caller.id === id)) {
+      throw new UnusableCredentials(`${id} is already somebody this shop knows - a second would own the first one's jobs`);
+    }
+
+    const credentials =
+      password === undefined
+        ? [{ kind: 'token' as const, hash: digestOf(token as string) }]
+        : [{ kind: 'password' as const, hash: await hashPassword(password) }];
+
+    return [...known, { id, name, role, credentials }];
+  });
+
+  return token;
+}
+
 /**
- * Who may talk to this shop, by the token they present.
+ * Set what a caller logs in with, replacing whatever password they had.
  *
- * Keyed by token because that is all a request carries; the id, name and role are what it buys.
+ * Their tokens are left alone: a password is a person's and a token is a machine's, and changing
+ * one is not a reason to go round every machine they slice with.
  */
-export async function callersIn(etc: string = defaultEtc()): Promise<Map<string, Caller>> {
+export async function setPassword(etc: string, id: string, password: string): Promise<void> {
+  requireAPassword(password);
+
+  await changeCallers(etc, async (known) => {
+    const caller = known.find((held) => held.id === id);
+    if (caller === undefined) throw new UnusableCredentials(`${id} is nobody this shop knows`);
+
+    const hash = await hashPassword(password);
+    const rest = caller.credentials.filter(({ kind }) => kind !== 'password');
+
+    return known.map((held) => (held.id === id ? { ...held, credentials: [{ kind: 'password' as const, hash }, ...rest] } : held));
+  });
+}
+
+/**
+ * Issue a caller another token, and answer with it - said once here and stored as a digest.
+ *
+ * Another, not a replacement: a caller may have one per machine, and the point of a list is that
+ * losing a laptop costs that laptop's token rather than everything the person can reach.
+ */
+export async function issueToken(etc: string, id: string): Promise<string> {
+  const token = newToken();
+
+  await changeCallers(etc, (known) => {
+    const caller = known.find((held) => held.id === id);
+    if (caller === undefined) throw new UnusableCredentials(`${id} is nobody this shop knows`);
+
+    const given = { kind: 'token' as const, hash: digestOf(token) };
+
+    return Promise.resolve(known.map((held) => (held.id === id ? { ...held, credentials: [...held.credentials, given] } : held)));
+  });
+
+  return token;
+}
+
+// AIDEV-NOTE: the one thing that reads the OLD shape, which `callersIn` refuses - a token in the
+// clear. It hashes what is there and writes the file back, so every caller keeps the token they
+// already hold and nothing has to be reissued to anybody. It is also the only thing here that can
+// see a token in the clear, which is the point of doing it once and never again.
+/** Turn a file of plaintext tokens into one of hashes, keeping every token that is in it. */
+export async function migrateCallers(etc: string): Promise<number> {
+  const file = path.join(etc, CALLERS_FILE);
+  const listed = await readOnlyByItsOwner(file);
+
+  if (!Array.isArray(listed)) throw new UnusableCredentials(`${file} is not a list of callers`);
+
+  let hashed = 0;
+  const migrated = (listed as unknown[]).map((entry) => {
+    const { token, credentials, ...caller } = (entry ?? {}) as Record<string, unknown> & { token?: unknown; credentials?: unknown };
+    if (typeof token !== 'string' || token.trim() === '') return entry as WrittenCaller;
+
+    hashed += 1;
+    const already = Array.isArray(credentials) ? (credentials as WrittenCaller['credentials']) : [];
+
+    return { ...caller, credentials: [...already, { kind: 'token' as const, hash: digestOf(token) }] } as WrittenCaller;
+  });
+
+  const being = `${file}.new`;
+  await writeFile(being, `${JSON.stringify(migrated, null, 2)}\n`, { mode: FILE_MODE });
+  await rename(being, file);
+
+  return hashed;
+}
+
+function requireAnId(id: string): void {
+  if (!AN_ID.test(id)) {
+    throw new UnusableCredentials(
+      `${JSON.stringify(id)} is not an id - an id is up to 64 of letters, digits, dot, dash and underscore, beginning with a letter or a digit`,
+    );
+  }
+}
+
+function requireAName(name: string): void {
+  if (name.trim() === '') throw new UnusableCredentials('a caller needs a name, which is what a log and a UI say');
+}
+
+// AIDEV-NOTE: a length and nothing else. Everything else a rule could demand - a digit, a symbol, a
+// capital - is known to push people towards `Password1!` and towards writing it down, and this file
+// is read by one shop in one workshop. Length is the thing that actually costs an attacker.
+const SHORTEST_PASSWORD = 12;
+
+function requireAPassword(password: string): void {
+  if (password.length < SHORTEST_PASSWORD) {
+    throw new UnusableCredentials(`a password is at least ${SHORTEST_PASSWORD} characters, which is the only rule there is`);
+  }
+}
+
+// AIDEV-NOTE: a credential hangs off an identity rather than BEING one, and there may be several -
+// a person's password and the token on the machine they slice with are two ways in for one owner,
+// and a job either submits belongs to the same id. That is what the old shape could not say: a
+// token WAS the caller, so a second token meant a second person, and every job the first one
+// submitted was a stranger's work to the second.
+//
+// Nothing here is stored as it was presented. A token is a digest, because 32 random bytes of this
+// shop's own making cannot be guessed and the only job of the hash is that the file cannot be read
+// back into a way in. A password is scrypt, because a person chose it. See secrets.ts.
+export interface StoredCredential {
+  kind: 'token' | 'password';
+  hash: string;
+}
+
+/** A caller, and what they may present to be recognised as one. */
+export interface HeldCaller {
+  caller: Caller;
+  credentials: StoredCredential[];
+}
+
+// AIDEV-NOTE: built once, from the file, and asked rather than searched. A token is found by the
+// digest of what was presented, which is a map lookup - putting scrypt in front of that would have
+// meant a memory-hard function on every request this shop ever answers.
+/** Who may talk to this shop, and what each of them may present. */
+export class Callers {
+  private readonly byDigest = new Map<string, Caller>();
+  private readonly byId = new Map<string, HeldCaller>();
+
+  constructor(held: readonly HeldCaller[]) {
+    for (const holding of held) {
+      this.byId.set(holding.caller.id, holding);
+      for (const credential of holding.credentials) {
+        if (credential.kind === 'token') this.byDigest.set(credential.hash, holding.caller);
+      }
+    }
+  }
+
+  get size(): number {
+    return this.byId.size;
+  }
+
+  /** Whoever presents this token, or nobody - which is what an unknown token IS. */
+  presenting(token: string): Caller | undefined {
+    return this.byDigest.get(digestOf(token));
+  }
+
+  /** The caller with this id, and the password they would be recognised by if they have one. */
+  named(id: string): { caller: Caller; password?: string } | undefined {
+    const holding = this.byId.get(id);
+    if (holding === undefined) return undefined;
+
+    return { caller: holding.caller, password: holding.credentials.find(({ kind }) => kind === 'password')?.hash };
+  }
+
+  /** Everyone this shop knows, for an operator asking who that is. */
+  all(): { caller: Caller; credentials: StoredCredential[] }[] {
+    return [...this.byId.values()].map(({ caller, credentials }) => ({ caller, credentials: [...credentials] }));
+  }
+}
+
+/**
+ * Who may talk to this shop, and what each of them may present.
+ *
+ * Keyed by nothing a request carries: a token is recognised by its digest and a password by the
+ * hash it was made from, and neither is stored as it was given.
+ */
+export async function callersIn(etc: string = defaultEtc()): Promise<Callers> {
   const file = path.join(etc, CALLERS_FILE);
   const listed = await readOnlyByItsOwner(file);
 
   if (listed === MISSING) {
     throw new UnusableCredentials(
-      `${file} is not there, and every route names its caller - so this shop cannot run until it lists them, each with an id, a name, a role and a token`,
+      `${file} is not there, and every route names its caller - so this shop cannot run until it lists them, each with an id, a name, a role and the credentials they may present`,
     );
   }
 
   if (!Array.isArray(listed)) {
-    throw new UnusableCredentials(`${file} is a list of callers, each with an id, a name, a role and a token`);
+    throw new UnusableCredentials(`${file} is a list of callers, each with an id, a name, a role and the credentials they may present`);
   }
 
-  const callers = new Map<string, Caller>();
+  const held: HeldCaller[] = [];
   const named = new Map<string, string>();
+  const presenting = new Map<string, string>();
 
   for (const entry of listed as unknown[]) {
-    const { id, name, role, token } = (entry ?? {}) as { id?: unknown; name?: unknown; role?: unknown; token?: unknown };
+    const { id, name, role, token, credentials } = (entry ?? {}) as {
+      id?: unknown;
+      name?: unknown;
+      role?: unknown;
+      token?: unknown;
+      credentials?: unknown;
+    };
 
     if (typeof id !== 'string' || !AN_ID.test(id)) {
       throw new UnusableCredentials(
@@ -122,8 +330,51 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Map<string,
     if (role !== 'admin' && role !== 'user') {
       throw new UnusableCredentials(`${file} gives ${name} the role ${JSON.stringify(role)}, and a role is "admin" or "user"`);
     }
-    if (typeof token !== 'string' || token.trim() === '') {
-      throw new UnusableCredentials(`${file} gives ${name} no token`);
+
+    // AIDEV-NOTE: the old shape, refused rather than read. It held a token in the CLEAR, and a shop
+    // that went on accepting one would keep every install that has ever run on plaintext for ever -
+    // which is the fault nobody notices, because everything works. Named with the command that
+    // fixes it, because this stops a shop from starting and the operator is holding the file.
+    if (token !== undefined) {
+      throw new UnusableCredentials(
+        `${file} gives ${name} a token in the clear, which this shop no longer reads - run "3d-print-shop callers migrate" to hash what is there`,
+      );
+    }
+
+    if (!Array.isArray(credentials)) {
+      throw new UnusableCredentials(`${file} gives ${name} no credentials, and a credential is what a caller presents to be recognised`);
+    }
+
+    const held_credentials: StoredCredential[] = [];
+
+    for (const credential of credentials as unknown[]) {
+      const { kind, hash } = (credential ?? {}) as { kind?: unknown; hash?: unknown };
+
+      if (kind !== 'token' && kind !== 'password') {
+        throw new UnusableCredentials(`${file} gives ${name} a credential of kind ${JSON.stringify(kind)}, and a kind is "token" or "password"`);
+      }
+      if (typeof hash !== 'string' || hash.trim() === '') {
+        throw new UnusableCredentials(`${file} gives ${name} a ${kind} with nothing stored for it`);
+      }
+
+      // A password is what a PERSON presents, and two of them would mean either might let somebody
+      // in - which is one more way in than anybody meant to leave open.
+      if (kind === 'password' && held_credentials.some((already) => already.kind === 'password')) {
+        throw new UnusableCredentials(`${file} gives ${name} two passwords, and a person has one`);
+      }
+
+      // AIDEV-NOTE: a token shared by two callers would resolve to whichever was read last, so every
+      // line the loser wrote would be attributed to the winner. That is an audit trail that lies,
+      // which is worse than none - so it is refused rather than resolved.
+      if (kind === 'token') {
+        const already = presenting.get(hash);
+        if (already !== undefined) {
+          throw new UnusableCredentials(`${file} gives ${name} and ${already} the same token, so neither could be told apart`);
+        }
+        presenting.set(hash, name);
+      }
+
+      held_credentials.push({ kind, hash });
     }
 
     // AIDEV-NOTE: two callers on one id are one owner, and every job either submits belongs to both
@@ -134,19 +385,11 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Map<string,
       throw new UnusableCredentials(`${file} gives the id ${id} to both ${sharing} and ${name}, so a job could not say which of them owns it`);
     }
 
-    // AIDEV-NOTE: a token shared by two callers would resolve to whichever was read last, so every
-    // line the loser wrote would be attributed to the winner. That is an audit trail that lies,
-    // which is worse than none - so it is refused rather than resolved.
-    const already = callers.get(token);
-    if (already) {
-      throw new UnusableCredentials(`${file} gives ${name} and ${already.name} the same token, so neither could be told apart`);
-    }
-
     named.set(id, name);
-    callers.set(token, { id, name, role });
+    held.push({ caller: { id, name, role }, credentials: held_credentials });
   }
 
-  return callers;
+  return new Callers(held);
 }
 
 // AIDEV-NOTE: the answer to "how does a credential get changed without stopping the shop". SIGHUP is
@@ -159,7 +402,7 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Map<string,
  * shop that answers nobody because of a stray comma - which revokes every caller at once, including
  * the operator who would then have to get back in to fix it.
  */
-export async function rereadCallers(etc: string, keeping: ReadonlyMap<string, Caller>, log: Log): Promise<ReadonlyMap<string, Caller>> {
+export async function rereadCallers(etc: string, keeping: Callers, log: Log): Promise<Callers> {
   try {
     const callers = await callersIn(etc);
     log.info('callers re-read', { etc, callers: callers.size });

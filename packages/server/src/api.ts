@@ -5,7 +5,11 @@ import type { Server } from 'node:http';
 import { InvalidSubmission } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
 import { NoSuchJob, NoSuchPrinter, SpoolUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
+import { Attempts } from './attempts.js';
+import type { Callers } from './credentials.js';
 import type { Caller } from './credentials.js';
+import { hashPassword, isThePassword, newToken } from './secrets.js';
+import { LONGEST_MS, SESSION_COOKIE, Sessions } from './sessions.js';
 import { silent } from './log.js';
 import type { Log } from './log.js';
 import type { JobStore } from './JobStore.js';
@@ -60,6 +64,14 @@ export class NotAKnownCaller extends Error {}
 /** A caller this shop knows, asking for something their role does not cover. */
 export class NotTheirs extends Error {}
 
+/** Too many wrong passwords, too quickly. Says how long rather than what was wrong with them. */
+export class TooManyGuesses extends Error {}
+
+/** Where a browser logs in and out. The one route a caller reaches before the shop knows them. */
+export const SESSIONS_PATH = '/sessions';
+
+
+
 // AIDEV-NOTE: a role is AUTHORITY, and ownership is what is THEIRS - two different questions, and
 // this list answers only the first. Whether a caller may see a particular job is `theirs()` below,
 // asked inside the routes that name one, because it depends on the job rather than on the route.
@@ -104,6 +116,32 @@ function theirs(caller: Caller, job: Job): boolean {
   return caller.role === 'admin' || job.owner === caller.id;
 }
 
+// AIDEV-NOTE: parsed here rather than by a dependency, because it is one header and one name, and
+// what a cookie parser would add is a place for a second opinion about what a cookie is.
+function cookieIn(header: string | undefined, name: string): string | undefined {
+  for (const said of (header ?? '').split(';')) {
+    const at = said.indexOf('=');
+    if (at > 0 && said.slice(0, at).trim() === name) return decodeURIComponent(said.slice(at + 1).trim());
+  }
+
+  return undefined;
+}
+
+// AIDEV-NOTE: a browser sends `Origin` on every request that is not a plain navigation, so a write
+// carrying a session and no origin is not a browser doing what browsers do - which is what makes
+// refusing it safe. Compared against the Host the request arrived at rather than anything
+// configured: the shop does not know its own name, and whatever reached it is what a page served by
+// it would say.
+function requireItCameFromHere(request: Request): void {
+  const origin = request.header('origin');
+  if (origin === undefined) throw new NotTheirs('a write carrying a session has to say where it came from');
+
+  const host = request.header('host');
+  if (host === undefined || new URL(origin).host !== host) {
+    throw new NotTheirs(`${origin} is not this shop, so a session from it is not one to act on`);
+  }
+}
+
 function tokenIn(header: string | undefined): string | undefined {
   const said = /^Bearer (.+)$/.exec(header ?? '');
 
@@ -128,9 +166,13 @@ export interface ShopHooks {
   /** Give a printer its key: written where the shop keeps them, and in force from that moment. */
   keyGiven?: (printer: string, key: string) => Promise<void>;
   // Asked per request rather than handed over once: the shop re-reads its callers on SIGHUP, so a
-  // token added or revoked while it runs has to be the one the next request is judged against.
-  /** Who may talk to this shop, by their token. Every request names one of them, or is refused. */
-  callers: () => ReadonlyMap<string, Caller>;
+  // credential added or revoked while it runs is the one the next request is judged against.
+  /** Who may talk to this shop. Every request names one of them, or is refused. */
+  callers: () => Callers;
+  // AIDEV-NOTE: handed in only so that a test can hold a clock. A session belongs to the process
+  // that is serving, not to anything outside it - there is nowhere else for one to live.
+  /** Where the sessions a browser holds are kept. Its own, unless a caller wants to watch the time. */
+  sessions?: Sessions;
   /** Where the running service writes down what it did. Silent unless somebody supplies one. */
   log?: Log;
 }
@@ -139,6 +181,8 @@ declare module 'express-serve-static-core' {
   interface Request {
     /** Who is asking. Set before any route is reached, because no route answers a caller without one. */
     caller: Caller;
+    /** The session they carried, when it was a session rather than a token that named them. */
+    session?: string;
   }
 }
 
@@ -150,6 +194,14 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   const started = hooks.started ?? ((): void => undefined);
   const callers = hooks.callers;
   const keyGiven = hooks.keyGiven;
+  const sessions = hooks.sessions ?? new Sessions();
+  const attempts = new Attempts();
+
+  // AIDEV-NOTE: a hash of something nobody knows, to be checked against when there is nobody of the
+  // name somebody logged in with - so that an unknown name costs the same 50ms as a wrong password
+  // and the fast refusals are not a list of which names exist. Made once per shop and never
+  // written down, because nothing ever has to match it.
+  const nobody = hashPassword(newToken());
   const log = hooks.log ?? silent;
 
   // AIDEV-NOTE: first, so it covers the requests the next middleware REFUSES - a shop being asked
@@ -178,20 +230,95 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     next();
   });
 
-  // AIDEV-NOTE: before everything, so no route has to remember. There is no anonymous mode, not even
-  // on loopback: a shop that answered an unnamed request is one where a job has no submitter to
+  // AIDEV-NOTE: BEFORE the guard, and the only route that is - there is nowhere else for somebody
+  // with a password and no session to start. Everything about it is deliberately slow and vague: one
+  // answer for a name nobody has and for a password that is wrong, a wait that widens with every
+  // miss, and scrypt in the middle whatever happens, so that "how long did it take" says nothing
+  // either.
+  api.post(SESSIONS_PATH, async (request, response) => {
+    const { id, password } = bodyOf(request);
+    if (typeof id !== 'string' || typeof password !== 'string') throw new UnusableRequest('a login is an id and a password');
+
+    const from = request.ip ?? 'nowhere';
+    const waiting = attempts.mustWait(`id:${id}`, `from:${from}`);
+    if (waiting > 0) {
+      log.info('a login was turned away for asking too often', { id, from, seconds: Math.ceil(waiting / 1000) });
+      throw new TooManyGuesses(`too many tries - wait ${Math.ceil(waiting / 1000)} seconds`);
+    }
+
+    const known = callers().named(id);
+
+    // AIDEV-NOTE: hashed even when there is nobody of that name, against a hash of nothing - so that
+    // a name this shop does not know takes exactly as long to refuse as a password that is wrong.
+    // Without it, the fast refusals are a list of which names exist.
+    const right = known?.password !== undefined && (await isThePassword(password, known.password));
+
+    if (!right) {
+      if (known?.password === undefined) await isThePassword(password, await nobody);
+      attempts.wasWrong(`id:${id}`, `from:${from}`);
+      log.info('a login was refused', { id, from });
+
+      throw new NotAKnownCaller('that is not a name and a password this shop knows');
+    }
+
+    attempts.wasRight(`id:${id}`, `from:${from}`);
+    const secret = sessions.begin(known.caller.id);
+    log.info('somebody logged in', { caller: known.caller.name, from });
+
+    // AIDEV-NOTE: HttpOnly so that a script on the page cannot read it, which is the whole reason
+    // this is a cookie rather than something the page keeps - an XSS that can read a token has the
+    // token. SameSite=Strict so that a form on another site cannot post here carrying it, which is
+    // most of what CSRF is. Secure only when the request actually arrived over TLS, because a shop
+    // on loopback http would otherwise set a cookie the browser refuses to send back.
+    response.cookie(SESSION_COOKIE, secret, {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: request.secure,
+      path: '/',
+      maxAge: LONGEST_MS,
+    });
+
+    response.status(201).json(known.caller);
+  });
+
+  // AIDEV-NOTE: before everything else, so no route has to remember. There is no anonymous mode, not
+  // even on loopback: a shop that answered an unnamed request is one where a job has no submitter to
   // belong to, so the case is removed rather than handled - `callersIn` refuses to read a shop into
   // existence without callers. Who asked is put on the request rather than used here: the log has
   // nowhere to write it yet, and a name in an ANSWER would tell a stranger which names exist.
+  //
+  // Two ways in, and they are not the same kind of thing. A SESSION is a browser's, issued by this
+  // shop and expiring; a TOKEN is a machine's, configured by a person and lasting until somebody
+  // takes it away. A session is looked at first because a browser carrying both is a browser that
+  // logged in.
   api.use((request, _response, next) => {
-    const caller = callers().get(tokenIn(request.header('authorization')) ?? '');
+    const session = cookieIn(request.header('cookie'), SESSION_COOKIE);
+    const whose = session === undefined ? undefined : sessions.whose(session);
+    const caller = whose === undefined ? callers().presenting(tokenIn(request.header('authorization')) ?? '') : callers().named(whose)?.caller;
+
     if (caller === undefined) throw new NotAKnownCaller('this shop does not know that token');
+
+    // AIDEV-NOTE: the second half of what SameSite is for, and it is here because SameSite is a
+    // rule the BROWSER keeps - this is the shop keeping it too. A cookie is sent by whatever page
+    // asked, so a write that arrived with one has to have come from this shop's own page; a token
+    // is not sent by a browser on anybody's behalf and needs none of this.
+    if (whose !== undefined && request.method !== 'GET') requireItCameFromHere(request);
+
     if (needsAdmin(request.method, request.path) && caller.role !== 'admin') {
       throw new NotTheirs(`${request.method} ${request.path} is for an admin, and ${caller.name} is not one`);
     }
 
     request.caller = caller;
+    request.session = session;
     next();
+  });
+
+  /** Logging out, which is the session ending rather than the browser forgetting it. */
+  api.delete(SESSIONS_PATH, (request, response) => {
+    if (request.session !== undefined) sessions.end(request.session);
+    response.clearCookie(SESSION_COOKIE, { path: '/' });
+
+    response.status(204).end();
   });
 
   // AIDEV-NOTE: told once, here, for every request that CHANGED something - rather than from each
@@ -631,6 +758,7 @@ function statusFor(error: unknown): number {
   // client's, and a client that retries later is doing the right thing.
   if (error instanceof SpoolUnavailable) return 503;
   if (error instanceof NotAKnownCaller) return 401;
+  if (error instanceof TooManyGuesses) return 429;
   if (error instanceof NotTheirs) return 403;
   if (error instanceof TooMuchToTake) return 413;
   if (error instanceof InvalidSubmission || error instanceof UnusableRequest) return 400;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { HttpShop } from '@3d-print-shop/client/browser';
+import { HttpShop, NotAuthenticated } from '@3d-print-shop/client/browser';
 import type { Caller, Job, RegisteredPrinter } from '@3d-print-shop/client/browser';
 
 /** How often the shop is asked again. It has no way to tell a browser that something changed. */
@@ -9,8 +9,10 @@ export interface ShopView {
   printers: RegisteredPrinter[];
   jobs: Job[];
   totalJobs: number;
-  /** Who the shop takes this token to be, which is what says whether to offer an admin's commands. */
+  /** Who the shop takes this browser to be, which is what says whether to offer an admin's commands. */
   caller?: Caller;
+  /** The shop does not know this browser: what there is to do about it is log in. */
+  strangers: boolean;
   /** The shop itself, for the things a person DOES here rather than watches. */
   shop: HttpShop;
   /** Ask now rather than at the next tick - what a change made from this page waits on. */
@@ -23,14 +25,18 @@ export interface ShopView {
 
 type Answers = Omit<ShopView, 'shop' | 'askAgain'>;
 
-const NOTHING: Answers = { printers: [], jobs: [], totalJobs: 0, answered: false };
+const NOTHING: Answers = { printers: [], jobs: [], totalJobs: 0, answered: false, strangers: false };
 
 // AIDEV-NOTE: polled, because the API has no way to push - every route is a question a client asks.
 // A failed ask leaves the last good answer on the screen and says what went wrong beside it: a shop
 // being restarted should not blank the wall display somebody is watching a print on.
-export function useShop(token: string, url = ''): ShopView {
+export function useShop(url = ''): ShopView {
   const [view, setView] = useState<Answers>(NOTHING);
-  const shop = useMemo(() => new HttpShop(url, token), [token, url]);
+
+  // AIDEV-NOTE: no token. A browser is named by the session cookie the shop set when somebody logged
+  // in, which this page never sees - so there is nothing here to hold, and nothing for a script that
+  // got into the page to steal.
+  const shop = useMemo(() => new HttpShop(url), [url]);
 
   // AIDEV-NOTE: who the caller is is asked EVERY time rather than once, because a role is not fixed
   // for the life of a page: the shop re-reads its callers on SIGHUP, so a token can be downgraded or
@@ -40,8 +46,17 @@ export function useShop(token: string, url = ''): ShopView {
     try {
       const [caller, printers, held] = await Promise.all([shop.whoAmI(), shop.printers(), shop.jobs()]);
 
-      setView({ caller, printers, jobs: held.accessibleJobs, totalJobs: held.totalJobs, answered: true });
+      setView({ caller, printers, jobs: held.accessibleJobs, totalJobs: held.totalJobs, answered: true, strangers: false });
     } catch (failure) {
+      // AIDEV-NOTE: being a stranger is not trouble - it is the ordinary state of a browser nobody
+      // has logged in on, and of one whose session has expired while it sat there. Both want a
+      // login rather than an error, and what is on the screen is cleared because it is no longer
+      // this caller's to see.
+      if (failure instanceof NotAuthenticated) {
+        setView({ ...NOTHING, answered: true, strangers: true });
+        return;
+      }
+
       setView((last) => ({ ...last, trouble: (failure as Error).message, answered: true }));
     }
   }, [shop]);

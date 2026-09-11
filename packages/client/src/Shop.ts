@@ -17,8 +17,16 @@ export interface Shop {
   // whoever asked. It exists because a client showing a person what they may do has to know what
   // that is, and the alternative - offer everything, let the refusal teach them - is a UI that
   // hands an operator a button and then says no.
-  /** Who the shop takes this caller to be, by the token they presented. */
+  /** Who the shop takes this caller to be, by what they presented. */
   whoAmI(): Promise<Caller>;
+
+  // AIDEV-NOTE: a person logs in; a program presents a token and never touches these. Two kinds of
+  // credential for two kinds of caller, both hanging off one identity - a slicer and the person who
+  // owns it are the same owner, and the jobs either submits belong to the same id.
+  /** Log in with a password, for a caller who is a person rather than a program. */
+  logIn(id: string, password: string): Promise<Caller>;
+  /** End the session, at the shop rather than only in the browser holding it. */
+  logOut(): Promise<void>;
 
   /**
    * What this caller may see, and how many jobs the shop holds altogether. An admin sees a list as
