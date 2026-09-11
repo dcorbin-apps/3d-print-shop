@@ -5,6 +5,8 @@
   --raised: #1d232a;
   --edge: #2c343d;
   --live: #4ea3ff;
+  /* The same blue, darker: what the edges of the mark are drawn in, so a cube reads as one. */
+  --live-edge: #3e82cc;
   --wants-somebody: #ffb547;
   --wrong: #ff6b6b;
   --gallery-height: 250px;
@@ -48,8 +50,15 @@ body {
 }
 
 .banner .mark {
-  font-size: 26px;
+  width: 26px;
+  height: 26px;
   color: var(--live);
+}
+
+/* In the stylesheet rather than on the element: a var() in an SVG presentation attribute is not
+   something every renderer resolves, and every other colour here is a token anyway. */
+.banner .mark .edges {
+  stroke: var(--live-edge);
 }
 
 .banner h1 {
