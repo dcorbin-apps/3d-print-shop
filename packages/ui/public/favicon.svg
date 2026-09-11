@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- The same cube as the banner's, seen from above. Its colours are written out rather than taken
+       from a token: a favicon is fetched on its own and has no stylesheet to read one from. -->
+  <polygon points="12,1 21.5,6.5 21.5,17.5 12,23 2.5,17.5 2.5,6.5" fill="#4ea3ff"/>
+  <g fill="none" stroke="#3e82cc" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <polygon points="12,1 21.5,6.5 21.5,17.5 12,23 2.5,17.5 2.5,6.5"/>
+    <path d="M12 12 L12 23 M12 12 L2.5 6.5 M12 12 L21.5 6.5"/>
+  </g>
+</svg>

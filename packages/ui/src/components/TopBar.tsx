@@ -40,15 +40,20 @@ export function TopBar({ summary, trouble, caller, onOut }: TopBarProps): React.
 // are the only thing that says so - without them it is a flat shape that happens to have six sides.
 // Drawn rather than a character, because no glyph has those edges. Decorative, so it is hidden from
 // anything reading the page out: the heading beside it already says what this is.
+//
+// AIDEV-NOTE: which three corners decides whether this is a cube seen from ABOVE or from below, and
+// they are not interchangeable. To the bottom corner and the two upper ones puts the top face
+// towards the viewer, which is how a person stands over a printer. The other three - which this had
+// - show the underside, and read as looking up at something on a shelf.
 function Cube(): React.JSX.Element {
-  const face = 'M12 12 L12 1 M12 12 L21.5 17.5 M12 12 L2.5 17.5';
+  const edges = 'M12 12 L12 23 M12 12 L2.5 6.5 M12 12 L21.5 6.5';
 
   return (
     <svg className="mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <polygon points="12,1 21.5,6.5 21.5,17.5 12,23 2.5,17.5 2.5,6.5" fill="currentColor" />
       <g className="edges" fill="none" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
         <polygon points="12,1 21.5,6.5 21.5,17.5 12,23 2.5,17.5 2.5,6.5" />
-        <path d={face} />
+        <path d={edges} />
       </g>
     </svg>
   );
