@@ -321,9 +321,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 12px;
   color: var(--dim);
 }
 
@@ -443,9 +441,7 @@ body {
 
 .log-in label {
   margin-top: 8px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 12px;
   color: var(--dim);
 }
 

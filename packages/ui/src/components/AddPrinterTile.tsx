@@ -72,21 +72,21 @@ export function AddPrinterTile({ onAdd }: AddPrinterTileProps): React.JSX.Elemen
       }}
     >
       <label>
-        name
+        Name
         <input value={typed.name} onChange={said('name')} autoFocus />
       </label>
 
       <label>
-        build volume in mm
+        Build volume in mm
         <span className="volume">
-          <input value={typed.x} onChange={said('x')} inputMode="numeric" aria-label="width" placeholder="250" />
-          <input value={typed.y} onChange={said('y')} inputMode="numeric" aria-label="depth" placeholder="210" />
-          <input value={typed.z} onChange={said('z')} inputMode="numeric" aria-label="height" placeholder="220" />
+          <input value={typed.x} onChange={said('x')} inputMode="numeric" aria-label="Width" placeholder="250" />
+          <input value={typed.y} onChange={said('y')} inputMode="numeric" aria-label="Depth" placeholder="210" />
+          <input value={typed.z} onChange={said('z')} inputMode="numeric" aria-label="Height" placeholder="220" />
         </span>
       </label>
 
       <label>
-        address
+        Address
         <input value={typed.address} onChange={said('address')} placeholder="http://octopi.local" />
       </label>
 
@@ -94,7 +94,7 @@ export function AddPrinterTile({ onAdd }: AddPrinterTileProps): React.JSX.Elemen
           reading one back - the shop answers with the printer, never with the key. It is written
           where the shop keeps its keys and is in force at once; nothing has to be signalled. */}
       <label>
-        api key
+        API key
         <input type="password" value={typed.key} onChange={said('key')} autoComplete="off" />
       </label>
 
