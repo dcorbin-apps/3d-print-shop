@@ -16,7 +16,7 @@ import type { RegisteredPrinter } from '../src/Printer';
 // is written down and then write more down. The MACHINES are mocked - there is no printer here -
 // and that is the only seam.
 describe('the foreman', () => {
-  let spool: string;
+  let dataRoot: string;
   let shop: JobStore;
   let foreman: Foreman;
   let mockSend: jest.Mock<(remotePath: string, gcode: Readable) => Promise<string>>;
@@ -56,7 +56,7 @@ describe('the foreman', () => {
   }
 
   // AIDEV-NOTE: every foreman this file makes, remembered so that the teardown can stop it. One that
-  // is still watching is one still WRITING, and the teardown deletes the spool out from under it -
+  // is still watching is one still WRITING, and the teardown deletes the data directory out from under it -
   // which surfaces as `ENOTEMPTY` from rmdir, in whichever test was unlucky, about one full run in
   // eight. A test that starts something is a test that has to stop it.
   const foremen: Foreman[] = [];
@@ -75,8 +75,8 @@ describe('the foreman', () => {
   let stopWaiting: () => void;
 
   beforeEach(async () => {
-    spool = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-foreman-'));
-    shop = new JobStore(spool);
+    dataRoot = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-foreman-'));
+    shop = new JobStore(dataRoot);
 
     mockSend = jest.fn<(remotePath: string, gcode: Readable) => Promise<string>>().mockImplementation((remotePath) => Promise.resolve(remotePath));
     // Never settles unless a test says so: a print that is still running is the ordinary case.
@@ -103,7 +103,7 @@ describe('the foreman', () => {
     await Promise.all(foremen.map((made) => made.watchersSettled()));
     foremen.length = 0;
 
-    await fs.rm(spool, { recursive: true, force: true });
+    await fs.rm(dataRoot, { recursive: true, force: true });
   });
 
   // AIDEV-NOTE: the machine's half of the story. The shop runs unattended for hours, and without
@@ -242,7 +242,7 @@ describe('the foreman', () => {
       await foreman.considerStarting();
       mockAwaitOutcome.mockResolvedValue('finished');
 
-      await aForeman(new JobStore(spool), mockReach).resumeWatching();
+      await aForeman(new JobStore(dataRoot), mockReach).resumeWatching();
 
       await until(jobIs(id, 'awaiting-approval'));
     });
@@ -756,7 +756,7 @@ describe('the foreman', () => {
     });
 
     it('tries a machine it finds already out of reach', async () => {
-      const restarted = aForeman(new JobStore(spool), mockReach, silent, () => clock);
+      const restarted = aForeman(new JobStore(dataRoot), mockReach, silent, () => clock);
 
       await restarted.reachForWhatIsLost();
 
@@ -784,7 +784,7 @@ describe('the foreman', () => {
     });
   });
 
-  // AIDEV-NOTE: a fault of the SHOP's - the store, the spool - rather than of the machine's. It used
+  // AIDEV-NOTE: a fault of the SHOP's - the store, the data directory - rather than of the machine's. It used
   // to stop the printer, along with everything else that could go wrong inside a start, which put an
   // operator in front of a stopped machine that was never the thing at fault.
   describe('when the shop itself is at fault', () => {
@@ -792,14 +792,14 @@ describe('the foreman', () => {
     let watched: Foreman;
 
     // The job's record goes between reading the queue and claiming the printer, so the failure lands
-    // where a store read or a spool that went away would: inside the start, past the machine.
+    // where a store read or a data directory that went away would: inside the start, past the machine.
     beforeEach(async () => {
       lines = [];
       watched = aForeman(shop, mockReach, toStdout(() => new Date(), (line) => lines.push(line)));
 
       const id = await submit();
       mockReach.mockImplementation(async (): Promise<Printer> => {
-        await fs.rm(path.join(spool, 'jobs', String(id)), { recursive: true, force: true });
+        await fs.rm(path.join(dataRoot, 'jobs', String(id)), { recursive: true, force: true });
 
         return { send: mockSend, awaitOutcome: mockAwaitOutcome };
       });

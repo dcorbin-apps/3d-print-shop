@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { SHOP_ROUTES } from '@3d-print-shop/client';
 import { InvalidSubmission } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
-import { NoSuchJob, NoSuchPrinter, SpoolUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
+import { NoSuchJob, NoSuchPrinter, DataUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
 import { Attempts } from './attempts.js';
 import type { Callers } from './credentials.js';
 import type { Caller } from './credentials.js';
@@ -29,7 +29,7 @@ export const LOOPBACK = '127.0.0.1';
 
 // AIDEV-NOTE: NOTHING here stops a large upload - there is no fileSize among these deliberately.
 // The store caps the gcode itself, at the byte it is already counting, and what that protects is the
-// spool: it IS the recovery model, so filling it loses every job the shop holds and not only the one
+// data directory: it IS the recovery model, so filling it loses every job the shop holds and not only
 // that overflowed. A second cap here would be a second place to get an off-by-one wrong, and busboy
 // raises 'limit' on REACHING fileSize rather than passing it - exactly that mistake waiting to
 // happen. The one size in this list is fieldSize, which bounds the description and nothing else.
@@ -38,7 +38,7 @@ export const LOOPBACK = '127.0.0.1';
 // rather than raising - which is what is wanted. A part beyond the count is ignored the same way a
 // part with an unknown name already is. What is deliberately NOT done is refusing the request when
 // one of them is hit: a count is reached after the gcode part has been read, and by then the job may
-// be committed, so a refusal would answer 413 with the job it denies sitting in the spool.
+// be committed, so a refusal would answer 413 with the job it denies sitting in the data directory.
 const SUBMISSION_LIMITS = {
   files: 1,
   fields: 4,
@@ -443,7 +443,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
 
   // Once, where a name ARRIVES, rather than at each route that takes one - the same reasoning as the
   // `changed` hook above. A per-route list is a list somebody forgets to add to, and what would be
-  // forgotten here is a recursive delete outside the spool. Mounted on the path, so `POST /printers`
+  // forgotten here is a recursive delete outside the data directory. Mounted on the path, so `POST /printers`
   // (which names a printer in its body, and is checked there) is not caught by it.
   api.use('/printers/:name', (request, _response, next) => {
     requireUsablePrinterName(request.params.name);
@@ -640,7 +640,7 @@ function jobId(raw: string): number {
   return id;
 }
 
-// AIDEV-NOTE: a printer's name becomes a DIRECTORY under the spool, and removePrinter() deletes that
+// AIDEV-NOTE: a printer's name becomes a DIRECTORY under the data root, and removePrinter() deletes that
 // directory recursively - so a name from a request is a path fragment a client chose. Express hands
 // over what the URL decoded to, and `..%2F..%2Fetc` arrives as `../../etc` (measured, not assumed),
 // as does a name carrying a NUL.
@@ -744,7 +744,7 @@ function printerIn(body: unknown): PrinterRecord {
 // AIDEV-NOTE: a refusal the shop MEANT says why - a printer that is not here, a bed nothing has room
 // for. A 500 is the one it did not mean, and its message is written by whatever actually broke:
 // node's filesystem errors carry the path they failed on, so a client asking for job 7 would be
-// handed the spool's location. Out goes a sentence saying where to look; the real one goes to the
+// handed the data directory's location. Out goes a sentence saying where to look; the real one goes to the
 // shop's log, which is what launchd and systemd capture.
 function explainRefusal(log: Log, error: unknown, _request: Request, response: Response, _next: NextFunction): void {
   const status = statusFor(error);
@@ -758,13 +758,13 @@ function explainRefusal(log: Log, error: unknown, _request: Request, response: R
     return;
   }
 
-  // AIDEV-NOTE: every SpoolUnavailable names the spool - it is not there, it has N bytes free, it is
+  // AIDEV-NOTE: every DataUnavailable names the directory - it is not there, it has N bytes free, it is
   // one somebody else could write - and that path is the whole of what an OPERATOR needs and none of
   // what a client does. Same split as the 500 above, for the same reason: the sentence goes to the
   // log, and what goes out is that the machine cannot answer just now. The exception keeps the path,
   // because the other reader of these is `serve` refusing to start, where it is all there is to say.
-  if (error instanceof SpoolUnavailable) {
-    log.error('the shop cannot use its spool', { why: (error as Error).message });
+  if (error instanceof DataUnavailable) {
+    log.error('the shop cannot use where it keeps its work', { why: (error as Error).message });
     response.status(status).json({ error: 'the shop cannot get at the work it keeps, and why is in its log' });
 
     return;
@@ -789,9 +789,9 @@ function onePrinterName(asked: unknown): string | undefined {
 function statusFor(error: unknown): number {
   if (error instanceof NoSuchJob || error instanceof NoSuchPrinter) return 404;
   if (error instanceof WrongState) return 409;
-  // A shop whose spool is not there was never installed. That is the machine's fault, not the
+  // A shop whose data directory is not there was never installed. That is the machine's fault, not the
   // client's, and a client that retries later is doing the right thing.
-  if (error instanceof SpoolUnavailable) return 503;
+  if (error instanceof DataUnavailable) return 503;
   if (error instanceof NotAKnownCaller) return 401;
   if (error instanceof TooManyGuesses) return 429;
   if (error instanceof NotTheirs) return 403;

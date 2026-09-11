@@ -8,7 +8,7 @@ export class UnreadableVolume extends Error {}
 // Everything here answers with LINES rather than printing, so it can be tested without a process
 // and so that whatever reaches it later - a GUI - is not stuck behind stdout.
 //
-// It goes through the API like every other client. It used to write the spool directly, which made
+// It goes through the API like every other client. It used to write the data directory directly, which
 // the command line a second writer over files the service was writing at the same time.
 
 // The shop answers before it stops, so this reports what it agreed to do rather than what it did.

@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { SPOOL_ROOT_ENV, defaultSpoolRoot } from '../src/spoolRoot';
+import { DATA_ROOT_ENV, defaultDataRoot } from '../src/dataRoot';
 
-describe('defaultSpoolRoot', () => {
+describe('defaultDataRoot', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env[SPOOL_ROOT_ENV];
+    delete process.env[DATA_ROOT_ENV];
   });
 
   afterEach(() => {
@@ -17,7 +17,7 @@ describe('defaultSpoolRoot', () => {
   // same occupants (cups, postfix, mqueue, uucp). One path, no platform branch. And not a per-user
   // directory: a service's work does not belong in the home of whoever happened to submit a job.
   it('keeps its work where a system keeps outstanding work', () => {
-    expect(defaultSpoolRoot()).toBe('/var/spool/3d-print-shop');
+    expect(defaultDataRoot()).toBe('/var/spool/3d-print-shop');
   });
 
   // For installs that do not want root - Homebrew keeps service state under its own prefix.
@@ -25,8 +25,8 @@ describe('defaultSpoolRoot', () => {
     ['/opt/homebrew/var/3d-print-shop'],
     ['/tmp/a-shop-for-testing'],
   ])('takes %s from the environment instead', (override) => {
-    process.env[SPOOL_ROOT_ENV] = override;
+    process.env[DATA_ROOT_ENV] = override;
 
-    expect(defaultSpoolRoot()).toBe(override);
+    expect(defaultDataRoot()).toBe(override);
   });
 });

@@ -13,7 +13,7 @@ import type { OctoPrint } from '../../src/OctoPrint';
 // is sent, and that reaching the same printer twice does not open a second.
 describe('reaching a printer', () => {
   let server: OctoPrintServer | undefined;
-  let spool: string;
+  let dataRoot: string;
   let shop: JobStore;
   let machines: OctoPrintMachines;
   let keys: Map<string, string>;
@@ -24,8 +24,8 @@ describe('reaching a printer', () => {
 
   beforeEach(async () => {
     keys = new Map([['mk4', 'a-key']]);
-    spool = await mkdtemp(path.join(tmpdir(), 'print-shop-machines-'));
-    shop = new JobStore(spool);
+    dataRoot = await mkdtemp(path.join(tmpdir(), 'print-shop-machines-'));
+    shop = new JobStore(dataRoot);
     machines = new OctoPrintMachines(() => keys);
 
     server = await startOctoPrintServer(0, () => undefined);
@@ -42,7 +42,7 @@ describe('reaching a printer', () => {
 
     await server?.close();
     server = undefined;
-    await rm(spool, { recursive: true, force: true });
+    await rm(dataRoot, { recursive: true, force: true });
   });
 
   // After a restart the first thing that happens to a printer already printing is being WATCHED,

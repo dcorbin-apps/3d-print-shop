@@ -3,19 +3,19 @@ import { createConnection, createServer } from 'node:net';
 import type { Server } from 'node:net';
 import * as path from 'node:path';
 
-export class SpoolInUse extends Error {}
+export class DataInUse extends Error {}
 
 const LOCK_SOCKET = 'running.sock';
 
 /**
- * Hold a spool for this process, and answer with the way to let it go.
+ * Hold a data directory for this process, and answer with the way to let it go.
  *
  * The store's numbers are only unique while ONE process is handing them out: allocating an id is a
- * read of `next-id`, an add, and a write back, and two shops over one spool would both read 7, both
+ * read of `next-id`, an add, and a write back, and two shops over one directory would both read 7, both
  * write 8, and both hand out 7 - the second overwriting the first job's gcode and record with no
  * error anywhere.
  */
-export async function claimSpool(root: string): Promise<() => void> {
+export async function claimData(root: string): Promise<() => void> {
   const socket = path.join(root, LOCK_SOCKET);
   const held = createServer();
 
@@ -24,8 +24,8 @@ export async function claimSpool(root: string): Promise<() => void> {
   // however it ends. That is what a lock FILE cannot do, because a crash leaves the file behind and
   // whoever comes next has to guess whether it means anything.
   //
-  // Scoped to the spool rather than to the port. A second `serve` on the same port already fails to
-  // listen; one on a different port over the same spool is the case only this catches.
+  // Scoped to the data directory rather than to the port. A second `serve` on the same port already fails to
+  // listen; one on a different port over the same directory is the case only this catches.
   held.on('connection', (client) => client.destroy());
 
   try {
@@ -34,7 +34,7 @@ export async function claimSpool(root: string): Promise<() => void> {
     if ((failure as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw failure;
 
     if (await somebodyIsListening(socket)) {
-      throw new SpoolInUse(`another shop is already serving ${root} - only one may, or they would hand out the same job ids`);
+      throw new DataInUse(`another shop is already serving ${root} - only one may, or they would hand out the same job ids`);
     }
 
     // Left by a shop that died. The path outlives the process even though the claim does not, so

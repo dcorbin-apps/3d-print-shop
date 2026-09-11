@@ -11,7 +11,7 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 ### The service
 
 - [ ] The shop can say when IT is in trouble, rather than only what each printer is doing. A store
-  or spool fault is nobody's printer's fault and now stops nothing, so a log line is all there is -
+  or data-directory fault is nobody's printer's fault and now stops nothing, so a log line is all there is -
   and nothing a client or an operator asks answers "the shop is not well". The contract has no
   shop-level status at all: `printers()` is the closest thing, and a fault that touches every
   printer at once has nowhere to be seen

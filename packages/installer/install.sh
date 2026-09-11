@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# AIDEV-NOTE: this exists because the shop refuses to make its own spool root, and that refusal is
+# AIDEV-NOTE: this exists because the shop refuses to make its own data directory, and that refusal is
 # deliberate - a service that creates whatever path it was pointed at puts a queue somewhere nobody
 # is looking, and a typo is then work lost rather than a shop that will not start. See
 # design/3d-print-shop.md, "The installer creates the root; the service never does". So the two
@@ -11,7 +11,7 @@ set -euo pipefail
 # that has to be a person's - the token it answers with exists nowhere else.
 
 LABEL=com.dcorbin.3d-print-shop
-SPOOL=/var/spool/3d-print-shop
+DATA=/var/spool/3d-print-shop
 ETC=/etc/3d-print-shop
 OUT_LOG=/var/log/3d-print-shop.log
 ERR_LOG=/var/log/3d-print-shop.err.log
@@ -79,11 +79,11 @@ usage() {
   cat <<USAGE
 usage: sudo $0 [install|update|uninstall]
 
-install    make the spool and credentials directories, the user that owns them, the copy of the
+install    make the data and credentials directories, the user that owns them, the copy of the
            shop the service runs, and the service itself
 update     copy a fresh build over the installed one and restart - what to run after 'yarn build',
            and only from a checkout: an installed package is updated by installing it again
-uninstall  stop the service and remove it - the spool, the credentials and the user are left,
+uninstall  stop the service and remove it - the data, the credentials and the user are left,
            because they hold work and secrets this script did not create
 USAGE
 }
@@ -277,7 +277,7 @@ madeServiceUserOnMacos() {
   dscl . -create "/Users/$SHOP_USER" IsHidden 1
   dscl . -create "/Users/$SHOP_USER" Password '*'
 
-  say "  $SHOP_USER (uid $id), which owns the spool and can be logged in as by nobody"
+  say "  $SHOP_USER (uid $id), which owns the data directory and can be logged in as by nobody"
 }
 
 wroteLog() {
@@ -305,12 +305,12 @@ wrotePlist() {
     <string>$node</string>
     <string>$SERVER</string>
     <string>serve</string>
-    <string>--spool</string>
-    <string>$SPOOL</string>
+    <string>--data</string>
+    <string>$DATA</string>
 $(pageArguments)  </array>
   <key>UserName</key><string>$SHOP_USER</string>
   <key>GroupName</key><string>$SHOP_GROUP</string>
-  <key>WorkingDirectory</key><string>$SPOOL</string>
+  <key>WorkingDirectory</key><string>$DATA</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
   <dict>
@@ -337,7 +337,7 @@ madeServiceUserOnLinux() {
   fi
 
   useradd --system --user-group --home-dir /nonexistent --shell /usr/sbin/nologin "$SHOP_USER"
-  say "  $SHOP_USER, which owns the spool and can be logged in as by nobody"
+  say "  $SHOP_USER, which owns the data directory and can be logged in as by nobody"
 }
 
 wroteUnit() {
@@ -353,11 +353,11 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=$node $SERVER serve --spool $SPOOL$(pageOption)
+ExecStart=$node $SERVER serve --data $DATA$(pageOption)
 ExecReload=/bin/kill -HUP \$MAINPID
 User=$SHOP_USER
 Group=$SHOP_GROUP
-WorkingDirectory=$SPOOL
+WorkingDirectory=$DATA
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGTERM
@@ -435,7 +435,7 @@ install() {
   if [ "$PLATFORM" = macos ]; then madeServiceUserOnMacos; else madeServiceUserOnLinux; fi
 
   say 'what it keeps its work and its credentials in:'
-  madeDirectory "$SPOOL"
+  madeDirectory "$DATA"
   madeDirectory "$ETC"
 
   say 'the shop itself:'
@@ -534,14 +534,14 @@ uninstall() {
     say "$INSTALL_DIR is gone"
   fi
 
-  # AIDEV-NOTE: the spool holds work nobody has judged and /etc holds every token the shop knows.
+  # AIDEV-NOTE: the data holds work nobody has judged and /etc holds every token the shop knows.
   # Neither is this script's to throw away on the way out - uninstalling a service is not the same
   # act as discarding what it was holding, and one of them cannot be undone.
   cat <<KEPT
 
 Left alone, because they hold work and secrets rather than installation:
 
-  $SPOOL   what the shop was holding
+  $DATA   what the shop was holding
   $ETC          its callers and its printer keys
   $SHOP_USER          the user that owns both
 
@@ -560,7 +560,7 @@ case "${1:-install}" in
   from-npm)
     [ "$MODE" = package ] || exit 0
     if [ "$(id -u)" != 0 ]; then
-      say "3d-print-shop is unpacked. It makes a system user, a spool and a daemon, so the install
+      say "3d-print-shop is unpacked. It makes a system user, a data directory and a daemon, so the install
 itself is one more command: sudo 3d-print-shop-install"
       exit 0
     fi

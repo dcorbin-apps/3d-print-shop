@@ -16,7 +16,7 @@ import { digestOf } from '../../src/secrets';
 // two disagreeing: the client's is against a stand-in, and the shop's is against fetch by hand.
 // This is the only place both are true at once, which is what keeps a published client honest.
 describe('the shop and its client', () => {
-  let spool: string;
+  let dataRoot: string;
   let store: JobStore;
   let server: Server;
   let shop: HttpShop;
@@ -40,8 +40,8 @@ describe('the shop and its client', () => {
   const TOKEN = 'dave-token';
 
   beforeEach(async () => {
-    spool = await mkdtemp(path.join(tmpdir(), 'print-shop-contract-'));
-    store = new JobStore(spool);
+    dataRoot = await mkdtemp(path.join(tmpdir(), 'print-shop-contract-'));
+    store = new JobStore(dataRoot);
 
     const dave = { caller: { id: 'dave', name: 'dave', role: 'admin' as const }, credentials: [{ kind: 'token' as const, hash: digestOf(TOKEN) }] };
     server = await serve(store, 0, { callers: () => new Callers([dave]) });
@@ -50,7 +50,7 @@ describe('the shop and its client', () => {
 
   afterEach(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await rm(spool, { recursive: true, force: true });
+    await rm(dataRoot, { recursive: true, force: true });
   });
 
   describe('the printers', () => {

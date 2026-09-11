@@ -7,12 +7,12 @@ import { InvalidSubmission, generatedDisplayName, validateDetails } from './Job.
 import type { BuildVolume, Job, JobDetails, JobRecord, PrinterOutcome } from './Job.js';
 import { canTake, whereToWatch } from './Printer.js';
 import type { Holding, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
-import { defaultSpoolRoot } from './spoolRoot.js';
+import { defaultDataRoot } from './dataRoot.js';
 
 // AIDEV-NOTE: the largest gcode this shop will take, and so also the room it insists on having
 // before it takes any. A kit runs to tens of megabytes, so the default is several times the biggest
 // thing expected rather than a number anyone should meet - an operator whose slicer outgrows it
-// raises it, and the spool's filesystem is what has to afford it.
+// raises it, and the data directory's filesystem is what has to afford it.
 const DEFAULT_MAX_GCODE_MB = 128;
 
 export const MAX_GCODE_ENV = 'PRINT_SHOP_MAX_GCODE_MB';
@@ -32,7 +32,7 @@ export function defaultMaxGcodeBytes(): number {
 }
 
 /** What a shop will hold, and how it finds out. Overridden by tests, which have neither the disk nor the patience. */
-export interface SpoolLimits {
+export interface DataLimits {
   maxGcodeBytes?: number;
   freeBytes?: (root: string) => Promise<number>;
 }
@@ -42,7 +42,7 @@ async function spaceFreeOn(root: string): Promise<number> {
   return room.bavail * room.bsize;
 }
 
-// AIDEV-NOTE: the spool is the shop's alone, and integrity is the reason before secrecy. A spool
+// AIDEV-NOTE: the data directory is the shop's alone, and integrity is the reason before secrecy. One
 // another user can WRITE is one where a job's gcode can be swapped for different gcode, and the shop
 // sends whatever is there to a printer without question. The ROOT's own mode is the installer's to
 // set and `ready()`'s to refuse - these are the entries the shop creates itself.
@@ -70,7 +70,7 @@ export class NoSuchJob extends Error {}
 export class NoSuchPrinter extends Error {}
 export class NoPrinterCanTakeIt extends InvalidSubmission {}
 export class WrongState extends Error {}
-export class SpoolUnavailable extends Error {}
+export class DataUnavailable extends Error {}
 
 /** More than the shop will hold. Not a malformed request - just a bigger one than it takes. */
 export class TooMuchToTake extends Error {}
@@ -82,7 +82,7 @@ export class TooMuchToTake extends Error {}
 export class JobStore {
   // AIDEV-NOTE: writes are serialised because allocating an id, and changing a printer's status, are
   // read-modify-writes with an await in the middle - two concurrent ones would interleave and lose
-  // a change. This guards a single process only; two processes over one spool would still collide,
+  // a change. This guards a single process only; two processes over one directory would still collide,
   // and nothing here supports that.
   private changing: Promise<unknown> = Promise.resolve();
 
@@ -92,8 +92,8 @@ export class JobStore {
   private readonly freeBytes: (root: string) => Promise<number>;
 
   constructor(
-    private readonly root: string = defaultSpoolRoot(),
-    limits: SpoolLimits = {}
+    private readonly root: string = defaultDataRoot(),
+    limits: DataLimits = {}
   ) {
     this.maxGcodeBytes = limits.maxGcodeBytes ?? defaultMaxGcodeBytes();
     this.freeBytes = limits.freeBytes ?? spaceFreeOn;
@@ -106,7 +106,7 @@ export class JobStore {
    */
   async submit(details: JobDetails, gcode: Readable, owner: string): Promise<Job> {
     validateDetails(details);
-    await this.requireSpool();
+    await this.requireDataRoot();
     await this.requireRoomForOne();
     await this.requireSomePrinterCouldTakeIt(details);
 
@@ -159,15 +159,15 @@ export class JobStore {
     }
   }
 
-  /** Answers when the spool is usable, so a service can refuse to start rather than to serve. */
+  /** Answers when the data directory is usable, so a service can refuse to start rather than to serve. */
   async ready(): Promise<void> {
-    await this.requireSpool();
+    await this.requireDataRoot();
     await this.requireNobodyElseCanWriteIt();
   }
 
   /** Everything outstanding. Order is not meaningful - what to print next is decided elsewhere. */
   async all(): Promise<Job[]> {
-    await this.requireSpool();
+    await this.requireDataRoot();
 
     const printers = await this.printers();
     const entries = await readdir(path.join(this.root, JOBS_DIR)).catch(() => [] as string[]);
@@ -180,7 +180,7 @@ export class JobStore {
   }
 
   async find(id: number): Promise<Job | undefined> {
-    await this.requireSpool();
+    await this.requireDataRoot();
 
     const record = await this.readRecord(id);
     return record && asJob(record, await this.printers());
@@ -269,7 +269,7 @@ export class JobStore {
 
   /** Adds a printer, or changes what the shop knows about one already here. */
   async addPrinter(record: PrinterRecord): Promise<void> {
-    await this.requireSpool();
+    await this.requireDataRoot();
     await mkdir(this.printerDir(record.name), { recursive: true, mode: DIRECTORY_MODE });
     await writeAtomically(this.printerFile(record.name), asJson(record));
 
@@ -290,7 +290,7 @@ export class JobStore {
   }
 
   async printers(): Promise<RegisteredPrinter[]> {
-    await this.requireSpool();
+    await this.requireDataRoot();
 
     // Sorted, because readdir's order is the filesystem's and an operator reading a list twice
     // should not find it rearranged.
@@ -301,7 +301,7 @@ export class JobStore {
   }
 
   async printerNamed(name: string): Promise<RegisteredPrinter> {
-    await this.requireSpool();
+    await this.requireDataRoot();
 
     const printer = await this.readPrinter(name);
     if (!printer) throw new NoSuchPrinter(`no printer called ${name} - the operator adds one before it can print`);
@@ -451,20 +451,20 @@ export class JobStore {
     return job;
   }
 
-  // AIDEV-NOTE: the spool root is made at install time and owned by the service's user, the way
+  // AIDEV-NOTE: the data root is made at install time and owned by the service's user, the way
   // /var/spool/cups is - so a missing one is a machine that was never set up, not something to
   // quietly create. Creating it would put the shop's work somewhere nobody is looking.
-  private async requireSpool(): Promise<void> {
+  private async requireDataRoot(): Promise<void> {
     const usable = await stat(this.root).then(
       (entry) => entry.isDirectory(),
       () => false
     );
     if (!usable) {
-      throw new SpoolUnavailable(`${this.root} is not there - it is created when the shop is installed`);
+      throw new DataUnavailable(`${this.root} is not there - it is created when the shop is installed`);
     }
   }
 
-  // AIDEV-NOTE: asked at ready() rather than in requireSpool(), which every call already goes
+  // AIDEV-NOTE: asked at ready() rather than in requireDataRoot(), which every call already goes
   // through. A mode is set when the machine is installed and does not change under a running shop,
   // so this is a question about the install - and a stat per request to keep asking it would be a
   // cost paid for nothing.
@@ -478,7 +478,7 @@ export class JobStore {
     const found = await stat(this.root);
 
     if ((found.mode & 0o022) !== 0) {
-      throw new SpoolUnavailable(
+      throw new DataUnavailable(
         `${this.root} can be written by somebody other than its owner (mode ${(found.mode & 0o777).toString(8)}) - ` +
           'a job could be swapped or taken out of it, so it may not be writable by its group or by anybody else'
       );
@@ -487,14 +487,14 @@ export class JobStore {
 
   // AIDEV-NOTE: room for the BIGGEST job it would accept, not for this one - the size of an upload
   // is not known until it has arrived, and by then it is already on the disk. Refusing early keeps
-  // the shop from filling the spool it recovers from, which would lose every job it is holding and
+  // the shop from filling the directory it recovers from, which would lose every job it holds and
   // not only the one that overflowed. A full disk is the machine's problem, so a client is told to
   // come back later rather than told it did something wrong.
   private async requireRoomForOne(): Promise<void> {
     const free = await this.freeBytes(this.root);
 
     if (free < this.maxGcodeBytes) {
-      throw new SpoolUnavailable(`${this.root} has ${free} bytes free, and the shop keeps ${this.maxGcodeBytes} spare for a job`);
+      throw new DataUnavailable(`${this.root} has ${free} bytes free, and the shop keeps ${this.maxGcodeBytes} spare for a job`);
     }
   }
 

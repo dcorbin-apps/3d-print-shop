@@ -15,19 +15,19 @@ import { redacting, toStdout } from './log.js';
 import { addSomebody, askForANewPassword, changePassword, giveAToken, listCallers, migrateTheCallers } from './callerAdmin.js';
 import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
-import { claimSpool } from './spoolLock.js';
-import { SPOOL_ROOT_ENV, defaultSpoolRoot } from './spoolRoot.js';
+import { claimData } from './dataLock.js';
+import { DATA_ROOT_ENV, defaultDataRoot } from './dataRoot.js';
 
 // AIDEV-NOTE: thin on purpose. Every printer command is a function in printerAdmin.ts answering with
 // lines, and serving is one call into api.ts; this only turns argv into a call and lines into
 // output, so the operator's half of the shop can be tested without a process.
 //
-// The printer commands go through the API, like every other client. They used to write the spool
+// The printer commands go through the API, like every other client. They used to write the data directory
 // directly, which made this a second writer over files the service was writing at the same time - a
 // `stop` landing at the same instant as an `add` could lose one. It also means an operator can mind
 // a shop that is running somewhere else, which reaching into a directory could never do.
 //
-// Only `serve` names a spool, because only `serve` is the thing that holds it.
+// Only `serve` names a data directory, because only `serve` is the thing that holds it.
 export function createCLI(): Command {
   const program = new Command();
   const shop = (options: { shopUrl?: string }): HttpShop => new HttpShop(options.shopUrl ?? defaultShopUrl(), defaultToken());
@@ -42,7 +42,7 @@ export function createCLI(): Command {
     .option('--port <port>', 'the port to listen on', readPort, DEFAULT_PORT)
     // No default here: serve() holds it, and a second copy of an address is a second thing to change.
     .option('--listen <address>', 'the address to listen on - loopback unless said otherwise, and anything else is on the network')
-    .option('--spool <path>', `where the shop keeps its work (or ${SPOOL_ROOT_ENV}; defaults to ${defaultSpoolRoot()})`)
+    .option('--data <path>', `where the shop keeps everything it has (or ${DATA_ROOT_ENV}; defaults to ${defaultDataRoot()})`)
     .option(
       '--max-gcode <megabytes>',
       `the largest gcode it will take, and the room it keeps spare for one (or ${MAX_GCODE_ENV})`,
@@ -53,9 +53,9 @@ export function createCLI(): Command {
     // which is a client of this shop - so finding it through the ui package would be the server
     // depending on a client, and that direction never runs.
     .option('--page <path>', 'a directory of files to serve beside the API, so a browser has somewhere to get the page')
-    .action(async (options: { port: number; listen?: string; spool?: string; maxGcode?: number; etc?: string; page?: string }) => {
-      const spool = options.spool ?? defaultSpoolRoot();
-      const store = new JobStore(spool, { maxGcodeBytes: options.maxGcode });
+    .action(async (options: { port: number; listen?: string; data?: string; maxGcode?: number; etc?: string; page?: string }) => {
+      const dataRoot = options.data ?? defaultDataRoot();
+      const store = new JobStore(dataRoot, { maxGcodeBytes: options.maxGcode });
       const etc = options.etc ?? defaultEtc();
 
       // AIDEV-NOTE: credentials come first, and a shop that has none does not start. Every route
@@ -74,10 +74,10 @@ export function createCLI(): Command {
       // given while the shop runs is one this process did not hold when the log was made.
       const log = redacting(toStdout(), () => printerKeys.values());
 
-      // Before anything else: a spool that is not there, or is already being served, is a shop that
+      // Before anything else: a data directory that is not there, or is already being served, is a shop that
       // must refuse to start rather than start and do damage.
       await store.ready();
-      const releaseSpool = await claimSpool(spool);
+      const releaseData = await claimData(dataRoot);
 
       const machines = new OctoPrintMachines(() => printerKeys);
       const foreman = new Foreman(store, machines.reach, log);
@@ -113,7 +113,7 @@ export function createCLI(): Command {
         clearInterval(reachingAgain);
         foreman.stop();
         machines.closeAll();
-        releaseSpool();
+        releaseData();
 
         void foreman.watchersSettled().then(() => {
           log.info('the shop has stopped');
@@ -181,10 +181,10 @@ export function createCLI(): Command {
       // who typed it - and two test suites read the port back out of that line, so its shape is a
       // contract. The log line is the running SERVICE's record, which is what a supervisor captures
       // and what somebody reads days later asking what this process was.
-      // AIDEV-NOTE: which spool and which credentials, because a process that outlives the run that
+      // AIDEV-NOTE: which data directory and which credentials, because a process that outlives the run
       // started it is a process somebody has to identify later - and argv alone was not enough to do
       // that for two shops found still listening, one of them 14 hours old.
-      log.info('the shop is listening', { address: bound.address, port: bound.port, callers: callers.size, spool, etc, page: options.page });
+      log.info('the shop is listening', { address: bound.address, port: bound.port, callers: callers.size, data: dataRoot, etc, page: options.page });
       say([`3d-print-shop is listening on ${bound.address}:${bound.port}`, `${callers.size} caller(s) may ask`]);
 
       // A restart does not stop a machine. Prints that were already running are picked up first,

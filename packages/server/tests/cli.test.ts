@@ -34,7 +34,7 @@ describe('a command the shop does not have', () => {
     ['printer add mk4 250x210x220 http://octopi.local'],
     ['printer list'],
     ['job waiting mk4'],
-    ['serve --spool /tmp/spool --etc /tmp/etc'],
+    ['serve --data /tmp/data --etc /tmp/etc'],
     ['init dave'],
     ['shutdown'],
   ])('finds nothing wrong with %p', (line) => {

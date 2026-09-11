@@ -18,7 +18,7 @@ import type { PrinterOutcome } from '../../src/Job';
 // shop that has to learn the outcome from what the server actually serves on reconnect.
 describe('recovering a print outcome across a dropped connection', () => {
   let server: OctoPrintServer | undefined;
-  let spool: string;
+  let dataRoot: string;
   let shop: JobStore;
   let machine: OctoPrint | undefined;
 
@@ -39,8 +39,8 @@ describe('recovering a print outcome across a dropped connection', () => {
   }
 
   beforeEach(async () => {
-    spool = await mkdtemp(path.join(tmpdir(), 'print-shop-reconnect-'));
-    shop = new JobStore(spool);
+    dataRoot = await mkdtemp(path.join(tmpdir(), 'print-shop-reconnect-'));
+    shop = new JobStore(dataRoot);
     await shop.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://mk4' });
     await shop.load('mk4', ['PLA']);
   });
@@ -54,7 +54,7 @@ describe('recovering a print outcome across a dropped connection', () => {
     machine = undefined;
     await server?.close();
     server = undefined;
-    await rm(spool, { recursive: true, force: true });
+    await rm(dataRoot, { recursive: true, force: true });
   });
 
   function connectedTo(port: number): OctoPrint {

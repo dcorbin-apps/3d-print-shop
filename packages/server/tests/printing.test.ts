@@ -10,7 +10,7 @@ import type { PrintAttempt } from '../src/printing';
 import type { Job, PrinterOutcome } from '../src/Job';
 
 describe('printing the next job', () => {
-  let spool: string;
+  let dataRoot: string;
   let shop: JobStore;
   let mockSend: jest.Mock<(remotePath: string, gcode: Readable) => Promise<string>>;
   let mockAwaitOutcome: jest.Mock<(remotePath: string) => Promise<PrinterOutcome>>;
@@ -33,8 +33,8 @@ describe('printing the next job', () => {
   }
 
   beforeEach(async () => {
-    spool = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-printing-'));
-    shop = new JobStore(spool);
+    dataRoot = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-printing-'));
+    shop = new JobStore(dataRoot);
 
     // A machine that files a job where it was asked to, which is the ordinary case. A test about one
     // that files it somewhere else says so itself.
@@ -47,7 +47,7 @@ describe('printing the next job', () => {
   });
 
   afterEach(async () => {
-    await fs.rm(spool, { recursive: true, force: true });
+    await fs.rm(dataRoot, { recursive: true, force: true });
   });
 
   describe('when a job can be printed', () => {
@@ -228,9 +228,9 @@ describe('printing the next job', () => {
       await submit(['PLA-Red']);
       await printOn('mk4', ['PLA-Red']);
 
-      await recordOutcome(new JobStore(spool), machine, 'mk4');
+      await recordOutcome(new JobStore(dataRoot), machine, 'mk4');
 
-      expect(await new JobStore(spool).find(1)).toMatchObject({ state: 'awaiting-approval' });
+      expect(await new JobStore(dataRoot).find(1)).toMatchObject({ state: 'awaiting-approval' });
     });
 
     it('refuses to watch a printer that is printing nothing', async () => {

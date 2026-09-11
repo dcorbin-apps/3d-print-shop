@@ -13,7 +13,7 @@ import { JobStore } from '../../src/JobStore';
 // would notice if the stream were being buffered whole or truncated part way; this is what makes
 // "streamed, not held" a claim the suite actually checks.
 describe('the life of a job', () => {
-  let spool: string;
+  let dataRoot: string;
 
   const MEGABYTES = 8;
 
@@ -41,11 +41,11 @@ describe('the life of a job', () => {
   }
 
   beforeEach(async () => {
-    spool = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-lifetime-'));
+    dataRoot = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-lifetime-'));
   });
 
   afterEach(async () => {
-    await fs.rm(spool, { recursive: true, force: true });
+    await fs.rm(dataRoot, { recursive: true, force: true });
   });
 
   const DAVE = 'u-dave';
@@ -53,7 +53,7 @@ describe('the life of a job', () => {
   it(
     'is taken in, printed, rejected, printed again, approved, and gone',
     async () => {
-      const shop = new JobStore(spool);
+      const shop = new JobStore(dataRoot);
       await shop.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://mk4' });
 
       const job = await shop.submit(
@@ -79,7 +79,7 @@ describe('the life of a job', () => {
       expect(await shop.reject(job.id)).toMatchObject({ state: 'queued' });
 
       // The service restarts while the reprint is still owed.
-      const afterRestart = new JobStore(spool);
+      const afterRestart = new JobStore(dataRoot);
       expect(await afterRestart.all()).toMatchObject([{ id: job.id, displayName: 'Player Box', state: 'queued' }]);
 
       // The same bytes are still there to run again - which is why approval, not the printer, is
@@ -92,7 +92,7 @@ describe('the life of a job', () => {
 
       // The shop holds outstanding work, so a job that succeeded leaves no trace in it.
       expect(await afterRestart.all()).toEqual([]);
-      await expect(fs.readdir(path.join(spool, 'jobs'))).resolves.toEqual([]);
+      await expect(fs.readdir(path.join(dataRoot, 'jobs'))).resolves.toEqual([]);
 
       // ...but its number is spent. The next job is 2.
       const next = await afterRestart.submit({ filaments: ['PLA-White'] }, Readable.from(['G1 X0\n']), DAVE);

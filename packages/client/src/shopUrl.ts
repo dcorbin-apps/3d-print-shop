@@ -1,5 +1,5 @@
 // AIDEV-NOTE: the shop on this machine, which is the overwhelmingly likely one. Named like the
-// spool root, and for the same reason: `3D_` is not a legal start for an environment variable.
+// data root, and for the same reason: `3D_` is not a legal start for an environment variable.
 export const SHOP_URL_ENV = 'PRINT_SHOP_URL';
 
 export const DEFAULT_PORT = 7373;

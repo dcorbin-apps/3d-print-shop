@@ -7,8 +7,8 @@ import * as path from 'node:path';
 import { digestOf } from '../../src/secrets';
 
 // AIDEV-NOTE: the shop as an operator gets it - a process started from a command line, holding a
-// spool it was pointed at, answered over a socket. api.test.ts drives the same routes in-process and
-// so proves nothing about main.ts, argv, the spool option, or that any of it survives a restart.
+// data directory it was pointed at, answered over a socket. api.test.ts drives the same routes in-process and
+// so proves nothing about main.ts, argv, the --data option, or that any of it survives a restart.
 //
 // Started as `node --import tsx`, which is ONE process: `yarn tsx` puts a runner in front of it, and
 // a signal sent to the runner can leave the shop holding the port.
@@ -47,7 +47,7 @@ describe('the shop, running as its own process', () => {
   const USER = 'slicer-token';
   const asAdmin = { authorization: `Bearer ${ADMIN}` };
 
-  let spool: string;
+  let dataRoot: string;
   let etc: string;
   let madeEtc: string[];
   // AIDEV-NOTE: every process this suite spawns, tracked from the spawn itself rather than from the
@@ -58,12 +58,12 @@ describe('the shop, running as its own process', () => {
   let spawned: ChildProcess[];
 
   function startShop(): Promise<RunningShop> {
-    return startShopOver(spool);
+    return startShopOver(dataRoot);
   }
 
   function startShopOver(root: string, alsoSaying: string[] = [], credentials: string = etc): Promise<RunningShop> {
     return new Promise<RunningShop>((resolve, reject) => {
-      const shop = spawn('node', ['--import', 'tsx', SHOP, 'serve', '--spool', root, '--etc', credentials, '--port', '0', ...alsoSaying]);
+      const shop = spawn('node', ['--import', 'tsx', SHOP, 'serve', '--data', root, '--etc', credentials, '--port', '0', ...alsoSaying]);
       spawned.push(shop);
       let said = '';
       let complaint = '';
@@ -226,7 +226,7 @@ describe('the shop, running as its own process', () => {
   }
 
   beforeEach(async () => {
-    spool = await mkdtemp(path.join(tmpdir(), 'print-shop-running-'));
+    dataRoot = await mkdtemp(path.join(tmpdir(), 'print-shop-running-'));
     spawned = [];
     madeEtc = [];
     etc = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
@@ -237,17 +237,17 @@ describe('the shop, running as its own process', () => {
 
     // AIDEV-NOTE: the suite saying it cleaned up after itself. Nothing else would notice a shop left
     // listening - every test here reports green either way - and a leaked one holds its port, and
-    // its spool's lock socket, for as long as the machine is up.
+    // its data directory's lock socket, for as long as the machine is up.
     expect(spawned.filter((shop) => shop.exitCode === null && shop.signalCode === null)).toEqual([]);
-    await Promise.all([spool, ...madeEtc].map((made) => rm(made, { recursive: true, force: true })));
+    await Promise.all([dataRoot, ...madeEtc].map((made) => rm(made, { recursive: true, force: true })));
   });
 
-  it('keeps what it is given in the spool it was pointed at', async () => {
+  it('keeps what it is given in the data directory it was pointed at', async () => {
     const shop = await shopIsRunning();
     await addMk4(shop);
 
     expect((await submitPlayerBox(shop)).status).toBe(201);
-    expect(await readFile(path.join(spool, 'jobs', '1', 'print.gcode'), 'utf-8')).toBe(GCODE);
+    expect(await readFile(path.join(dataRoot, 'jobs', '1', 'print.gcode'), 'utf-8')).toBe(GCODE);
   }, 30_000);
 
   // The operator's commands are a CLIENT of the running shop rather than a second writer over its
@@ -279,7 +279,7 @@ describe('the shop, running as its own process', () => {
       // is what `init` makes, hashing and all.
       await runCommandSaying(['init', 'dave', '--etc', credentials], {}, `${PASSWORD}\n${PASSWORD}\n`);
 
-      return startShopOver(spool, [], credentials);
+      return startShopOver(dataRoot, [], credentials);
     }
 
     const logIn = (shop: RunningShop, id: string, password: string): Promise<Response> =>
@@ -336,7 +336,7 @@ describe('the shop, running as its own process', () => {
   // keys live in, and that the running process is told at the same moment, is main.ts's wiring.
   it('writes a key it is given with a printer where it keeps them, and does not wait to be signalled', async () => {
     const credentials = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
-    const shop = await startShopOver(spool, [], credentials);
+    const shop = await startShopOver(dataRoot, [], credentials);
 
     const added = await fetch(`${shop.url}/printers`, {
       method: 'POST',
@@ -358,7 +358,7 @@ describe('the shop, running as its own process', () => {
   // that arrived while it was running has to reach the redactor too.
   it('never writes a key it was given into its log', async () => {
     const credentials = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
-    const shop = await startShopOver(spool, [], credentials);
+    const shop = await startShopOver(dataRoot, [], credentials);
 
     await fetch(`${shop.url}/printers`, {
       method: 'POST',
@@ -400,16 +400,16 @@ describe('the shop, running as its own process', () => {
 
   // AIDEV-NOTE: the whole way through - argv, the API, the foreman letting go of its machines, and a
   // process that actually ends. A shop that answered and stayed up would look identical to a client.
-  // The spool is made when the shop is installed and never by the shop, so a missing one is a
+  // The data directory is made when the shop is installed and never by the shop, so a missing one is a
   // machine that was never set up - and it is worth finding out before anything is served.
-  it('will not start over a spool that is not there', async () => {
-    await expect(startShopOver(path.join(spool, 'never-made'))).rejects.toThrow('is not there');
+  it('will not start over a data directory that is not there', async () => {
+    await expect(startShopOver(path.join(dataRoot, 'never-made'))).rejects.toThrow('is not there');
   }, 30_000);
 
-  // The other half of the same question: a spool that IS there, and that anybody could rename a job
+  // The other half of the same question: a data directory that IS there, and that anybody could rename a job
   // directory out of. The shop sets 0700 on everything below it, and none of that survives this.
-  it('will not start over a spool somebody else could write', async () => {
-    await chmod(spool, 0o777);
+  it('will not start over a data directory somebody else could write', async () => {
+    await chmod(dataRoot, 0o777);
 
     await expect(startShop()).rejects.toThrow('may not be writable');
   }, 30_000);
@@ -453,10 +453,10 @@ describe('the shop, running as its own process', () => {
     expect(stdout.trim()).toBe('nothing queued that mini could take');
   }, 30_000);
 
-  // AIDEV-NOTE: two shops over one spool would both read `next-id` as 7 and both hand out 7, the
+  // AIDEV-NOTE: two shops over one data directory would both read `next-id` as 7 and both hand out 7, the
   // second overwriting the first job's gcode with no error anywhere. A second `serve` on the same
-  // PORT already fails to listen; this is the case only the spool's own claim catches.
-  it('will not serve a spool another shop already has', async () => {
+  // PORT already fails to listen; this is the case only the directory's own claim catches.
+  it('will not serve a data directory another shop already has', async () => {
     await shopIsRunning();
 
     await expect(startShop()).rejects.toThrow('already serving');
@@ -482,9 +482,9 @@ describe('the shop, running as its own process', () => {
   }, 30_000);
 
   // The cap belongs to the operator: a slicer that outgrows the default has to be able to say so,
-  // and the shop keeps that much room spare on the spool for every job it accepts.
+  // and the shop keeps that much room spare in the data directory for every job it accepts.
   it('takes gcode up to the size --max-gcode names, and no more', async () => {
-    const shop = await startShopOver(spool, ['--max-gcode', '1']);
+    const shop = await startShopOver(dataRoot, ['--max-gcode', '1']);
     await addMk4(shop);
 
     const oneMegabyte = 1024 * 1024;
@@ -505,7 +505,7 @@ describe('the shop, running as its own process', () => {
         { id: 'dave', name: 'dave', role: 'admin', token: ADMIN },
         { id: 'slicer', name: 'slicer', role: 'user', token: USER },
       ]);
-      const shop = await startShopOver(spool, [], bothOfThem);
+      const shop = await startShopOver(dataRoot, [], bothOfThem);
 
       return shop;
     }
@@ -525,7 +525,7 @@ describe('the shop, running as its own process', () => {
 
       const listing = ['printer', '--shop-url', shop.url, 'list'];
 
-      expect((await runCommandSaying(listing, { PRINT_SHOP_TOKEN: '', XDG_CONFIG_HOME: spool })).code).toBe(1);
+      expect((await runCommandSaying(listing, { PRINT_SHOP_TOKEN: '', XDG_CONFIG_HOME: dataRoot })).code).toBe(1);
     }, 30_000);
 
     // AIDEV-NOTE: the whole way through, for the half of access control a role cannot express -
@@ -564,7 +564,7 @@ describe('the shop, running as its own process', () => {
 
     it('answers a caller added while it was running', async () => {
       const credentials = await credentialsNaming([DAVE]);
-      const shop = await startShopOver(spool, [], credentials);
+      const shop = await startShopOver(dataRoot, [], credentials);
       expect((await askCarrying(shop, USER)).status).toBe(401);
 
       await writeCallers(credentials, [DAVE, SLICER]);
@@ -576,7 +576,7 @@ describe('the shop, running as its own process', () => {
 
     it('refuses a caller taken out while it was running', async () => {
       const credentials = await credentialsNaming([DAVE, SLICER]);
-      const shop = await startShopOver(spool, [], credentials);
+      const shop = await startShopOver(dataRoot, [], credentials);
       expect((await askCarrying(shop, USER)).status).toBe(200);
 
       await writeCallers(credentials, [DAVE]);
@@ -591,7 +591,7 @@ describe('the shop, running as its own process', () => {
     // that answers this at all is a shop that stayed up to answer it.
     it('keeps the callers it has when what it is told to re-read is unusable', async () => {
       const credentials = await credentialsNaming([DAVE]);
-      const shop = await startShopOver(spool, [], credentials);
+      const shop = await startShopOver(dataRoot, [], credentials);
 
       await writeFile(path.join(credentials, 'callers.json'), '{ not json', { mode: 0o600 });
       shop.reload();
@@ -606,7 +606,7 @@ describe('the shop, running as its own process', () => {
     it('re-reads the printer keys as well as the callers', async () => {
       const credentials = await credentialsNaming([DAVE]);
       await writePrinterKeys(credentials, { mk4: 'was-wrong' });
-      const shop = await startShopOver(spool, [], credentials);
+      const shop = await startShopOver(dataRoot, [], credentials);
 
       await writePrinterKeys(credentials, { mk4: 'is-right' });
       shop.reload();
@@ -625,7 +625,7 @@ describe('the shop, running as its own process', () => {
     // `::1` rather than an address off this machine: it proves the option is carried through to the
     // listener without a test that opens a port to the network.
     it('is the address --listen names, and it answers there', async () => {
-      const shop = await startShopOver(spool, ['--listen', '::1']);
+      const shop = await startShopOver(dataRoot, ['--listen', '::1']);
 
       expect(shop.address).toBe('::1');
       expect((await ask(shop, '/printers')).status).toBe(200);
@@ -638,7 +638,7 @@ describe('the shop, running as its own process', () => {
   // shop: until it has run there is nobody a shop would answer.
   describe('a machine nobody has set up yet', () => {
     it('will not start when no callers are named', async () => {
-      await expect(startShopOver(spool, [], path.join(spool, 'no-credentials-here'))).rejects.toThrow('every route names its caller');
+      await expect(startShopOver(dataRoot, [], path.join(dataRoot, 'no-credentials-here'))).rejects.toThrow('every route names its caller');
     }, 30_000);
 
     // What proves `init` worked is not the file it wrote but a shop started over it answering the
@@ -652,7 +652,7 @@ describe('the shop, running as its own process', () => {
       const { stdout } = await runCommandSaying(['init', 'dave', '--etc', fresh], {}, `${A_PASSWORD}\n${A_PASSWORD}\n`);
       const token = /\b[0-9a-f]{64}\b/.exec(stdout)?.[0];
 
-      const shop = await startShopOver(spool, [], fresh);
+      const shop = await startShopOver(dataRoot, [], fresh);
 
       expect(token).toBeDefined();
       expect((await fetch(`${shop.url}/jobs`, { headers: { authorization: `Bearer ${token as string}` } })).status).toBe(200);
@@ -665,7 +665,7 @@ describe('the shop, running as its own process', () => {
       const fresh = path.join(machine, 'etc');
 
       await runCommandSaying(['init', 'dave', '--etc', fresh], {}, `${A_PASSWORD}\n${A_PASSWORD}\n`);
-      const shop = await startShopOver(spool, [], fresh);
+      const shop = await startShopOver(dataRoot, [], fresh);
 
       const said = await fetch(`${shop.url}/sessions`, {
         method: 'POST',

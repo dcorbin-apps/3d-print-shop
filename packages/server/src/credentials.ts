@@ -78,7 +78,7 @@ export async function writeFirstCaller(etc: string, id: string, name: string, pa
   };
 
   // The credentials directory is this command's to make - it is what setting a machine up MEANS,
-  // where the spool is the installer's because work put somewhere nobody is looking is work lost.
+  // where the data directory is the installer's because work put where nobody is looking is work lost.
   await mkdir(etc, { recursive: true, mode: DIRECTORY_MODE });
 
   try {

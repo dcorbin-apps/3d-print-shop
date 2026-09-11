@@ -325,7 +325,7 @@ describe('the credentials a shop is given', () => {
     }, 10_000);
 
     // The credentials directory is what setting a machine up MEANS, so this makes it - unlike the
-    // spool, which is the installer's because work put where nobody is looking is work lost.
+    // dataRoot, which is the installer's because work put where nobody is looking is work lost.
     it('makes the directory when the machine has none', async () => {
       const never = path.join(etc, 'not-yet');
 

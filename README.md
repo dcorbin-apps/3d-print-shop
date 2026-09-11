@@ -32,7 +32,7 @@ file, and read an environment variable for the shop's URL.
 ```
 yarn install
 yarn build
-yarn shop serve --spool /var/spool/3d-print-shop
+yarn shop serve --data /var/spool/3d-print-shop
 ```
 
 It will not start until `/etc/3d-print-shop/callers.json` names somebody who may call it: every
@@ -43,7 +43,7 @@ writes that file with one admin in it - see **Who may call it** below.
 `@3d-print-shop/server` declares. Either way it is a plain long-running process, so `launchd` and
 `systemd` can both supervise it, it stops on `SIGTERM`, and it re-reads its credentials on `SIGHUP`.
 
-**The spool root is the installer's to create, not the shop's.** `/var/spool/cups` is made at
+**The data directory is the installer's to create, not the shop's.** `/var/spool/cups` is made at
 install time and owned by the service's user, and this is the same: a missing root is a machine that
 was never set up, so the shop refuses to start rather than putting its work somewhere nobody is
 looking. `PRINT_SHOP_SPOOL` overrides the path, for an install that would rather not involve root.
@@ -52,8 +52,8 @@ It must not be writable by its group or by anybody else, or the shop refuses to 
 below it is 0700 and 0600, and none of that stops a job directory being renamed out of a root others
 can write. Being readable is allowed - 0750 for an operators' group is a working install.
 
-One shop to a spool. `serve` claims it by listening on a socket inside it, so a second shop over the
-same spool is refused and a crash leaves nothing to clean up.
+One shop to a data directory. `serve` claims it by listening on a socket inside it, so a second shop
+over the same one is refused and a crash leaves nothing to clean up.
 
 ## Installing it as a service
 
@@ -109,7 +109,7 @@ Day to day:
 | after editing a credential | `sudo launchctl kill HUP system/com.dcorbin.3d-print-shop` | `sudo systemctl reload 3d-print-shop` |
 
 `sudo packages/installer/install.sh uninstall` stops it and removes the service and the installed copy. It
-leaves the spool, the credentials and the user alone: uninstalling a service is not the same act as
+leaves the data, the credentials and the user alone: uninstalling a service is not the same act as
 throwing away the work it was holding, and one of those cannot be undone.
 
 ## The page in a browser
@@ -126,7 +126,7 @@ dev server. `PRINT_SHOP_URL` points it at a shop somewhere else.
 
 ```
 yarn build
-3d-print-shop serve --spool /var/spool/3d-print-shop --page packages/ui/dist
+3d-print-shop serve --data /var/spool/3d-print-shop --page packages/ui/dist
 ```
 
 `--page` is a DIRECTORY and the shop is told nothing else about it - it serves those files at the
@@ -169,7 +169,7 @@ shop answers with the printer, never with the key, and a key is redacted out of 
 
 ```
 3d-print-shop init dave                                the first admin, on a machine with none
-3d-print-shop serve --spool /var/spool/3d-print-shop   run the shop, so clients can reach it
+3d-print-shop serve --data /var/spool/3d-print-shop    run the shop, so clients can reach it
 3d-print-shop printer add mk4 250x210x220 http://octopi.local
 3d-print-shop printer list                             what it has, and what each is doing
 3d-print-shop printer load mk4 PLA-Red                 what is on the machine now
@@ -185,7 +185,7 @@ shop answers with the printer, never with the key, and a key is redacted out of 
 ```
 
 Every command but `serve` and `init` is a client of a running shop and takes `--shop-url` (or
-`PRINT_SHOP_URL`; `http://localhost:7373` by default). Only `serve` names a spool, because only
+`PRINT_SHOP_URL`; `http://localhost:7373` by default). Only `serve` names a data directory, because only
 `serve` holds one; `init` writes credentials on the machine and is what there is before a shop runs.
 
 **Who may call it** is `/etc/3d-print-shop/callers.json`, a list of ids, names, roles and tokens:
@@ -278,8 +278,8 @@ nobody else can reach is the one nobody else can read it off. `serve --listen <a
 otherwise, and putting the shop on the network is a thing to decide rather than a thing to
 default to.
 
-**It takes gcode up to 128MB**, and keeps that much room spare on the spool before accepting any
-job — the spool is how the shop survives a restart, so filling it would lose everything it holds,
+**It takes gcode up to 128MB**, and keeps that much room spare in the data directory before
+accepting any job — it is how the shop survives a restart, so filling it would lose everything it holds,
 not just the job that overflowed. `serve --max-gcode <megabytes>` (or `PRINT_SHOP_MAX_GCODE_MB`)
 raises it. OctoPrint's own default is 1GB, so the shop is the binding limit until then.
 
@@ -365,7 +365,7 @@ yarn at             the acceptance suites
 yarn test           both
 ```
 
-The acceptance suites run the real thing: a shop in its own process over a real spool
+The acceptance suites run the real thing: a shop in its own process over a real data directory
 (`theRunningShop`), the real client against the real API (`theShopAndItsClient`), and the real
 OctoPrint client against `@3d-print-shop/octoprint-sim` (`octoPrintMachines`, `reconnectRecovery`).
 No printer is needed for any of them.

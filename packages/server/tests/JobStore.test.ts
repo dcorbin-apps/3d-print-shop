@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { InvalidSubmission } from '../src/Job';
 import type { BuildVolume, Job, JobDetails, PrinterOutcome } from '../src/Job';
-import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, SpoolUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
+import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, DataUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
 
 async function readAll(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -16,7 +16,7 @@ async function readAll(stream: Readable): Promise<Buffer> {
 // AIDEV-NOTE: a real directory, not a mocked fs. Keeping jobs on disk IS what this unit does, so a
 // mock would test the mock - the same distinction design/testing.md draws for the golden store.
 describe('JobStore', () => {
-  let spool: string;
+  let dataRoot: string;
   let shop: JobStore;
 
   const gcode = (text = 'G1 X0 Y0\n'): Readable => Readable.from([text]);
@@ -41,14 +41,14 @@ describe('JobStore', () => {
   }
 
   beforeEach(async () => {
-    spool = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-'));
-    shop = new JobStore(spool);
+    dataRoot = await fs.mkdtemp(path.join(tmpdir(), 'print-shop-'));
+    shop = new JobStore(dataRoot);
     // A shop with no printers accepts nothing, so every one of these needs one.
     await addPrinter('mk4', { x: 250, y: 210, z: 220 });
   });
 
   afterEach(async () => {
-    await fs.rm(spool, { recursive: true, force: true });
+    await fs.rm(dataRoot, { recursive: true, force: true });
   });
 
   describe('taking a job in', () => {
@@ -77,7 +77,7 @@ describe('JobStore', () => {
     it('records who submitted it, and still says so after a restart', async () => {
       const { id } = await submit(details(), gcode(), 'u-slicer');
 
-      expect((await new JobStore(spool).find(id))?.owner).toBe('u-slicer');
+      expect((await new JobStore(dataRoot).find(id))?.owner).toBe('u-slicer');
     });
 
     it('starts a job queued, with nothing printed yet', async () => {
@@ -105,7 +105,7 @@ describe('JobStore', () => {
     it('records how long a client said the print takes', async () => {
       const job = await submit(details({ estimatedPrintSeconds: 20_460 }), gcode());
 
-      expect((await new JobStore(spool).find(job.id))?.estimatedPrintSeconds).toBe(20_460);
+      expect((await new JobStore(dataRoot).find(job.id))?.estimatedPrintSeconds).toBe(20_460);
     });
 
     // Counted as it is written, rather than taken on trust from a client - what is recorded is what
@@ -152,7 +152,7 @@ describe('JobStore', () => {
       await expect(submit(details(), stream())).rejects.toThrow();
 
       expect(await shop.all()).toEqual([]);
-      await expect(fs.readdir(path.join(spool, 'jobs'))).resolves.toEqual([]);
+      await expect(fs.readdir(path.join(dataRoot, 'jobs'))).resolves.toEqual([]);
     });
 
     // AIDEV-NOTE: ten, because the directory names are read back as STRINGS and the disk hands them
@@ -175,7 +175,7 @@ describe('JobStore', () => {
   describe('through a print', () => {
     let id: number;
 
-    const recordOnDisk = (): Promise<string> => fs.readFile(path.join(spool, 'jobs', String(id), 'job.json'), 'utf-8');
+    const recordOnDisk = (): Promise<string> => fs.readFile(path.join(dataRoot, 'jobs', String(id), 'job.json'), 'utf-8');
 
     beforeEach(async () => {
       id = (await submit(details(), gcode())).id;
@@ -273,7 +273,7 @@ describe('JobStore', () => {
       await shop.approve(id);
 
       expect(await shop.find(id)).toBeUndefined();
-      await expect(fs.readdir(path.join(spool, 'jobs'))).resolves.toEqual([]);
+      await expect(fs.readdir(path.join(dataRoot, 'jobs'))).resolves.toEqual([]);
       expect((await shop.printerNamed('mk4')).holding).toBeUndefined();
     });
 
@@ -342,7 +342,7 @@ describe('JobStore', () => {
     it('is still loaded after a restart', async () => {
       await shop.load('mk4', ['PLA-Red']);
 
-      expect((await new JobStore(spool).printerNamed('mk4')).loaded).toEqual(['PLA-Red']);
+      expect((await new JobStore(dataRoot).printerNamed('mk4')).loaded).toEqual(['PLA-Red']);
     });
 
     // AIDEV-NOTE: the shop's list of machines is the SPOOL's, not a running process's - a printer
@@ -352,7 +352,7 @@ describe('JobStore', () => {
     it('is still one of the shop\'s printers after a restart, with what it was told about it', async () => {
       await shop.addPrinter({ name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, api: 'octoprint', address: 'http://mini' });
 
-      expect(await new JobStore(spool).printers()).toEqual([
+      expect(await new JobStore(dataRoot).printers()).toEqual([
         expect.objectContaining({ name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini' }),
         expect.objectContaining({ name: 'mk4' }),
       ]);
@@ -475,7 +475,7 @@ describe('JobStore', () => {
     it('is still stopped after a restart', async () => {
       await shop.pause('mk4', 'out of filament');
 
-      expect((await new JobStore(spool).printerNamed('mk4')).paused).toMatchObject({
+      expect((await new JobStore(dataRoot).printerNamed('mk4')).paused).toMatchObject({
         reason: 'out of filament',
       });
     });
@@ -506,7 +506,7 @@ describe('JobStore', () => {
     it('is still out of reach after a restart', async () => {
       await shop.couldNotReach('mk4', 'no API key for mk4');
 
-      expect((await new JobStore(spool).printerNamed('mk4')).unreachable).toMatchObject({ reason: 'no API key for mk4' });
+      expect((await new JobStore(dataRoot).printerNamed('mk4')).unreachable).toMatchObject({ reason: 'no API key for mk4' });
     });
 
     it('is not a stop, because nobody is being asked to clear it', async () => {
@@ -661,30 +661,30 @@ describe('JobStore', () => {
       await submit(details(), gcode());
       await shop.startPrinting('mk4', printing.id);
 
-      expect(await held(new JobStore(spool))).toEqual(['1:Player Box:printing', '2:Job 2:queued']);
+      expect(await held(new JobStore(dataRoot))).toEqual(['1:Player Box:printing', '2:Job 2:queued']);
     });
 
     it('goes on issuing ids where the previous run stopped', async () => {
       await submit(details(), gcode());
 
-      expect((await new JobStore(spool).submit(details(), gcode(), DAVE)).id).toBe(2);
+      expect((await new JobStore(dataRoot).submit(details(), gcode(), DAVE)).id).toBe(2);
     });
 
     it('still has the gcode a previous run stored', async () => {
       const { id } = await submit(details(), gcode('G1 X42\n'));
 
-      expect((await readAll(await new JobStore(spool).gcodeStream(id))).toString()).toBe('G1 X42\n');
+      expect((await readAll(await new JobStore(dataRoot).gcodeStream(id))).toString()).toBe('G1 X42\n');
     });
   });
 
   // AIDEV-NOTE: /var/spool/cups is made at install time and owned by the service's user. A missing
   // root means a machine that was never set up, and creating one would put the shop's work
   // somewhere nobody is looking.
-  // AIDEV-NOTE: integrity before secrecy. A spool another user can write is one where a job's gcode
+  // AIDEV-NOTE: integrity before secrecy. A data directory another user can write is one where a job's gcode
   // can be swapped for different gcode, and the shop sends what is there to a printer unquestioned.
   describe('what the shop leaves on disk', () => {
     async function modeOf(...where: string[]): Promise<string> {
-      return ((await fs.stat(path.join(spool, ...where))).mode & 0o777).toString(8);
+      return ((await fs.stat(path.join(dataRoot, ...where))).mode & 0o777).toString(8);
     }
 
     it('keeps a job to itself, directory and contents', async () => {
@@ -711,7 +711,7 @@ describe('JobStore', () => {
     });
   });
 
-  describe('when the spool is not there', () => {
+  describe('when the data directory is not there', () => {
     const absent = (): JobStore => new JobStore(path.join(tmpdir(), 'print-shop-that-was-never-installed'));
 
     it.each([
@@ -721,7 +721,7 @@ describe('JobStore', () => {
       // Asked at startup, so a service refuses to START rather than refusing to serve.
       ['starting up', (store: JobStore) => store.ready()],
     ])('refuses rather than creating one when %s', async (_case, act) => {
-      await expect(act(absent())).rejects.toThrow(SpoolUnavailable);
+      await expect(act(absent())).rejects.toThrow(DataUnavailable);
     });
 
     it('does not create the directory it refused to use', async () => {
@@ -735,19 +735,19 @@ describe('JobStore', () => {
   // AIDEV-NOTE: the root's own mode, which the installer sets and the shop only checks. Everything
   // the shop creates below it is already 0700 and 0600, and none of that survives a root out of
   // which a whole job directory can be renamed.
-  describe('when the spool is one somebody else could write', () => {
+  describe('when the data directory is one somebody else could write', () => {
     it.each([
       ['anybody', 0o777],
       ['its group', 0o770],
       ['anybody, without letting them look', 0o722],
     ])('refuses to start when %s could write it', async (_who, mode) => {
-      await fs.chmod(spool, mode);
+      await fs.chmod(dataRoot, mode);
 
-      await expect(shop.ready()).rejects.toThrow(SpoolUnavailable);
+      await expect(shop.ready()).rejects.toThrow(DataUnavailable);
     });
 
     it('says the mode it found, which is what the operator has to change', async () => {
-      await fs.chmod(spool, 0o777);
+      await fs.chmod(dataRoot, 0o777);
 
       await expect(shop.ready()).rejects.toThrow('(mode 777)');
     });
@@ -760,7 +760,7 @@ describe('JobStore', () => {
       ['a group that may read it', 0o750],
       ['anybody who may read it', 0o755],
     ])('starts over one %s could write', async (_who, mode) => {
-      await fs.chmod(spool, mode);
+      await fs.chmod(dataRoot, mode);
 
       await expect(shop.ready()).resolves.toBeUndefined();
     });

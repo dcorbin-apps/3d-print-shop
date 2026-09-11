@@ -17,7 +17,7 @@ export class OctoPrintMachines {
   private readonly reached = new Map<string, { address: string; key: string; machine: OctoPrint }>();
 
   // AIDEV-NOTE: a key belongs in neither of a printer's files. `printer add` would put it in shell
-  // history and in `ps`, and the spool is the shop's working directory rather than a credential
+  // history and in `ps`, and the data directory is the shop's working one rather than a credential
   // store - so it is read from a file only its owner can read, and keyed by the printer's own name.
   // It was an environment variable until that had to go into a launchd plist, which is world
   // readable; see design/3d-print-shop.md.

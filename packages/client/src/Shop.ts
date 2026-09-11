@@ -58,7 +58,7 @@ export interface Shop {
   printers(): Promise<RegisteredPrinter[]>;
   // AIDEV-NOTE: the key is a second ARGUMENT and not a field of the record, because it is not part
   // of what a printer IS - the shop keeps it in a different file, and one that reached a record
-  // would reach the spool with it. One call rather than two, so that a printer cannot land without
+  // would reach the data directory with it. One call rather than two, so a printer cannot land without
   // the key it is reached by; write-only, and there is nothing here that reads one back.
   /**
    * Add a printer, or change what the shop knows about one it already has.

@@ -31,7 +31,9 @@ exactly what this repository being separate would have made of it.
 The name is what a print shop does: it takes jobs from several customers, schedules them against the
 materials it has loaded, inspects each result and reruns the ones that came out badly. Note what it
 is NOT called - in 3D printing a "spool" is a reel of filament, which is what OctoPrint's
-SpoolManager tracks, so nothing here is a spooler however right `/var/spool` is as a location.
+SpoolManager tracks, so nothing here is a spooler however right `/var/spool` is as a location. The
+directory it keeps everything in is its DATA, for that reason: `--data`, `PRINT_SHOP_DATA`, and a
+word that means one thing in a workshop where the other kind of spool is something you load.
 
 ## Constraints
 
@@ -60,7 +62,7 @@ get right; a live channel can be added when a GUI exists to want one.
 
 `/var/spool/3d-print-shop`, on macOS and Linux alike. macOS is BSD-derived and has `/var/spool` with
 the same occupants Linux does - `cups`, `postfix`, `mqueue`, `uucp` - so this is one path, not a
-platform branch. `PRINT_SHOP_SPOOL` overrides it, for installs that would rather not involve root
+platform branch. `PRINT_SHOP_DATA` overrides it, for installs that would rather not involve root
 (Homebrew keeps service state under its own prefix). The variable cannot be named for the service:
 `3D_` is not a legal start for an environment variable.
 
@@ -82,7 +84,7 @@ the group is let in to traverse, never to change what is there.
 
 **So there is an installer, and `@3d-print-shop/installer` is it** - one script that knows both machines,
 because the two directories and the mode on them are the same question wherever it runs and only the
-supervisor differs. It makes a system user that can be logged in as by nobody, gives it the spool and
+supervisor differs. It makes a system user that can be logged in as by nobody, gives it the data directory and
 `/etc/3d-print-shop` at 0700, and hands the process to `launchd` or to `systemd`.
 
 Three of its decisions are worth writing down. It **copies** the built shop to
@@ -102,7 +104,7 @@ the command.
 ```
 /var/spool/3d-print-shop/
   next-id                     the id counter
-  running.sock                the claim on this spool, held by the shop serving it
+  running.sock                the claim on this directory, held by the shop serving it
   jobs/
     7/
       job.json                what was submitted, and nothing else
@@ -116,10 +118,10 @@ the command.
 One directory per job and one per printer. Reading the shop back is a scan, which is what makes
 surviving a restart cost nothing - there is no index to keep in step with the files.
 
-**One shop to a spool, and the kernel enforces it.** The store's numbers are only unique while one
+**One shop to a data directory, and the kernel enforces it.** The store's numbers are only unique while one
 process is handing them out: allocating an id is a read of `next-id`, an add and a write back, so
 two shops would both read 7, both write 8, and both hand out 7 - the second overwriting the first
-job's gcode and record with no error anywhere. `serve` claims the spool by LISTENING on a socket in
+job's gcode and record with no error anywhere. `serve` claims the directory by LISTENING on a socket in
 it, and a second one is refused.
 
 A socket rather than a lock file, because the claim then belongs to the process rather than to the
@@ -129,7 +131,7 @@ answering on it is what makes a leftover safe to clear away, which is a question
 answer about itself.
 
 Scoped to the SPOOL rather than to the port. A second `serve` on the same port already fails to
-listen; one on a different port over the same spool is the case only this catches.
+listen; one on a different port over the same directory is the case only this catches.
 
 ## What changes, and what does not
 
@@ -162,7 +164,7 @@ space. A non-ASCII name is NOT transliterated, which the API docs had implied it
 and an emoji all survived, so there is no rule against them.
 
 **The API key is not in either file.** A key an operator types when adding a printer is a key in
-shell history and in `ps`, and the spool is a working directory rather than a credential store - so
+shell history and in `ps`, and the data directory is a working one rather than a credential store - so
 it is kept apart, in `/etc/3d-print-shop/printer-keys.json`, keyed by the printer's own name. A
 printer whose key is missing stops, with that as its reason.
 
@@ -178,7 +180,7 @@ takes the key beside the record - one call, because adding a machine is one act 
 printer land without the key it is reached by - and puts it where the shop already reads them, then
 uses it from that moment: a machine added from a browser can be printed on without anybody editing a
 file or signalling anything. The key is read out of the body and never joins the record, which is
-built from the four fields a printer IS, so it cannot follow one into the spool.
+built from the four fields a printer IS, so it cannot follow one into the data directory.
 That is a real change of posture, and worth saying plainly: `/etc` was somewhere the running shop
 only ever read. What it does NOT change is the rule that put the key there in the first place - the
 file is still 0600, still apart from the printer's record, still never in shell history or in `ps` or
@@ -479,7 +481,7 @@ answering the person who typed it, and the log is the running SERVICE's record. 
 
 ```
 3d-print-shop init dave                                  the first admin, on a machine with none
-3d-print-shop serve --spool /var/spool/3d-print-shop     run the shop, so clients can reach it
+3d-print-shop serve --data /var/spool/3d-print-shop      run the shop, so clients can reach it
 3d-print-shop serve --listen 0.0.0.0                     ... from off this machine, which is a decision
 3d-print-shop printer add mk4 250x210x220 http://octopi.local
 3d-print-shop printer list                              what it has, and what each is doing
@@ -504,7 +506,7 @@ place, having been told what it is for.
 
 `add` takes an address and no key, deliberately: see "What changes, and what does not".
 
-Only `serve` names a spool, because only `serve` holds one. Every `printer` command is a client of a
+Only `serve` names a data directory, because only `serve` holds one. Every `printer` command is a client of a
 running shop and takes `--shop-url` instead (or `PRINT_SHOP_URL`, defaulting to this machine).
 
 `start` matters as much as `add`: the shop stops a printer by itself when an upload fails, and
@@ -515,7 +517,7 @@ Each printer command is a function answering with LINES rather than printing, so
 shop can be tested without a process and is not stuck behind stdout when an API or a GUI wants it.
 The command line only turns argv into a call.
 
-**They go through the API**, like every other client. They used to write the spool directly, which
+**They go through the API**, like every other client. They used to write the data directory directly, which
 made the command line a second writer over files the service was writing at the same instant - a
 `stop` landing at the same time as an `add` could lose one. Going through the one door also means an
 operator can mind a shop running on another machine, which reaching into a directory could never do.
@@ -690,7 +692,7 @@ the shop works out for itself is written here.
 
 **Stopped per printer, not per shop.** A machine in trouble has no business idling a machine that is
 working. The reason and the time are recorded so an operator can see what happened without watching
-it happen. A fault of the shop's own - the store, the spool - stops nothing: it is no printer's
+it happen. A fault of the shop's own - the store, the data directory - stops nothing: it is no printer's
 fault, and stopping a machine over one names the wrong thing and leaves a person clearing a fault
 that was never about the printer.
 
