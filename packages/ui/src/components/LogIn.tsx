@@ -56,10 +56,6 @@ export function LogIn({ onIn }: LogInProps): React.JSX.Element {
       <button type="submit" disabled={asking || id.trim() === '' || password === ''}>
         {asking ? 'asking...' : 'Log in'}
       </button>
-
-      <p className="aside">
-        A program calls this shop with a token instead, and never sees this - see <code>3d-print-shop caller token</code>.
-      </p>
     </form>
   );
 }

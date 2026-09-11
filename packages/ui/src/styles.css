@@ -282,69 +282,6 @@ body {
   padding: 0 20px 18px;
 }
 
-/* ------------------------------------------------------------------------------------ the way in */
-
-.ask-for-token {
-  max-width: 380px;
-  margin: 14vh auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 24px;
-  background: var(--raised);
-  border: 1px solid var(--edge);
-  border-radius: 10px;
-}
-
-.ask-for-token h1 {
-  margin: 0;
-  font-size: 20px;
-}
-
-.ask-for-token p {
-  margin: 0;
-  color: var(--dim);
-}
-
-.ask-for-token label {
-  margin-top: 8px;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--dim);
-}
-
-.ask-for-token input {
-  padding: 8px 10px;
-  color: inherit;
-  font: inherit;
-  background: var(--ground);
-  border: 1px solid var(--edge);
-  border-radius: 6px;
-}
-
-.ask-for-token button {
-  margin-top: 8px;
-  padding: 9px;
-  color: var(--ground);
-  font: inherit;
-  font-weight: 600;
-  background: var(--live);
-  border: 0;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.ask-for-token button:disabled {
-  background: var(--edge);
-  color: var(--dim);
-  cursor: default;
-}
-
-.ask-for-token .aside {
-  font-size: 12px;
-}
-
 /* ------------------------------------------------------ adding a machine, from where they are shown */
 
 .printer-tile.add {
@@ -537,10 +474,4 @@ body {
   background: var(--edge);
   color: var(--dim);
   cursor: default;
-}
-
-.log-in .aside {
-  margin-top: 12px;
-  font-size: 12px;
-  color: var(--dim);
 }
