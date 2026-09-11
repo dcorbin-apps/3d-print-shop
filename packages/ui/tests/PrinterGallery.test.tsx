@@ -107,8 +107,12 @@ describe('the gallery of printers', () => {
     // booting, a connection dropped, a moment when something else had it. Giving up on the first
     // left a tile saying "no picture" at a working camera until somebody reloaded the page.
     describe('when a try fails', () => {
-      beforeEach(() => jest.useFakeTimers());
-      afterEach(() => jest.useRealTimers());
+      beforeEach(() => {
+        jest.useFakeTimers();
+      });
+      afterEach(() => {
+        jest.useRealTimers();
+      });
 
       const andWait = (): void => act(() => void jest.advanceTimersByTime(BEFORE_TRYING_AGAIN_MS));
 

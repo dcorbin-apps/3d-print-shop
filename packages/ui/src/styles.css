@@ -387,37 +387,68 @@ body {
 /* --------------------------------------------------------------------------- who is looking at it */
 
 .whoami {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+  position: relative;
   margin-left: auto;
 }
 
 .whoami .who {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px;
+  color: var(--ink);
+  font: inherit;
   font-weight: 600;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.whoami .who:hover,
+.whoami .who[aria-expanded='true'] {
+  border-color: var(--edge);
 }
 
 .whoami .role {
   font-size: 11px;
+  font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--dim);
 }
 
-.log-out {
-  padding: 4px 10px;
-  color: var(--dim);
-  font: inherit;
-  font-size: 12px;
-  background: none;
+/* Under the name it belongs to, and over everything else - the gallery scrolls beneath it. */
+.who-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  min-width: 100%;
+  padding: 4px;
+  background: var(--raised);
   border: 1px solid var(--edge);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 45%);
+}
+
+.who-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  background: none;
+  border: 0;
   border-radius: 5px;
   cursor: pointer;
 }
 
-.log-out:hover {
-  color: var(--ink);
-  border-color: var(--live);
+.who-menu button:hover {
+  background: var(--ground);
+  color: var(--live);
 }
 
 /* ------------------------------------------------------------------------------------ the way in */

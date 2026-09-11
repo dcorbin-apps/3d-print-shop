@@ -86,16 +86,16 @@ describe('the page, against a shop that answers', () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText('dave')).toBeDefined());
-    expect(screen.getByRole('button', { name: 'log out' })).toBeDefined();
+    await waitFor(() => expect(screen.getByRole('button', { name: /dave/ })).toBeDefined());
   });
 
   it('logs out at the shop rather than only in the browser', async () => {
     answering('admin');
     render(<App />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'log out' })).toBeDefined());
+    await waitFor(() => expect(screen.getByRole('button', { name: /dave/ })).toBeDefined());
 
-    fireEvent.click(screen.getByRole('button', { name: 'log out' }));
+    fireEvent.click(screen.getByRole('button', { name: /dave/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }));
 
     await waitFor(() => expect(asked('DELETE', '/sessions')).toBeDefined());
   });

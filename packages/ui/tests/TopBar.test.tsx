@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from '@jest/globals';
-import { cleanup, render, screen } from '@testing-library/react';
+import { describe, it, expect, jest, afterEach } from '@jest/globals';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { TopBar } from '../src/components/TopBar';
 import type { ShopSummary } from '../src/shopSummary';
 
@@ -48,6 +48,101 @@ describe('the banner and what it says the shop is doing', () => {
     render(<TopBar summary={quiet} />);
 
     expect(document.querySelectorAll('.urgent')).toHaveLength(0);
+  });
+
+  // AIDEV-NOTE: behind the name rather than beside it, because a log out sitting in the banner of a
+  // shared screen is a thing to hit by accident - and what somebody goes to the corner of a page
+  // looking for is their own name.
+  describe('who is looking at it', () => {
+    const asDave = { id: 'dave', name: 'dave', role: 'admin' as const };
+    const goesOut = jest.fn<() => void>();
+
+    const theName = (): HTMLElement => screen.getByRole('button', { name: /dave/ });
+    const loggingOut = (): HTMLElement | null => screen.queryByRole('menuitem', { name: 'Log out' });
+
+    it('says the name and the role of whoever is logged in', () => {
+      render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} />);
+
+      expect(theName().textContent).toContain('dave');
+      expect(theName().textContent).toContain('admin');
+    });
+
+    it('says nothing at all when nobody is', () => {
+      render(<TopBar summary={quiet} />);
+
+      expect(screen.queryByRole('button', { name: /dave/ })).toBeNull();
+    });
+
+    it('keeps logging out behind the name rather than in the banner', () => {
+      render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} />);
+
+      expect(loggingOut()).toBeNull();
+    });
+
+    it('offers it when the name is clicked', () => {
+      render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} />);
+
+      fireEvent.click(theName());
+
+      expect(loggingOut()).not.toBeNull();
+    });
+
+    it('logs out when it is chosen', () => {
+      render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} />);
+      fireEvent.click(theName());
+
+      fireEvent.click(loggingOut() as HTMLElement);
+
+      expect(goesOut).toHaveBeenCalled();
+    });
+
+    // The two ways out of an open menu that people expect and nothing else provides.
+    it('closes when somebody clicks at anything else', () => {
+      render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} />);
+      fireEvent.click(theName());
+
+      fireEvent.mouseDown(document.body);
+
+      expect(loggingOut()).toBeNull();
+      expect(goesOut).not.toHaveBeenCalled();
+    });
+
+    it('closes when somebody presses escape', () => {
+      render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} />);
+      fireEvent.click(theName());
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+
+      expect(loggingOut()).toBeNull();
+    });
+
+    it('closes again when the name is clicked a second time', () => {
+      render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} />);
+      fireEvent.click(theName());
+
+      fireEvent.click(theName());
+
+      expect(loggingOut()).toBeNull();
+    });
+
+    // What a screen reader is told, and what says which way the thing in the corner opens.
+    it('says whether it is open', () => {
+      render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} />);
+      expect(theName().getAttribute('aria-expanded')).toBe('false');
+
+      fireEvent.click(theName());
+
+      expect(theName().getAttribute('aria-expanded')).toBe('true');
+    });
+
+    // A caller the page was given no way to log out is still a caller worth naming.
+    it('offers nothing behind the name when there is no way to log out', () => {
+      render(<TopBar summary={quiet} caller={asDave} />);
+
+      fireEvent.click(theName());
+
+      expect(loggingOut()).toBeNull();
+    });
   });
 
   // The last good answer stays underneath, so a shop being restarted does not blank a wall display.
