@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Caller } from '@3d-print-shop/client';
 import type { Log } from './log.js';
@@ -225,6 +225,40 @@ export async function printerKeysIn(etc: string = defaultEtc()): Promise<Map<str
 
     keys.set(printer, key);
   }
+
+  return keys;
+}
+
+// AIDEV-NOTE: the one thing the SERVICE writes into its own credentials directory, and it took a
+// decision to allow it. The rule that put a key here in the first place was that it must not be in
+// shell history or in `ps` or in a world-readable plist - none of which a shop writing the file
+// itself breaks. What it does change is that /etc is no longer somewhere the running shop only ever
+// reads, so this is the only function that writes there, it writes nothing but a key, and it leaves
+// the file the mode it demands of one.
+//
+// Answered with the whole map rather than nothing, because whoever asked for this holds the keys the
+// shop is using and has to be given the new ones - a key written to a file the shop will not re-read
+// until a signal is a key that has not taken effect.
+/**
+ * Give a printer its key, keeping every other one, and answer with what the shop now holds.
+ *
+ * Read, merged and written rather than appended: this file is a whole JSON object, and the shop's
+ * own copy of it has to end up agreeing with what is on disk.
+ */
+export async function writePrinterKey(etc: string, printer: string, key: string): Promise<Map<string, string>> {
+  if (key.trim() === '') throw new UnusableCredentials(`${printer} cannot be given an empty key`);
+
+  const keys = await printerKeysIn(etc);
+  keys.set(printer, key);
+
+  const file = path.join(etc, PRINTER_KEYS_FILE);
+  const asObject = Object.fromEntries([...keys.entries()].sort(([one], [other]) => one.localeCompare(other)));
+
+  // Written beside and renamed over, because a crash part way through would otherwise leave the
+  // shop with a file holding no keys at all rather than the ones it had a moment ago.
+  const being = `${file}.new`;
+  await writeFile(being, `${JSON.stringify(asObject, null, 2)}\n`, { mode: FILE_MODE });
+  await rename(being, file);
 
   return keys;
 }

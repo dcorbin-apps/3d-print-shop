@@ -133,12 +133,16 @@ is a token in `callers.json` - so this is the honest interim rather than a desig
 the shop can issue one. See PLAN.md.
 
 **An admin gets a `+` at the end of the printer row**, which opens a form in the row itself and adds
-a machine while the shop runs. A caller who is not an admin is not offered it: the page asks the
-shop who it is talking to, over `GET /me`, rather than offering everything and letting a 403 teach
-somebody they are not trusted. The shop refuses either way - withholding the button is manners, not
-the guard. There is no key field and there cannot be one: a printer's key is read from a file only
-the shop's own user can read, so a printer added here is out of reach until its key is in
-`printer-keys.json` and the shop has been signalled.
+a machine while the shop runs - name, build volume, address and the API key. A caller who is not an
+admin is not offered it: the page asks the shop who it is talking to, over `GET /me`, rather than
+offering everything and letting a 403 teach somebody they are not trusted. The shop refuses either
+way - withholding the button is manners, not the guard.
+
+The key goes in with the rest, and a machine added this way can be printed on straight away. It is
+still kept where every other key is - `printer-keys.json`, 0600, apart from the printer's record -
+but the shop writes it there itself and uses it from that moment: no editing a file, no `SIGHUP`, no
+restart. It is never read back; the shop answers with the printer, never with the key, and a key is
+redacted out of every line the shop logs.
 
 ## The operator's commands
 

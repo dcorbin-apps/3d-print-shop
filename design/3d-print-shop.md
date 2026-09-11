@@ -165,6 +165,20 @@ unless nobody but its owner can. And it is a SECOND file rather than more of the
 because those tokens let somebody into the SHOP while these keys let somebody into the PRINTERS,
 bypassing it - so copying what a client machine needs must not hand over what it does not.
 
+**And the shop will write one, which is the one thing it writes into `/etc`.** `PUT
+/printers/<name>/key` puts a key where the shop already reads them and uses it from that moment, so a
+machine added from a browser can be printed on without anybody editing a file or signalling anything.
+That is a real change of posture, and worth saying plainly: `/etc` was somewhere the running shop
+only ever read. What it does NOT change is the rule that put the key there in the first place - the
+file is still 0600, still apart from the printer's record, still never in shell history or in `ps` or
+in a world-readable plist, and the shop's own write leaves it the mode it demands of one. The typing
+moves from a text editor to a form, and a form is neither of the things that rule was about.
+
+It is write-only. A key opens the machine directly, so a caller may replace one and never ask what it
+is: the route answers with the PRINTER, whose trouble is the thing they are actually waiting to see
+clear. And a key that arrives this way reaches the log's redactor in the same breath it reaches the
+file, because the process that wrote it is the process holding the list of what may never be printed.
+
 **Ids are a persisted counter, never reused.** `7` is what an operator types and what a GUI shows,
 and the same counter supplies the `Job N` display name for a client that offered none. An id is
 spent even when the submission it was issued for fails: a number that once named a job must never

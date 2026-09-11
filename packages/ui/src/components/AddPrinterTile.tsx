@@ -2,10 +2,13 @@ import { useState } from 'react';
 import type { PrinterRecord } from '@3d-print-shop/client/browser';
 
 interface AddPrinterTileProps {
-  onAdd: (record: PrinterRecord) => Promise<void>;
+  // AIDEV-NOTE: the key travels WITH the record rather than being a second thing the form does,
+  // because half of this is a printer the shop cannot reach - and which half failed is not something
+  // an operator should have to work out from two error messages.
+  onAdd: (record: PrinterRecord, key: string) => Promise<void>;
 }
 
-const NOTHING_TYPED = { name: '', x: '', y: '', z: '', address: '' };
+const NOTHING_TYPED = { name: '', x: '', y: '', z: '', address: '', key: '' };
 
 // AIDEV-NOTE: a tile in the row rather than a dialog over it, because adding a machine is a thing
 // that happens IN the row of machines - and the gallery is where an operator is already looking to
@@ -41,12 +44,15 @@ export function AddPrinterTile({ onAdd }: AddPrinterTileProps): React.JSX.Elemen
     setRefused(undefined);
 
     try {
-      await onAdd({
-        name: typed.name.trim(),
-        buildVolume: { x: Number(typed.x), y: Number(typed.y), z: Number(typed.z) },
-        api: 'octoprint',
-        address: typed.address.trim(),
-      });
+      await onAdd(
+        {
+          name: typed.name.trim(),
+          buildVolume: { x: Number(typed.x), y: Number(typed.y), z: Number(typed.z) },
+          api: 'octoprint',
+          address: typed.address.trim(),
+        },
+        typed.key.trim()
+      );
       close();
     } catch (failure) {
       // The shop's own words: it is the end that knows why - a name that becomes a directory, an
@@ -84,10 +90,13 @@ export function AddPrinterTile({ onAdd }: AddPrinterTileProps): React.JSX.Elemen
         <input value={typed.address} onChange={said('address')} placeholder="http://octopi.local" />
       </label>
 
-      {/* AIDEV-NOTE: no key field, and there cannot be one - a printer's key is read from a file only
-          the shop's own user can read, and a browser is the last place it should be typed. A printer
-          added here is unreachable until somebody puts its key in printer-keys.json and signals. */}
-      <p className="aside">Its API key goes in the shop&apos;s printer-keys.json, not here.</p>
+      {/* AIDEV-NOTE: a password field so it is not left on a screen in a workshop, and there is no
+          reading one back - the shop answers with the printer, never with the key. It is written
+          where the shop keeps its keys and is in force at once; nothing has to be signalled. */}
+      <label>
+        api key
+        <input type="password" value={typed.key} onChange={said('key')} autoComplete="off" />
+      </label>
 
       {refused !== undefined && <p className="refused">{refused}</p>}
 
@@ -105,8 +114,10 @@ export function AddPrinterTile({ onAdd }: AddPrinterTileProps): React.JSX.Elemen
 
 // Only what the form can know by itself: everything past this is the shop's to judge, and it says so
 // better than this could - a name that becomes a directory, an address a printer cannot be at.
-function enough({ name, x, y, z, address }: typeof NOTHING_TYPED): boolean {
+function enough({ name, x, y, z, address, key }: typeof NOTHING_TYPED): boolean {
   const measured = (said: string): boolean => /^\d+$/.test(said.trim()) && Number(said) > 0;
 
-  return name.trim() !== '' && address.trim() !== '' && measured(x) && measured(y) && measured(z);
+  // The key among them: a printer the shop has no key for is one it can only report as out of
+  // reach, and adding a machine that cannot be printed on is not what anybody came here to do.
+  return name.trim() !== '' && address.trim() !== '' && key.trim() !== '' && measured(x) && measured(y) && measured(z);
 }

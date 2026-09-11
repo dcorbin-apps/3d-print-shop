@@ -20,6 +20,7 @@ describe('the shop over HTTP', () => {
   let mockChanged: jest.Mock<() => void>;
   let mockStarted: jest.Mock<(name: string) => void>;
   let mockShutDown: jest.Mock<() => void>;
+  let mockKeyGiven: jest.Mock<(printer: string, key: string) => Promise<void>>;
 
   const MK4 = { x: 250, y: 210, z: 220 };
   const MK4_ADDRESS = 'http://octopi.local';
@@ -80,7 +81,15 @@ describe('the shop over HTTP', () => {
     mockChanged = jest.fn<() => void>();
     mockStarted = jest.fn<(name: string) => void>();
     mockShutDown = jest.fn<() => void>();
-    server = await serve(shop, 0, { changed: mockChanged, started: mockStarted, shutDown: mockShutDown, callers: () => CALLERS });
+    mockKeyGiven = jest.fn<(printer: string, key: string) => Promise<void>>();
+    mockKeyGiven.mockResolvedValue(undefined);
+    server = await serve(shop, 0, {
+      changed: mockChanged,
+      started: mockStarted,
+      shutDown: mockShutDown,
+      keyGiven: mockKeyGiven,
+      callers: () => CALLERS,
+    });
     shopUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
 
@@ -384,6 +393,60 @@ describe('the shop over HTTP', () => {
         expect(lines.join('\n')).toContain(`${spool} has 512 bytes free, and the shop keeps 1024 spare for a job`);
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+  });
+
+  // AIDEV-NOTE: a key opens the machine DIRECTLY, bypassing the shop, so what a caller may do is
+  // replace one and never read one back. Where it is kept is the running shop's business rather than
+  // the store's - the API only hands it over, which is why this asserts on the hook.
+  describe('giving a printer its key', () => {
+    const givingMk4 = (key: unknown, token = ADMIN): Promise<Response> => as(token, 'PUT', '/printers/mk4/key', { key });
+
+    it('hands it to whoever keeps the keys', async () => {
+      expect((await givingMk4('mk4-key')).status).toBe(200);
+      expect(mockKeyGiven).toHaveBeenCalledWith('mk4', 'mk4-key');
+    });
+
+    // The printer, because its trouble is the thing the caller is actually waiting to see clear.
+    it('answers with the printer rather than with the key', async () => {
+      const said = (await (await givingMk4('mk4-key')).json()) as Record<string, unknown>;
+
+      expect(said).toMatchObject({ name: 'mk4' });
+      expect(JSON.stringify(said)).not.toContain('mk4-key');
+    });
+
+    it.each([[''], ['   '], [7], [null], [undefined]])('refuses %p as a key', async (key) => {
+      expect((await givingMk4(key)).status).toBe(400);
+      expect(mockKeyGiven).not.toHaveBeenCalled();
+    });
+
+    it('refuses one for a printer the shop does not have', async () => {
+      expect((await as(ADMIN, 'PUT', '/printers/ghost/key', { key: 'k' })).status).toBe(404);
+      expect(mockKeyGiven).not.toHaveBeenCalled();
+    });
+
+    // A key is an admin's, like every other thing about a printer.
+    it('refuses a user outright', async () => {
+      expect((await givingMk4('mk4-key', USER)).status).toBe(403);
+      expect(mockKeyGiven).not.toHaveBeenCalled();
+    });
+
+    // A shop served without anywhere to keep one says so rather than answering as though it had.
+    it('says so when the shop was given nowhere to keep it', async () => {
+      const plain = await serve(shop, 0, { callers: () => CALLERS });
+
+      try {
+        const url = `http://127.0.0.1:${(plain.address() as AddressInfo).port}`;
+        const response = await fetch(`${url}/printers/mk4/key`, {
+          method: 'PUT',
+          headers: { ...AS_ADMIN, 'content-type': 'application/json' },
+          body: JSON.stringify({ key: 'mk4-key' }),
+        });
+
+        expect(response.status).toBe(400);
+      } finally {
+        await new Promise<void>((resolve) => plain.close(() => resolve()));
       }
     });
   });

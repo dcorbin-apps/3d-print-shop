@@ -9,8 +9,8 @@ interface PrinterGalleryProps {
   // AIDEV-NOTE: absent is what an ordinary caller gets, because adding a printer is an admin's.
   // Withheld rather than offered-and-refused: a button that answers 403 teaches somebody they are
   // not trusted by letting them press it. The shop refuses either way - this is not the guard.
-  /** How a printer is added, when this caller may add one. */
-  onAdd?: (record: PrinterRecord) => Promise<void>;
+  /** How a printer is added, with the key the shop will reach it by, when this caller may add one. */
+  onAdd?: (record: PrinterRecord, key: string) => Promise<void>;
 }
 
 export function PrinterGallery({ printers, selected, onSelect, onAdd }: PrinterGalleryProps): React.JSX.Element {

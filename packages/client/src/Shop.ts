@@ -53,6 +53,10 @@ export interface Shop {
   pause(name: string, reason: string): Promise<RegisteredPrinter>;
   resume(name: string): Promise<RegisteredPrinter>;
   load(name: string, filaments: string[]): Promise<RegisteredPrinter>;
+  // AIDEV-NOTE: write-only, and there is no reading it back. A key opens a machine directly,
+  // bypassing the shop entirely, so what a caller may do is replace one - never ask what it is.
+  /** Give a printer the key the shop reaches it with. It takes effect at once; nothing is signalled. */
+  giveKey(name: string, key: string): Promise<RegisteredPrinter>;
 
   /** Answers once the shop has agreed to stop, which is before it has. */
   shutDown(): Promise<void>;

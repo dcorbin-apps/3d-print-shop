@@ -121,6 +121,12 @@ export interface ShopHooks {
   started?: (name: string) => void;
   /** Told to shut the shop down. Answered before it happens, because it cannot be answered after. */
   shutDown?: () => void;
+  // AIDEV-NOTE: a hook rather than something the API does, because the keys are the running shop's
+  // rather than the store's - they reach OctoPrintMachines and the log's redactor, and neither is
+  // anything this layer holds. Absent is a shop that will not take one, which is what an API served
+  // without one should be.
+  /** Give a printer its key: written where the shop keeps them, and in force from that moment. */
+  keyGiven?: (printer: string, key: string) => Promise<void>;
   // Asked per request rather than handed over once: the shop re-reads its callers on SIGHUP, so a
   // token added or revoked while it runs has to be the one the next request is judged against.
   /** Who may talk to this shop, by their token. Every request names one of them, or is refused. */
@@ -143,6 +149,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   const changed = hooks.changed ?? ((): void => undefined);
   const started = hooks.started ?? ((): void => undefined);
   const callers = hooks.callers;
+  const keyGiven = hooks.keyGiven;
   const log = hooks.log ?? silent;
 
   // AIDEV-NOTE: first, so it covers the requests the next middleware REFUSES - a shop being asked
@@ -338,6 +345,22 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
 
   // AIDEV-NOTE: the operator's word for what is on the machine, because no printer here reports its
   // own filament. It is also a wake-up: what a shop can print changes the instant this does.
+  // AIDEV-NOTE: PUT and not POST, because a printer has one key and this replaces it. Nothing reads
+  // one back: a key opens the machine directly, bypassing the shop, so it goes in and is never
+  // answered with - which is why this answers with the PRINTER, whose trouble is the thing the
+  // caller actually wants to watch clear.
+  api.put('/printers/:name/key', async (request, response) => {
+    const { key } = bodyOf(request);
+    if (typeof key !== 'string' || key.trim() === '') throw new UnusableRequest('a key is the string the shop reaches the printer with');
+    if (keyGiven === undefined) throw new UnusableRequest('this shop was not given anywhere to keep a printer key');
+
+    requireUsablePrinterName(request.params.name);
+    await shop.printerNamed(request.params.name);
+    await keyGiven(request.params.name, key);
+
+    response.json(await shop.printerNamed(request.params.name));
+  });
+
   api.put('/printers/:name/filament', async (request, response) => {
     const { loaded } = bodyOf(request);
     if (!Array.isArray(loaded) || loaded.some((filament) => typeof filament !== 'string' || filament.trim() === '')) {

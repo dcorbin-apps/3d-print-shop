@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Role } from '@3d-print-shop/client/browser';
 import { App, TOKEN_KEY } from '../src/App';
 
@@ -24,6 +24,9 @@ describe('the page, against a shop that answers', () => {
       return Promise.resolve(answered({ accessibleJobs: [], totalJobs: 0 }));
     });
   };
+
+  const asked = (method: string, path: string): RequestInit | undefined =>
+    fetching.mock.calls.find(([where, sent]) => String(where) === path && sent?.method === method)?.[1];
 
   beforeEach(() => {
     window.localStorage.setItem(TOKEN_KEY, 'a-token');
@@ -71,6 +74,36 @@ describe('the page, against a shop that answers', () => {
     // would pass without proving anything.
     await waitFor(() => expect(screen.getByText(/No printers/)).toBeDefined());
     expect(screen.queryByRole('button', { name: 'add a printer' })).toBeNull();
+  });
+
+  // AIDEV-NOTE: the whole point of the form, end to end from the page: a machine and the key the
+  // shop reaches it with, in the two calls the shop's own shape asks for - the record and the key
+  // are kept apart, and there is no route that takes both.
+  it('adds a printer and gives it its key, in that order', async () => {
+    answering('admin');
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'add a printer' })).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'add a printer' }));
+
+    (
+      [
+        ['name', 'mk4'],
+        ['width', '250'],
+        ['depth', '210'],
+        ['height', '220'],
+        ['address', 'http://octopi.local'],
+        ['api key', 'mk4-key'],
+      ] as const
+    ).forEach(([field, said]) => {
+      fireEvent.change(screen.getByLabelText(field, { exact: false }), { target: { value: said } });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'add' }));
+
+    await waitFor(() => expect(asked('PUT', '/printers/mk4/key')).toBeDefined());
+    expect(asked('POST', '/printers')).toBeDefined();
+    expect(JSON.parse(String(asked('PUT', '/printers/mk4/key')?.body))).toEqual({ key: 'mk4-key' });
   });
 
   it('carries the token this browser holds on every ask', async () => {

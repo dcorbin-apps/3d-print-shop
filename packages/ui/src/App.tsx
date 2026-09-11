@@ -40,8 +40,12 @@ function Shop({ token }: { token: string }): React.JSX.Element {
   // AIDEV-NOTE: asked for again rather than added to what is on the screen - the shop is the one
   // that knows what a printer looks like once it has one, and a page that drew its own version of
   // the answer would be showing something the shop never said.
-  const addPrinter = async (record: PrinterRecord): Promise<void> => {
+  // AIDEV-NOTE: two calls, and the key second - the shop keeps a printer's key apart from its
+  // record on purpose, and there is no route that takes both. Second rather than first because the
+  // key is kept by printer NAME: there is nothing to give a key to until the printer is there.
+  const addPrinter = async (record: PrinterRecord, key: string): Promise<void> => {
     await shop.addPrinter(record);
+    await shop.giveKey(record.name, key);
     askAgain();
   };
 

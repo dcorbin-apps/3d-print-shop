@@ -6,7 +6,7 @@ import { AddPrinterTile } from '../src/components/AddPrinterTile';
 describe('adding a printer from the row it will appear in', () => {
   afterEach(cleanup);
 
-  const takesIt = jest.fn<(record: PrinterRecord) => Promise<void>>();
+  const takesIt = jest.fn<(record: PrinterRecord, key: string) => Promise<void>>();
 
   const open = (): void => {
     render(<AddPrinterTile onAdd={takesIt} />);
@@ -23,6 +23,7 @@ describe('adding a printer from the row it will appear in', () => {
     type('depth', '210');
     type('height', '220');
     type('address', 'http://octopi.local');
+    type('api key', 'mk4-key');
   };
 
   it('is a plus until somebody presses it', () => {
@@ -35,18 +36,18 @@ describe('adding a printer from the row it will appear in', () => {
   it('asks for what the shop needs to know', () => {
     open();
 
-    ['name', 'width', 'depth', 'height', 'address'].forEach((field) => {
+    ['name', 'width', 'depth', 'height', 'address', 'api key'].forEach((field) => {
       expect(screen.getByLabelText(field, { exact: false })).toBeDefined();
     });
   });
 
-  // AIDEV-NOTE: there is no key field and there must not be one - a printer's key is read from a
-  // file only the shop's own user can read, and a browser is the last place to type one.
-  it('does not ask for the API key, and says where it goes', () => {
+  // AIDEV-NOTE: the key IS asked for here - a printer the shop has no key for is one it can only
+  // report as out of reach, and adding a machine nobody can print on is not what this is for. Not
+  // shown while it is typed, because this is a screen in a workshop.
+  it('does not leave the key on the screen', () => {
     open();
 
-    expect(screen.queryByLabelText(/key/i)).toBeNull();
-    expect(screen.getByText(/printer-keys.json/)).toBeDefined();
+    expect(screen.getByLabelText('api key', { exact: false }).getAttribute('type')).toBe('password');
   });
 
   it('hands the shop what was typed', async () => {
@@ -57,12 +58,15 @@ describe('adding a printer from the row it will appear in', () => {
     fireEvent.click(screen.getByRole('button', { name: 'add' }));
 
     await waitFor(() =>
-      expect(takesIt).toHaveBeenCalledWith({
-        name: 'mk4',
-        buildVolume: { x: 250, y: 210, z: 220 },
-        api: 'octoprint',
-        address: 'http://octopi.local',
-      })
+      expect(takesIt).toHaveBeenCalledWith(
+        {
+          name: 'mk4',
+          buildVolume: { x: 250, y: 210, z: 220 },
+          api: 'octoprint',
+          address: 'http://octopi.local',
+        },
+        'mk4-key'
+      )
     );
   });
 
@@ -76,7 +80,7 @@ describe('adding a printer from the row it will appear in', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'add' }));
 
-    await waitFor(() => expect(takesIt).toHaveBeenCalledWith(expect.objectContaining({ name: 'mk4' })));
+    await waitFor(() => expect(takesIt).toHaveBeenCalledWith(expect.objectContaining({ name: 'mk4' }), 'mk4-key'));
   });
 
   it('closes once the shop has taken it', async () => {
@@ -138,6 +142,7 @@ describe('adding a printer from the row it will appear in', () => {
     it.each([
       ['name', ' '],
       ['address', ' '],
+      ['api key', ' '],
       ['width', ''],
       ['depth', '0'],
       ['height', 'tall'],

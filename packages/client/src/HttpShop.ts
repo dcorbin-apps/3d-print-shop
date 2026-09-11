@@ -64,6 +64,10 @@ export class HttpShop implements Shop {
     return (await this.answered('GET', `/filaments${forPrinter}`)) as FilamentDemand[];
   }
 
+  async giveKey(name: string, key: string): Promise<RegisteredPrinter> {
+    return asPrinter((await this.answered('PUT', `/printers/${encodeURIComponent(name)}/key`, { key })) as WirePrinter);
+  }
+
   async printers(): Promise<RegisteredPrinter[]> {
     return ((await this.answered('GET', '/printers')) as WirePrinter[]).map(asPrinter);
   }

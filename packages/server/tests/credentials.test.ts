@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import {
@@ -14,6 +14,7 @@ import {
   rereadCallers,
   rereadPrinterKeys,
   writeFirstCaller,
+  writePrinterKey,
 } from '../src/credentials';
 import { toStdout } from '../src/log';
 import type { Log } from '../src/log';
@@ -315,6 +316,60 @@ describe('the credentials a shop is given', () => {
 
       expect(lines.join('\n')).toContain('INFO  printer keys re-read');
       expect(lines.join('\n')).toContain('printers=2');
+    });
+  });
+
+  // AIDEV-NOTE: the one thing the running shop writes into its own credentials directory - which is
+  // what lets a printer be given its key from somewhere other than a text editor, and take effect
+  // without a signal. The whole map is answered because the caller is holding the keys in use.
+  describe('giving a printer its key', () => {
+    it('writes one where the shop reads them', async () => {
+      await writePrinterKey(etc, 'mk4', 'mk4-key');
+
+      expect((await printerKeysIn(etc)).get('mk4')).toBe('mk4-key');
+    });
+
+    it('answers with every key the shop now holds, so a running one can be told', async () => {
+      await write(PRINTER_KEYS_FILE, { mini: 'mini-key' });
+
+      expect([...(await writePrinterKey(etc, 'mk4', 'mk4-key')).entries()]).toEqual([
+        ['mini', 'mini-key'],
+        ['mk4', 'mk4-key'],
+      ]);
+    });
+
+    // A file holding every machine's key, rewritten whole: losing the others would take the shop
+    // away from every printer but the one somebody was correcting.
+    it('keeps the keys of every other printer', async () => {
+      await write(PRINTER_KEYS_FILE, { mini: 'mini-key', xl: 'xl-key' });
+      await writePrinterKey(etc, 'mk4', 'mk4-key');
+
+      expect(await printerKeysIn(etc)).toEqual(new Map([['mini', 'mini-key'], ['xl', 'xl-key'], ['mk4', 'mk4-key']]));
+    });
+
+    it('replaces the key a printer already had', async () => {
+      await write(PRINTER_KEYS_FILE, { mk4: 'was-wrong' });
+      await writePrinterKey(etc, 'mk4', 'is-right');
+
+      expect((await printerKeysIn(etc)).get('mk4')).toBe('is-right');
+    });
+
+    // The mode is the whole of the protection, and a file the shop wrote has to pass the check the
+    // shop applies to one a person wrote.
+    it('writes it only its owner can read', async () => {
+      await writePrinterKey(etc, 'mk4', 'mk4-key');
+
+      expect((await stat(path.join(etc, PRINTER_KEYS_FILE))).mode & 0o077).toBe(0);
+    });
+
+    it('leaves nothing behind it', async () => {
+      await writePrinterKey(etc, 'mk4', 'mk4-key');
+
+      expect(await readdir(etc)).toEqual([PRINTER_KEYS_FILE]);
+    });
+
+    it('refuses a key that is no key at all', async () => {
+      await expect(writePrinterKey(etc, 'mk4', '  ')).rejects.toThrow('cannot be given an empty key');
     });
   });
 

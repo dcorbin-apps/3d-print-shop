@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -24,6 +24,10 @@ describe('the shop, running as its own process', () => {
     reload: () => void;
     /** Settles once the shop has written a line like this, which is how a test waits for a signal to land. */
     saysSomethingLike: (pattern: RegExp) => Promise<void>;
+    // Waiting cannot prove an absence - it would only ever time out - so this reads what has been
+    // said so far, after something later has been waited for.
+    /** Whether the shop has said anything like this yet. */
+    hasSaid: (pattern: RegExp) => boolean;
     stop: () => Promise<void>;
     /** Settles when the process has ended, however it was asked to. */
     stopped: Promise<void>;
@@ -81,6 +85,7 @@ describe('the shop, running as its own process', () => {
                 if (pattern.test(said)) heard();
                 else waiting.push({ pattern, heard });
               }),
+            hasSaid: (pattern: RegExp) => pattern.test(said),
             stop: () => stopShop(shop),
             stopped: new Promise<void>((ended) => shop.on('close', () => ended())),
           });
@@ -239,6 +244,58 @@ describe('the shop, running as its own process', () => {
     expect(await (await ask(shop, '/printers')).json()).toEqual([
       { name: 'mk4', buildVolume: MK4, api: 'octoprint', address: 'http://mk4', camera: 'http://mk4/webcam/?action=stream', loaded: [] },
     ]);
+  }, 30_000);
+
+  // AIDEV-NOTE: the shop WRITING its own credentials file, which is the one thing it does to /etc
+  // and the reason a printer can be given its key from a browser. Provable only here: which file the
+  // keys live in, and that the running process is told at the same moment, is main.ts's wiring.
+  it('writes a key it is given where it keeps them, and does not wait to be signalled', async () => {
+    const credentials = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
+    const shop = await startShopOver(spool, [], credentials);
+
+    expect(await runCommand(['printer', '--shop-url', shop.url, 'add', 'mk4', '250x210x220', 'http://mk4'])).toBe(0);
+
+    const given = await fetch(`${shop.url}/printers/mk4/key`, {
+      method: 'PUT',
+      headers: { ...asAdmin, 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'a-key-from-a-browser' }),
+    });
+    expect(given.status).toBe(200);
+
+    // On disk, in the file the shop reads its keys from, and only its owner can read it.
+    const kept = path.join(credentials, 'printer-keys.json');
+    expect(JSON.parse(await readFile(kept, 'utf-8'))).toEqual({ mk4: 'a-key-from-a-browser' });
+    expect((await stat(kept)).mode & 0o077).toBe(0);
+
+    // And the process that wrote it acted on it then and there rather than waiting for a SIGHUP.
+    await shop.saysSomethingLike(/a printer was given its key/);
+  }, 30_000);
+
+  // AIDEV-NOTE: a key is a secret, and the log is built from every one this process holds - so one
+  // that arrived while it was running has to reach the redactor too.
+  it('never writes a key it was given into its log', async () => {
+    const credentials = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
+    const shop = await startShopOver(spool, [], credentials);
+    await runCommand(['printer', '--shop-url', shop.url, 'add', 'mk4', '250x210x220', 'http://mk4']);
+
+    await fetch(`${shop.url}/printers/mk4/key`, {
+      method: 'PUT',
+      headers: { ...asAdmin, 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'a-key-from-a-browser' }),
+    });
+    await shop.saysSomethingLike(/a printer was given its key/);
+
+    // A line the shop writes with the key inside it, which is what a leak actually looks like: a
+    // reason, a failure, a header quoted back. The redactor is the only thing standing in the way.
+    await fetch(`${shop.url}/printers/mk4/status`, {
+      method: 'PUT',
+      headers: { ...asAdmin, 'content-type': 'application/json' },
+      body: JSON.stringify({ stopped: true, reason: 'the key is a-key-from-a-browser' }),
+    });
+
+    await shop.saysSomethingLike(/printer stopped/);
+    expect(shop.hasSaid(/a-key-from-a-browser/)).toBe(false);
+    expect(shop.hasSaid(/\[redacted]/)).toBe(true);
   }, 30_000);
 
   // AIDEV-NOTE: main.ts, which is the only place this can be proved - the check has to run BEFORE

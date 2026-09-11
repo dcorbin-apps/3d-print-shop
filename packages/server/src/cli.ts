@@ -7,7 +7,7 @@ import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
 import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
-import { ETC_ENV, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys } from './credentials.js';
+import { ETC_ENV, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys, writePrinterKey } from './credentials.js';
 import type { Caller } from './credentials.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 import { redacting, toStdout } from './log.js';
@@ -123,10 +123,23 @@ export function createCLI(): Command {
           .catch((failure: unknown) => log.error('could not try the printer again', { printer: name, why: (failure as Error).message }));
       };
 
+      // AIDEV-NOTE: written to the file the shop reads AND put into what this process is holding, in
+      // that order - so a key given while the shop runs needs no signal and no restart. Then the
+      // printer is tried at once, because a machine that had no key is written down as unreachable
+      // and would otherwise serve out a backoff before anyone found out the key was right.
+      //
+      // The log's redactor reads `printerKeys` afresh on every line, so a key that arrives this way
+      // cannot reach a log written after it.
+      const keepTheKey = async (printer: string, key: string): Promise<void> => {
+        printerKeys = await writePrinterKey(etc, printer, key);
+        log.info('a printer was given its key', { printer, etc });
+        tryEverythingAgain(printer);
+      };
+
       const shopServer = await serve(
         store,
         options.port,
-        { changed: lookForWork, started: tryEverythingAgain, shutDown: stopTheShop, callers: () => callers, log },
+        { changed: lookForWork, started: tryEverythingAgain, shutDown: stopTheShop, callers: () => callers, keyGiven: keepTheKey, log },
         listenOn
       );
 
