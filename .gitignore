@@ -14,6 +14,10 @@ dist/
 # What a shop is handed, and what it prints - never source
 *.gcode
 
+# A shop run from this checkout: its spool holds work and its etc holds credentials. Neither is
+# source, and one of them is secrets - a token in the clear reached a commit this way once.
+dev/
+
 # IDE
 .vscode/
 .idea/
