@@ -1,14 +1,17 @@
-import type { Job, RegisteredPrinter } from '@3d-print-shop/client/browser';
+import type { Job, RegisteredPrinter, Verdict } from '@3d-print-shop/client/browser';
 import { asPrintingTime, byFilament } from '../byFilament.js';
+import { Verdicts } from './Verdicts.js';
 
 interface JobsByFilamentProps {
   jobs: Job[];
   totalJobs: number;
   /** The machine the operator is looking at, so its filaments can be marked as already loaded. */
   selected?: RegisteredPrinter;
+  /** What frees the bed. Absent, a finished print is reported here and judged somewhere else. */
+  onVerdict?: (id: number, verdict: Verdict) => Promise<void>;
 }
 
-export function JobsByFilament({ jobs, totalJobs, selected }: JobsByFilamentProps): React.JSX.Element {
+export function JobsByFilament({ jobs, totalJobs, selected, onVerdict }: JobsByFilamentProps): React.JSX.Element {
   const groups = byFilament(jobs);
   const others = totalJobs - jobs.length;
 
@@ -34,6 +37,9 @@ export function JobsByFilament({ jobs, totalJobs, selected }: JobsByFilamentProp
                 <span className="id">{job.id}</span>
                 <span className="name">{job.displayName}</span>
                 <span className="state">{whereItIs(job)}</span>
+                {job.state === 'awaiting-approval' && onVerdict !== undefined && (
+                  <Verdicts job={job.id} onVerdict={(verdict) => onVerdict(job.id, verdict)} />
+                )}
               </li>
             ))}
           </ul>

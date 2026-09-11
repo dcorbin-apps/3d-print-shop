@@ -168,6 +168,116 @@ describe('the page, against a shop that answers', () => {
     expect(fetching.mock.calls.filter(([, sent]) => sent?.method !== 'GET')).toHaveLength(1);
   });
 
+  // AIDEV-NOTE: the verdict end to end from the page - the one thing that frees a bed, which until
+  // now meant walking to a terminal while the machine that finished stood holding it.
+  describe('judging a print that has finished', () => {
+    const holding = (as: Role = 'user'): void => {
+      fetching.mockImplementation((where: Parameters<typeof fetch>[0], sent?: RequestInit) => {
+        const path = String(where);
+        if (path.endsWith('/me')) return Promise.resolve(answered({ id: 'dave', name: 'dave', role: as }));
+        if (path.endsWith('/printers')) return Promise.resolve(answered([]));
+        if (sent?.method === 'PUT') return Promise.resolve(answered(undefined));
+
+        return Promise.resolve(
+          answered({
+            accessibleJobs: [
+              {
+                id: 7,
+                displayName: 'Player Box',
+                filaments: ['PLA-Red'],
+                submittedAt: '2026-09-09T12:00:00Z',
+                gcodeBytes: 1024,
+                state: 'awaiting-approval',
+                heldBy: 'mk4',
+                lastPrinterOutcome: 'finished',
+              },
+            ],
+            totalJobs: 1,
+          })
+        );
+      });
+    };
+
+    it('tells the shop what the person sitting in front of it said', async () => {
+      holding();
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'approve job 7' })).toBeDefined());
+
+      fireEvent.click(screen.getByRole('button', { name: 'approve job 7' }));
+
+      await waitFor(() => expect(asked('PUT', '/jobs/7/verdict')).toBeDefined());
+      expect(JSON.parse(String(asked('PUT', '/jobs/7/verdict')?.body))).toEqual({ verdict: 'approved' });
+    });
+
+    // Not left until the next tick: a verdict frees a bed, the next job starts on that machine, and
+    // the page somebody just judged on should be showing that rather than the last poll's answer.
+    it('asks the shop again at once rather than waiting for the next poll', async () => {
+      holding();
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'approve job 7' })).toBeDefined());
+      const askedBefore = fetching.mock.calls.filter(([where]) => String(where) === '/jobs').length;
+
+      fireEvent.click(screen.getByRole('button', { name: 'approve job 7' }));
+
+      await waitFor(() => expect(fetching.mock.calls.filter(([where]) => String(where) === '/jobs').length).toBeGreaterThan(askedBefore));
+    });
+
+    // It is the owner's, or an admin's, and which is which is the shop's to say - so the page offers
+    // it against every job it was shown, and shows what the shop said if it will not take one.
+    it('is offered to a user, on the work the shop showed them', async () => {
+      holding('user');
+
+      render(<App />);
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'give up job 7' })).toBeDefined());
+    });
+  });
+
+  // AIDEV-NOTE: their own password, end to end from the page - which until now was an operator at a
+  // terminal, and so was nothing the person whose password it is could do.
+  describe('changing your own password', () => {
+    const changeIt = async (): Promise<void> => {
+      answering('user');
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole('button', { name: /dave/ })).toBeDefined());
+
+      fireEvent.click(screen.getByRole('button', { name: /dave/ }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Change password' }));
+
+      (
+        [
+          ['current password', 'the password in use'],
+          ['new password', 'a different password entirely'],
+          ['repeat the new one', 'a different password entirely'],
+        ] as const
+      ).forEach(([field, said]) => {
+        fireEvent.change(screen.getByLabelText(field, { exact: false }), { target: { value: said } });
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'change' }));
+    };
+
+    it('sends the shop the one in use and the one wanted', async () => {
+      await changeIt();
+
+      await waitFor(() => expect(asked('PUT', '/me/password')).toBeDefined());
+      expect(JSON.parse(String(asked('PUT', '/me/password')?.body))).toEqual({
+        current: 'the password in use',
+        password: 'a different password entirely',
+      });
+    });
+
+    // The session that asked is the one the shop keeps, so the page it was asked from goes on
+    // working - being asked to log in again for having just proved who you are is a page that
+    // punishes the safe thing.
+    it('leaves the browser that asked logged in', async () => {
+      await changeIt();
+
+      await waitFor(() => expect(screen.getByText(/Password changed/)).toBeDefined());
+      expect(screen.queryByLabelText('Who')).toBeNull();
+    });
+  });
+
   // AIDEV-NOTE: no token and no Authorization header - a browser is named by the session cookie the
   // shop set, which this page never sees. `credentials: 'include'` is what makes a browser send it.
   it('carries nothing of its own, and lets the browser send the cookie', async () => {

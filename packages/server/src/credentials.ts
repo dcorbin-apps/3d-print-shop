@@ -392,6 +392,19 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Callers> {
   return new Callers(held);
 }
 
+// AIDEV-NOTE: what a changed password MEANS, which is more than "a new one works". Somebody either
+// forgot theirs or believes somebody else has it, and in both cases every browser already logged in
+// as them is a browser that should not be - so the sessions go with it. Nothing else reads this: a
+// caller who was taken out of the file entirely is already refused by the guard, which looks their
+// id up in the callers it has and finds nobody.
+/** Whose password is not the one it was, so that whoever is logged in as them no longer is. */
+export function whosePasswordChanged(before: Callers, after: Callers): string[] {
+  return before
+    .all()
+    .map(({ caller }) => caller.id)
+    .filter((id) => before.named(id)?.password !== after.named(id)?.password);
+}
+
 // AIDEV-NOTE: the answer to "how does a credential get changed without stopping the shop". SIGHUP is
 // what a long-running service is told to re-read its configuration with, and the whole of the
 // mechanism is the files it already reads, read again - the callers here, the printer keys below.

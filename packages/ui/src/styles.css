@@ -279,6 +279,39 @@ body {
   color: var(--live);
 }
 
+/* The row is `id name state`; the buttons go under all three, for the job whose turn it is. */
+.verdicts {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 2px;
+}
+
+.verdicts button {
+  padding: 4px 9px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.verdicts button:enabled:hover {
+  border-color: var(--wants-somebody);
+}
+
+.verdicts button:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+
+.verdicts .refused {
+  flex-basis: 100%;
+}
+
 .nothing,
 .not-yours,
 .asking {
@@ -458,6 +491,88 @@ body {
 .who-menu button:hover {
   background: var(--ground);
   color: var(--live);
+}
+
+/* Under the name it hangs off, like the menu it was opened from - it is about the person, not the
+   shop, and the corner of the page is where somebody looks for that. */
+.change-password {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 260px;
+  padding: 12px 14px 14px;
+  text-align: left;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 45%);
+}
+
+.change-password label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.change-password input {
+  padding: 7px 9px;
+  color: inherit;
+  font: inherit;
+  background: var(--ground);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+}
+
+.change-password p {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+.change-password .buttons {
+  margin-top: 14px;
+}
+
+.change-password .buttons button {
+  flex: 1;
+  padding: 7px;
+  color: var(--ground);
+  font: inherit;
+  font-weight: 600;
+  background: var(--live);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.change-password .buttons button.quiet {
+  color: var(--dim);
+  font-weight: 400;
+  background: none;
+  border: 1px solid var(--edge);
+}
+
+.change-password .buttons button:disabled {
+  background: var(--edge);
+  color: var(--dim);
+  cursor: default;
+}
+
+.change-password.done button {
+  margin-top: 12px;
+  padding: 7px;
+  color: var(--dim);
+  font: inherit;
+  background: none;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 /* ------------------------------------------------------------------------------------ the way in */

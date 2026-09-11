@@ -46,6 +46,14 @@ export class HttpShop implements Shop {
     await this.reach('DELETE', '/sessions');
   }
 
+  // AIDEV-NOTE: `current` travels with it rather than being checked by a login first, so the shop
+  // judges one request rather than trusting that a previous one was the same person. A wrong one is
+  // refused 403 and not 401 - the session is still good, and a client that treats it as expired
+  // would throw somebody out of a page for mistyping.
+  async changeMyPassword(current: string, password: string): Promise<void> {
+    await this.reach('PUT', '/me/password', { current, password });
+  }
+
   async jobs(): Promise<JobsHeld> {
     const held = (await this.answered('GET', '/jobs')) as { accessibleJobs: WireJob[]; totalJobs: number };
 

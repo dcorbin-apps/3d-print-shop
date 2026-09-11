@@ -1,6 +1,6 @@
-import { describe, it, expect, afterEach } from '@jest/globals';
-import { cleanup, render, screen } from '@testing-library/react';
-import type { Job, RegisteredPrinter } from '@3d-print-shop/client/browser';
+import { describe, it, expect, jest, afterEach } from '@jest/globals';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { Job, RegisteredPrinter, Verdict } from '@3d-print-shop/client/browser';
 import { JobsByFilament } from '../src/components/JobsByFilament';
 
 describe('the work the shop is holding', () => {
@@ -26,9 +26,20 @@ describe('the work the shop is holding', () => {
     loaded: ['PLA-Red'],
   };
 
+  const judged = jest.fn<(id: number, verdict: Verdict) => Promise<void>>();
+
   const showing = (jobs: Job[], totalJobs = jobs.length, selected?: RegisteredPrinter): void => {
     render(<JobsByFilament jobs={jobs} totalJobs={totalJobs} selected={selected} />);
   };
+
+  const judging = (jobs: Job[]): void => {
+    judged.mockReset();
+    judged.mockResolvedValue(undefined);
+    render(<JobsByFilament jobs={jobs} totalJobs={jobs.length} onVerdict={judged} />);
+  };
+
+  const printed = (id: number): Job =>
+    job(id, ['PLA-Red'], { state: 'awaiting-approval', heldBy: 'mk4', lastPrinterOutcome: 'finished' });
 
   it('says so when there is nothing outstanding', () => {
     showing([]);
@@ -88,5 +99,38 @@ describe('the work the shop is holding', () => {
     showing([job(1, ['PLA-Red'])]);
 
     expect(screen.queryByText(/not yours/)).toBeNull();
+  });
+
+  // AIDEV-NOTE: a verdict is offered against the job it is about rather than somewhere on its own,
+  // because two machines can be waiting at once and "approve" says nothing about which bed.
+  describe('and the verdict that frees a bed', () => {
+    it('is offered on the print that is waiting for one', () => {
+      judging([printed(7)]);
+
+      expect(screen.getByRole('button', { name: 'approve job 7' })).toBeDefined();
+    });
+
+    it.each([
+      ['queued', job(1, ['PLA-Red'])],
+      ['printing', job(1, ['PLA-Red'], { state: 'printing', heldBy: 'mk4' })],
+    ])('is not offered on one that is %s', (_where, waiting) => {
+      judging([waiting]);
+
+      expect(screen.queryByRole('button', { name: /approve/ })).toBeNull();
+    });
+
+    it('is not offered at all where there is nobody to take it', () => {
+      showing([printed(7)]);
+
+      expect(screen.queryByRole('button', { name: /approve/ })).toBeNull();
+    });
+
+    it('says which job it was given about', async () => {
+      judging([printed(7), printed(9)]);
+
+      fireEvent.click(screen.getByRole('button', { name: 'approve job 9' }));
+
+      await waitFor(() => expect(judged).toHaveBeenCalledWith(9, 'approved'));
+    });
   });
 });

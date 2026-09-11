@@ -92,6 +92,10 @@ const OPEN_TO_EVERY_CALLER: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: 'GET', path: /^\/printers$/ },
   // Themselves, and nobody else. See the route.
   { method: 'GET', path: /^\/me$/ },
+  // Their OWN password, which is the whole point of it - it is open to everybody because it can only
+  // ever change the caller making the request. Changing somebody else's is an operator's, at a
+  // terminal, and has no route at all.
+  { method: 'PUT', path: /^\/me\/password$/ },
 ];
 
 // AIDEV-NOTE: matched against the request the way EXPRESS routed it, not the way it was typed.
@@ -167,6 +171,11 @@ export interface ShopHooks {
   // without one should be.
   /** Give a printer its key: written where the shop keeps them, and in force from that moment. */
   keyGiven?: (printer: string, key: string) => Promise<void>;
+  // AIDEV-NOTE: the same reasoning as `keyGiven` - the credentials are the running shop's file and
+  // not the store's, and what is in force is what this process holds. Absent is a shop that will not
+  // take one, which is what an API served without anywhere to write should be.
+  /** Write a caller's new password where the shop keeps them, and put it in force at once. */
+  passwordChanged?: (id: string, password: string) => Promise<void>;
   // Asked per request rather than handed over once: the shop re-reads its callers on SIGHUP, so a
   // credential added or revoked while it runs is the one the next request is judged against.
   /** Who may talk to this shop. Every request names one of them, or is refused. */
@@ -203,6 +212,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   const started = hooks.started ?? ((): void => undefined);
   const callers = hooks.callers;
   const keyGiven = hooks.keyGiven;
+  const passwordChanged = hooks.passwordChanged;
   const page = hooks.page;
   const sessions = hooks.sessions ?? new Sessions();
   const attempts = new Attempts();
@@ -384,6 +394,55 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // and letting the refusal teach them, which is a UI that hands an operator a button and says no.
   api.get('/me', (request, response) => {
     response.json(request.caller);
+  });
+
+  // AIDEV-NOTE: a caller's own, and only their own - the id is taken from who the request turned out
+  // to be and never read out of the body, so there is no shape of request that changes somebody
+  // else's. An operator changing another person's is `caller password` at a terminal, which is a
+  // different act by a different person and has no route here.
+  //
+  // The password they have NOW is asked for even though the shop already knows who is asking,
+  // because a session is a screen somebody walked away from - and a password nobody has to know to
+  // change is a password the next person to sit down owns. Throttled against the same counts as a
+  // login, because it is the same oracle: something that says whether a guess was right.
+  api.put('/me/password', async (request, response) => {
+    if (passwordChanged === undefined) throw new UnusableRequest('this shop was not given anywhere to keep a password');
+
+    const { current, password } = bodyOf(request);
+    if (typeof current !== 'string' || typeof password !== 'string') {
+      throw new UnusableRequest('changing a password is the one you have now and the one you want');
+    }
+
+    const who = request.caller;
+    const from = request.ip ?? 'nowhere';
+    const waiting = attempts.mustWait(`id:${who.id}`, `from:${from}`);
+    if (waiting > 0) throw new TooManyGuesses(`too many tries - wait ${Math.ceil(waiting / 1000)} seconds`);
+
+    // A caller with no password is a machine's token, and there is nothing here for it to prove.
+    // Giving one their first password is an operator's act, at the terminal, like taking one away.
+    const held = callers().named(who.id)?.password;
+    if (held === undefined || !(await isThePassword(current, held))) {
+      attempts.wasWrong(`id:${who.id}`, `from:${from}`);
+      log.info('a password change was refused', { caller: who.name, from });
+
+      // Not 401: the session is perfectly good, and a client that read this as an expired one would
+      // throw somebody off the page for mistyping.
+      throw new NotTheirs('that is not the password this caller has now');
+    }
+
+    if (await isThePassword(password, held)) throw new UnusableRequest('that is the password already in use');
+
+    attempts.wasRight(`id:${who.id}`, `from:${from}`);
+    await passwordChanged(who.id, password);
+
+    // AIDEV-NOTE: every other one, and this one kept. Somebody changing their password either forgot
+    // it or believes somebody else has it, so the browsers already logged in as them are what this
+    // is for - but throwing the person doing it off the screen they are standing at would be a page
+    // that asks them to log in again for having just proved who they are.
+    sessions.endEveryOneOf(who.id, request.session);
+    log.info('somebody changed their own password', { caller: who.name, from });
+
+    response.status(204).end();
   });
 
   api.get('/jobs', async (request, response) => {

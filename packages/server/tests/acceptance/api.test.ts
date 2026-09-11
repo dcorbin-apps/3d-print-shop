@@ -719,6 +719,188 @@ describe('the shop over HTTP', () => {
         expect(response.status).toBe(200);
       });
     });
+
+    // AIDEV-NOTE: their OWN, which is the whole of what this route is - an operator changing somebody
+    // else's is `caller password` at a terminal. The password they have now is asked for even though
+    // the shop already knows who is asking, because a session is a screen somebody walked away from.
+    describe('and changing your own password', () => {
+      const NEW_PASSWORD = 'a different password entirely';
+      const A_USERS_TOKEN = 'ada-token';
+      let changing: Server;
+      let changeUrl: string;
+      let known: Callers;
+      let mockKept: jest.Mock<(id: string, password: string) => Promise<void>>;
+
+      const naming = async (...held: { id: string; password?: string; token?: string; role?: 'admin' | 'user' }[]): Promise<Callers> =>
+        new Callers(
+          await Promise.all(
+            held.map(async ({ id, password, token, role = 'admin' }) => ({
+              caller: { id, name: id, role },
+              credentials: [
+                ...(password === undefined ? [] : [{ kind: 'password' as const, hash: await hashPassword(password) }]),
+                ...(token === undefined ? [] : [{ kind: 'token' as const, hash: digestOf(token) }]),
+              ],
+            }))
+          )
+        );
+
+      const changeTo = (password: string, current: string, headers: Record<string, string> = { authorization: `Bearer ${ADMIN}` }): Promise<Response> =>
+        fetch(`${changeUrl}/me/password`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', ...headers },
+          body: JSON.stringify({ current, password }),
+        });
+
+      const logInThere = (id: string, password: string): Promise<Response> =>
+        fetch(`${changeUrl}/sessions`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id, password }),
+        });
+
+      beforeEach(async () => {
+        // A user among them, because this route is one of the few open to every caller - their own
+        // password is the one thing a user may change, and a shop that made it an admin's would be
+        // back to nobody being able to change their own.
+        const everybody = (changed?: { id: string; password: string }): Promise<Callers> => {
+          const passwordOf = (id: string): string => (changed?.id === id ? changed.password : PASSWORD);
+
+          return naming(
+            { id: 'dave', password: passwordOf('dave'), token: ADMIN },
+            { id: 'slicer', token: USER },
+            { id: 'ada', password: passwordOf('ada'), token: A_USERS_TOKEN, role: 'user' }
+          );
+        };
+
+        known = await everybody();
+
+        // What the shop itself does with one: writes it where the callers are kept, and reads the
+        // file back so that what is in force is what it now says - for the caller it was given and
+        // nobody else.
+        mockKept = jest.fn<(id: string, password: string) => Promise<void>>(async (id, password) => {
+          known = await everybody({ id, password });
+        });
+
+        changing = await serve(shop, 0, { callers: () => known, passwordChanged: mockKept });
+        changeUrl = `http://127.0.0.1:${(changing.address() as AddressInfo).port}`;
+      }, 30_000);
+
+      afterEach(async () => {
+        await new Promise<void>((resolve) => changing.close(() => resolve()));
+      });
+
+      it('is what logs them in afterwards', async () => {
+        expect((await changeTo(NEW_PASSWORD, PASSWORD)).status).toBe(204);
+
+        expect((await logInThere('dave', NEW_PASSWORD)).status).toBe(201);
+        expect((await logInThere('dave', PASSWORD)).status).toBe(401);
+      }, 60_000);
+
+      it('is refused, and nothing written, when the one they have now is wrong', async () => {
+        const response = await changeTo(NEW_PASSWORD, 'not the password');
+
+        expect(response.status).toBe(403);
+        expect(mockKept).not.toHaveBeenCalled();
+      }, 30_000);
+
+      // The id is whoever the request turned out to be. There is no shape of body that changes
+      // somebody else's - which is what keeps this open to every caller.
+      it('changes the caller who asked, whoever the body names', async () => {
+        await fetch(`${changeUrl}/me/password`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${ADMIN}` },
+          body: JSON.stringify({ id: 'slicer', current: PASSWORD, password: NEW_PASSWORD }),
+        });
+
+        expect(mockKept).toHaveBeenCalledWith('dave', NEW_PASSWORD);
+      }, 30_000);
+
+      // A caller with no password is a machine's token, and there is nothing here for it to prove.
+      // Giving one their first password is an operator's act, like taking one away.
+      it('refuses a caller who has a token and no password', async () => {
+        const response = await changeTo(NEW_PASSWORD, PASSWORD, { authorization: `Bearer ${USER}` });
+
+        expect(response.status).toBe(403);
+        expect(mockKept).not.toHaveBeenCalled();
+      }, 30_000);
+
+      it('refuses the one they are already using', async () => {
+        const response = await changeTo(PASSWORD, PASSWORD);
+
+        expect(response.status).toBe(400);
+        expect(mockKept).not.toHaveBeenCalled();
+      }, 30_000);
+
+      it.each([[{ current: PASSWORD }], [{ password: NEW_PASSWORD }], [{ current: PASSWORD, password: 7 }]])(
+        'refuses %j as a change',
+        async (body) => {
+          const response = await fetch(`${changeUrl}/me/password`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${ADMIN}` },
+            body: JSON.stringify(body),
+          });
+
+          expect(response.status).toBe(400);
+        },
+        30_000
+      );
+
+      // AIDEV-NOTE: what a new password is FOR - somebody either forgot theirs or believes somebody
+      // else has it. The browser doing the changing is kept, because asking somebody to log in again
+      // for having just proved who they are is a page that punishes the safe thing.
+      it('logs out every other browser, and leaves the one that asked logged in', async () => {
+        const elsewhere = ((await logInThere('dave', PASSWORD)).headers.get('set-cookie') ?? '').split(';')[0];
+        const here = ((await logInThere('dave', PASSWORD)).headers.get('set-cookie') ?? '').split(';')[0];
+
+        await changeTo(NEW_PASSWORD, PASSWORD, { cookie: here, origin: changeUrl });
+
+        expect((await fetch(`${changeUrl}/me`, { headers: { cookie: elsewhere } })).status).toBe(401);
+        expect((await fetch(`${changeUrl}/me`, { headers: { cookie: here } })).status).toBe(200);
+      }, 60_000);
+
+      // The same oracle as a login - something that says whether a guess was right - so it is
+      // counted the same way.
+      it('makes somebody wait after enough wrong ones', async () => {
+        for (let tried = 0; tried <= FREELY; tried += 1) await changeTo(NEW_PASSWORD, 'not the password');
+
+        expect((await changeTo(NEW_PASSWORD, 'not the password')).status).toBe(429);
+      }, 60_000);
+
+      // The person who has just proved who they are is not the attacker, and leaving the count
+      // standing would let a mistyped password earlier in the day lock them out of changing it.
+      it('forgets what was counted against somebody who then gets it right', async () => {
+        await changeTo(NEW_PASSWORD, 'not the password');
+        await changeTo(NEW_PASSWORD, 'not the password');
+        expect((await changeTo(NEW_PASSWORD, PASSWORD)).status).toBe(204);
+
+        for (let tried = 0; tried < FREELY; tried += 1) {
+          expect((await changeTo('another one entirely', 'not the password')).status).toBe(403);
+        }
+      }, 60_000);
+
+      // AIDEV-NOTE: a user's own password is the whole point of this route. Made an admin's, it
+      // would be back to nobody being able to change their own - which is what it is here to fix.
+      it('is a user\'s to change as much as an admin\'s', async () => {
+        const response = await changeTo(NEW_PASSWORD, PASSWORD, { authorization: `Bearer ${A_USERS_TOKEN}` });
+
+        expect(response.status).toBe(204);
+        expect(mockKept).toHaveBeenCalledWith('ada', NEW_PASSWORD);
+      }, 30_000);
+
+      it('is refused by a shop that was given nowhere to keep one', async () => {
+        const nowhere = await serve(shop, 0, { callers: () => known });
+        const nowhereUrl = `http://127.0.0.1:${(nowhere.address() as AddressInfo).port}`;
+
+        const response = await fetch(`${nowhereUrl}/me/password`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${ADMIN}` },
+          body: JSON.stringify({ current: PASSWORD, password: NEW_PASSWORD }),
+        });
+
+        expect(response.status).toBe(400);
+        await new Promise<void>((resolve) => nowhere.close(() => resolve()));
+      }, 30_000);
+    });
   });
 
   // AIDEV-NOTE: a client that shows a person what they may do has to be able to ask what that is.

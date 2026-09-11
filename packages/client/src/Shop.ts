@@ -47,6 +47,15 @@ export interface Shop {
   verdict(id: number, verdict: Verdict): Promise<Job | undefined>;
 
   /**
+   * Change your own password, presenting the one you have now.
+   *
+   * The one this asks for is asked for even though the shop already knows who is asking: a session
+   * is a screen somebody walked away from, and a password nobody has to know to change is a password
+   * the next person at that screen owns. Every OTHER session this caller holds ends with it.
+   */
+  changeMyPassword(current: string, password: string): Promise<void>;
+
+  /**
    * What the queued work is waiting for, busiest first - the operator's question rather than the
    * shop's. It counts every job the shop holds, so it is not a caller's own view of the queue.
    *

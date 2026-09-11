@@ -5,6 +5,7 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { digestOf } from '../../src/secrets';
+import { SESSIONS_FILE } from '../../src/sessions';
 import { aDataDirectory, parentOf } from '../aDataDirectory';
 import type { DataLayout } from '../../src/dataLayout';
 
@@ -275,15 +276,20 @@ describe('the shop, running as its own process', () => {
   describe('somebody logging in', () => {
     const PASSWORD = A_PASSWORD;
 
-    async function shopSomebodyCanLogInTo(): Promise<RunningShop> {
+    // The operator's own command, not a file written by this test - so what is being logged in to is
+    // what `init` makes, hashing and all. Answered with the directory rather than the shop, because a
+    // restart has to be a second shop over the same one.
+    async function aMachineSomebodyCanLogInTo(): Promise<string> {
       const credentials = await mkdtemp(path.join(tmpdir(), 'print-shop-etc-'));
       madeEtc.push(credentials);
 
-      // The operator's own command, not a file written by this test - so what is being logged in to
-      // is what `init` makes, hashing and all.
       await runCommandSaying(['init', 'dave', '--etc', credentials], {}, `${PASSWORD}\n${PASSWORD}\n`);
 
-      return startShopOver(dataRoot, [], credentials);
+      return credentials;
+    }
+
+    async function shopSomebodyCanLogInTo(): Promise<RunningShop> {
+      return startShopOver(dataRoot, [], await aMachineSomebodyCanLogInTo());
     }
 
     const logIn = (shop: RunningShop, id: string, password: string): Promise<Response> =>
@@ -292,6 +298,9 @@ describe('the shop, running as its own process', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id, password }),
       });
+
+    const cookieFor = async (shop: RunningShop): Promise<string> =>
+      ((await logIn(shop, 'dave', PASSWORD)).headers.get('set-cookie') ?? '').split(';')[0];
 
     it('is let in by the password the operator set, and named by the session after it', async () => {
       const shop = await shopSomebodyCanLogInTo();
@@ -323,6 +332,110 @@ describe('the shop, running as its own process', () => {
 
       expect(hash).toContain('scrypt$');
       expect((await logIn(shop, 'dave', hash)).status).toBe(401);
+    }, 60_000);
+
+    // AIDEV-NOTE: the point of keeping them in a file at all, and provable only here: a process
+    // stopped and a DIFFERENT one started over the same directories, with the browser presenting
+    // what it was holding before.
+    it('is still logged in after the shop has been stopped and started again', async () => {
+      const credentials = await aMachineSomebodyCanLogInTo();
+      const before = await startShopOver(dataRoot, [], credentials);
+
+      const cookie = await cookieFor(before);
+      await before.stop();
+      await before.stopped;
+
+      const after = await startShopOver(dataRoot, [], credentials);
+
+      expect((await fetch(`${after.url}/me`, { headers: { cookie } })).status).toBe(200);
+    }, 60_000);
+
+    // AIDEV-NOTE: with the state, because the jobs directory is one directory per job and the store
+    // reads every name in it. A file of its own there is something the shop would have to know not to
+    // read, for ever.
+    it('keeps who is logged in with its state, not among the jobs', async () => {
+      const shop = await startShopOver(dataRoot, [], await aMachineSomebodyCanLogInTo());
+      await cookieFor(shop);
+
+      // A login does not wait for the disk, so the file is a moment behind the answer to it.
+      const appeared = async (file: string): Promise<boolean> => {
+        for (let asked = 0; asked < 200; asked += 1) {
+          if ((await stat(file).catch(() => undefined)) !== undefined) return true;
+          await new Promise((on) => setTimeout(on, 25));
+        }
+
+        return false;
+      };
+
+      expect(await appeared(path.join(where.state, SESSIONS_FILE))).toBe(true);
+      await expect(stat(path.join(where.jobs, SESSIONS_FILE))).rejects.toThrow();
+    }, 60_000);
+
+    // The other half: logging out is not undone by a restart either.
+    it('is not logged in again by a restart after logging out', async () => {
+      const credentials = await aMachineSomebodyCanLogInTo();
+      const before = await startShopOver(dataRoot, [], credentials);
+
+      const cookie = await cookieFor(before);
+      await fetch(`${before.url}/sessions`, { method: 'DELETE', headers: { cookie, origin: before.url } });
+      await before.stop();
+      await before.stopped;
+
+      const after = await startShopOver(dataRoot, [], credentials);
+
+      expect((await fetch(`${after.url}/me`, { headers: { cookie } })).status).toBe(401);
+    }, 60_000);
+
+    // AIDEV-NOTE: `caller password` says every browser logged in as them is logged out once the shop
+    // has re-read this. It was not true: the id still existed, so the session went on naming them.
+    it('is logged out by the password being changed, once the shop has re-read it', async () => {
+      const credentials = await aMachineSomebodyCanLogInTo();
+      const shop = await startShopOver(dataRoot, [], credentials);
+
+      const cookie = await cookieFor(shop);
+      expect((await fetch(`${shop.url}/me`, { headers: { cookie } })).status).toBe(200);
+
+      const changed = 'a different password entirely';
+      await runCommandSaying(['caller', 'password', 'dave', '--etc', credentials], {}, `${changed}\n${changed}\n`);
+      shop.reload();
+      await shop.saysSomethingLike(/a changed password logged out every browser/);
+
+      expect((await fetch(`${shop.url}/me`, { headers: { cookie } })).status).toBe(401);
+    }, 60_000);
+
+    // AIDEV-NOTE: the whole of item "nobody can change their own password", end to end: the shop
+    // WRITES the file and puts it in force in one act, with no signal and no restart - so what is
+    // proved here is that the route, the file and what this process is holding are the same thing.
+    it('changes its own password, and the new one is what lets them back in', async () => {
+      const credentials = await aMachineSomebodyCanLogInTo();
+      const shop = await startShopOver(dataRoot, [], credentials);
+      const changed = 'a different password entirely';
+
+      const said = await fetch(`${shop.url}/me/password`, {
+        method: 'PUT',
+        headers: { cookie: await cookieFor(shop), origin: shop.url, 'content-type': 'application/json' },
+        body: JSON.stringify({ current: PASSWORD, password: changed }),
+      });
+
+      expect(said.status).toBe(204);
+      expect((await logIn(shop, 'dave', changed)).status).toBe(201);
+      expect((await logIn(shop, 'dave', PASSWORD)).status).toBe(401);
+    }, 60_000);
+
+    // Written where the operator's own command would have written it, so `caller list` and a restart
+    // agree with the shop that is running - and so the person cannot be locked out by an update.
+    it('writes the new password where the credentials are kept', async () => {
+      const credentials = await aMachineSomebodyCanLogInTo();
+      const shop = await startShopOver(dataRoot, [], credentials);
+      const before = await readFile(path.join(credentials, 'callers.json'), 'utf-8');
+
+      await fetch(`${shop.url}/me/password`, {
+        method: 'PUT',
+        headers: { cookie: await cookieFor(shop), origin: shop.url, 'content-type': 'application/json' },
+        body: JSON.stringify({ current: PASSWORD, password: 'a different password entirely' }),
+      });
+
+      expect(await readFile(path.join(credentials, 'callers.json'), 'utf-8')).not.toBe(before);
     }, 60_000);
 
     it('says nothing of the password in its log, whatever it was asked', async () => {

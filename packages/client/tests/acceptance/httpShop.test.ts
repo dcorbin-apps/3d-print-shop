@@ -146,6 +146,31 @@ describe('the shop over HTTP', () => {
     });
   });
 
+  // AIDEV-NOTE: the one they have now travels WITH the new one rather than being checked by a login
+  // first, so the shop judges one request instead of trusting that an earlier one was the same
+  // person - and the route is the caller's own, with no id in it for one to be somebody else's.
+  describe('a caller changing their own password', () => {
+    it('sends the one in use and the one wanted, to a route about nobody else', async () => {
+      answers = { status: 204, body: undefined };
+
+      await shop.changeMyPassword('the password in use', 'a different password entirely');
+
+      expect(asked[0]).toMatchObject({
+        method: 'PUT',
+        url: '/me/password',
+        body: '{"current":"the password in use","password":"a different password entirely"}',
+      });
+    });
+
+    it('repeats what the shop said when it would not take one', async () => {
+      answers = { status: 403, body: { error: 'that is not the password this caller has now' } };
+
+      await expect(shop.changeMyPassword('not it', 'a different password entirely')).rejects.toThrow(
+        'that is not the password this caller has now'
+      );
+    });
+  });
+
   describe('the printers', () => {
     it('hands back the time a printer stopped as a time', async () => {
       answers = { status: 200, body: [{ ...MK4, loaded: [], paused: { reason: 'the door is open', since: '2026-09-06T11:22:04.177Z' } }] };

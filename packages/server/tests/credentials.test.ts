@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { AlreadyHasCallers, CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys, writeFirstCaller, writePrinterKey, Callers, addCaller, issueToken, migrateCallers, setPassword,  } from '../src/credentials';
+import { AlreadyHasCallers, CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys, writeFirstCaller, writePrinterKey, Callers, addCaller, issueToken, migrateCallers, setPassword, whosePasswordChanged } from '../src/credentials';
 import { digestOf, hashPassword, isThePassword } from '../src/secrets';
 import { toStdout } from '../src/log';
 import type { Log } from '../src/log';
@@ -262,6 +262,49 @@ describe('the credentials a shop is given', () => {
 
       expect(lines.join('\n')).toContain('INFO  callers re-read');
       expect(lines.join('\n')).toContain('callers=2');
+    });
+  });
+
+  // AIDEV-NOTE: what makes `caller password`'s promise true - the shop ends the sessions of whoever
+  // this names, and it is asked once per re-read, so naming somebody it should not logs a person out
+  // of a screen they are standing in front of.
+  describe('who a re-read changed the password of', () => {
+    const knowing = (...held: { id: string; password?: string }[]): Callers =>
+      new Callers(
+        held.map(({ id, password }) => ({
+          caller: { id, name: id, role: 'user' as const },
+          credentials: password === undefined ? [] : [{ kind: 'password' as const, hash: password }],
+        })),
+      );
+
+    it('is nobody when the file says what it said before', () => {
+      const same = (): Callers => knowing({ id: 'u-1', password: 'one' }, { id: 'u-2', password: 'two' });
+
+      expect(whosePasswordChanged(same(), same())).toEqual([]);
+    });
+
+    it('is whoever the file now hashes differently, and nobody beside them', () => {
+      const before = knowing({ id: 'u-1', password: 'one' }, { id: 'u-2', password: 'two' });
+      const after = knowing({ id: 'u-1', password: 'one' }, { id: 'u-2', password: 'something else' });
+
+      expect(whosePasswordChanged(before, after)).toEqual(['u-2']);
+    });
+
+    // Revoked and "no longer has a password" are the same thing from here: either way, what the
+    // browser was let in by is gone.
+    it.each([
+      ['is no longer named at all', (): Callers => knowing({ id: 'u-1', password: 'one' })],
+      ['has had their password taken away', (): Callers => knowing({ id: 'u-1', password: 'one' }, { id: 'u-2' })],
+    ])('names somebody who %s', (_what, after) => {
+      const before = knowing({ id: 'u-1', password: 'one' }, { id: 'u-2', password: 'two' });
+
+      expect(whosePasswordChanged(before, after())).toEqual(['u-2']);
+    });
+
+    it('is nobody for a caller the file has only just been given', () => {
+      const before = knowing({ id: 'u-1', password: 'one' });
+
+      expect(whosePasswordChanged(before, knowing({ id: 'u-1', password: 'one' }, { id: 'u-2', password: 'two' }))).toEqual([]);
     });
   });
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Caller } from '@3d-print-shop/client/browser';
 import type { ShopSummary } from '../shopSummary.js';
+import { ChangePassword } from './ChangePassword.js';
 
 interface TopBarProps {
   summary: ShopSummary;
@@ -8,9 +9,11 @@ interface TopBarProps {
   /** Who is looking at this, so a shared screen says whose session it is showing. */
   caller?: Caller;
   onOut?: () => void;
+  /** Their own, changed from here. Absent, the only way is an operator at a terminal. */
+  onChangePassword?: (current: string, password: string) => Promise<void>;
 }
 
-export function TopBar({ summary, trouble, caller, onOut }: TopBarProps): React.JSX.Element {
+export function TopBar({ summary, trouble, caller, onOut, onChangePassword }: TopBarProps): React.JSX.Element {
   const { printers, printing, needingSomebody, queued, awaitingApproval } = summary;
 
   return (
@@ -28,7 +31,7 @@ export function TopBar({ summary, trouble, caller, onOut }: TopBarProps): React.
         <Count label="to judge" of={awaitingApproval} urgent={awaitingApproval > 0} />
       </dl>
 
-      {caller !== undefined && <WhoIsLookingAtThis caller={caller} onOut={onOut} />}
+      {caller !== undefined && <WhoIsLookingAtThis caller={caller} onOut={onOut} onChangePassword={onChangePassword} />}
 
       {/* The last good answer stays on the screen beneath this - see useShop. */}
       {trouble !== undefined && <p className="trouble">{trouble}</p>}
@@ -66,8 +69,17 @@ function Cube(): React.JSX.Element {
 // The name is the button and logging out is behind it, because a log out sitting in the banner is a
 // thing to hit by accident on a shared screen - and what a person goes to the corner of a page
 // looking for is their own name.
-function WhoIsLookingAtThis({ caller, onOut }: { caller: Caller; onOut?: () => void }): React.JSX.Element {
+function WhoIsLookingAtThis({
+  caller,
+  onOut,
+  onChangePassword,
+}: {
+  caller: Caller;
+  onOut?: () => void;
+  onChangePassword?: (current: string, password: string) => Promise<void>;
+}): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const [changing, setChanging] = useState(false);
   const corner = useRef<HTMLDivElement>(null);
 
   // AIDEV-NOTE: the two ways out of an open menu that people expect and nothing else provides -
@@ -99,20 +111,39 @@ function WhoIsLookingAtThis({ caller, onOut }: { caller: Caller; onOut?: () => v
         <span className="role">{caller.role}</span>
       </button>
 
-      {open && onOut !== undefined && (
+      {open && (onOut !== undefined || onChangePassword !== undefined) && (
         <div className="who-menu" role="menu">
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onOut();
-            }}
-          >
-            Log out
-          </button>
+          {/* Their own password, behind their own name - which is where a person goes looking for it,
+              and the only place on this page that is about them rather than about the shop. */}
+          {onChangePassword !== undefined && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                setChanging(true);
+              }}
+            >
+              Change password
+            </button>
+          )}
+
+          {onOut !== undefined && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onOut();
+              }}
+            >
+              Log out
+            </button>
+          )}
         </div>
       )}
+
+      {changing && onChangePassword !== undefined && <ChangePassword onChange={onChangePassword} onDone={() => setChanging(false)} />}
     </div>
   );
 }

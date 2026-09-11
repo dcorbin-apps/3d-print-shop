@@ -178,6 +178,23 @@ printer land without the key it is reached by. It is still kept where every othe
 and uses it from that moment: no editing a file, no `SIGHUP`, no restart. It is never read back; the
 shop answers with the printer, never with the key, and a key is redacted out of every line it logs.
 
+**Somebody changes their own password from the page**, behind their own name in the corner: the one
+they have now, the one they want, and it twice. The one in use is asked for even though the shop
+already knows whose browser this is - a session is a screen somebody walked away from. Every OTHER
+browser that was logged in as them is logged out by it; the one that asked is kept, because it has
+just proved who it is. It needs no signal and no restart: the shop writes the file and puts it in
+force in one act.
+
+**A print that has finished is judged where it is watched.** A job the shop is holding for a verdict
+gets three buttons on its line: **approve** (the print is good - the job leaves the shop, gcode and
+all), **print again** (not usable - back in the queue to print again from the same gcode) and **give
+up** (not usable, and not worth another - the job leaves the shop with nothing to show for it). Any
+of them frees the bed, which is why a machine that finished stands holding one until somebody says.
+
+A verdict is the owner's, or an admin's, so it is offered on every job the shop showed this caller
+rather than to a role: the shop decides, and says so in its own words if it will not take one.
+`job approve`, `job reject` and `job abandon` still do the same thing from a terminal.
+
 ## The operator's commands
 
 ```
@@ -237,13 +254,17 @@ caller a map lookup rather than a memory-hard function in front of every request
 ```
 
 A password is never an argument - argv is `ps` and shell history - so these ask for one and the
-terminal is told not to echo it.
+terminal is told not to echo it. `caller password` is an operator setting somebody else's, at the
+machine; a person changing their own does it from the page.
 
 **Logging in** is `POST /sessions`, and the session comes back as a cookie that is `HttpOnly` (no
 script on the page can read it), `SameSite=Strict` (no other site can make a browser send it), and
 `Secure` when the request arrived over TLS. It expires after 12 hours idle and 7 days whatever
 happens, a new one is issued on every login, and `DELETE /sessions` ends it at the shop rather than
-only in the browser. Sessions are held in memory, so restarting the shop logs everybody out.
+only in the browser. Sessions survive a restart - they are kept with the shop's state, by the digest
+of what the browser holds, so an update in the night is not everybody logging in again in the
+morning. A sessions file the shop cannot read logs everybody out, which is the safe direction - and
+the shop says so in its log, rather than starting empty with nobody knowing why.
 
 A wrong password and a name the shop does not know get the same answer, after the same delay -
 otherwise the fast refusals are a list of which names exist. After a few wrong ones the shop makes
@@ -252,7 +273,9 @@ that name and that address wait, and the wait doubles.
 **A caller is added or revoked while the shop runs**: edit the file, or use the commands above, and
 send `SIGHUP` - `kill -HUP <pid>`, or `launchctl kill HUP ...` / `systemctl reload ...` - and the
 next request is judged against what it now says. A file it cannot read leaves the callers as they
-were, and the shop says so in its log rather than locking everybody out over a stray comma.
+were, and the shop says so in its log rather than locking everybody out over a stray comma. A
+password that has changed logs that person out of every browser they were logged in on, which is
+what `caller password` is for.
 
 **Upgrading a shop that already has callers**: the old file held tokens in the clear and this one
 refuses to read that, naming the command that fixes it. `3d-print-shop caller migrate` hashes what is

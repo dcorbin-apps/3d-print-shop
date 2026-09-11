@@ -53,6 +53,7 @@ describe('minding the printers', () => {
     job: jest.fn<Shop['job']>(),
     submit: jest.fn<Shop['submit']>(),
     verdict: jest.fn<Shop['verdict']>(),
+    changeMyPassword: jest.fn<Shop['changeMyPassword']>(),
   };
 
   function printer(overrides: Partial<RegisteredPrinter> = {}): RegisteredPrinter {

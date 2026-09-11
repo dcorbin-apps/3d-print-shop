@@ -20,23 +20,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   index is the extruder the slicer assigned, so `[red, blue]` and `[blue, red]` are different
   requirements. `startsWith()` in `packages/server/src/selection.ts` is the one place to revisit
 
-### Security
-
-- [ ] Sessions do not survive a restart, so restarting the shop logs everybody out. In memory is
-  the honest first answer - they are the shop's rather than the file's, and a file of them is a
-  second thing to get the mode of right - but a shop restarted by an update at 2am is a wall display
-  asking to be logged in to in the morning
-- [ ] Nobody can change their own password. `caller password` is an operator at a terminal, which is
-  right for setting one and wrong for the person who wants to change theirs
-
-
-### The page in a browser
-
-- [ ] The verdict a person gives - the one thing that frees a bed - is still `job approve` at a
-  terminal. Adding a printer is the only thing the page can change today, and judging a print is the
-  one worth having next: a bed is held until somebody says, and a page somebody is already watching
-  the print on is where they would say it
-
 ### Installation
 
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this

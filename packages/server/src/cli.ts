@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command, InvalidArgumentError } from 'commander';
 import type { AddressInfo } from 'node:net';
+import * as path from 'node:path';
 import { HttpShop, SHOP_URL_ENV, defaultShopUrl, defaultToken } from '@3d-print-shop/client';
 import type { Role } from '@3d-print-shop/client';
 import { DEFAULT_PORT, LOOPBACK, serve } from './api.js';
@@ -8,7 +9,18 @@ import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
 import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
-import { ETC_ENV, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys, writePrinterKey } from './credentials.js';
+import {
+  ETC_ENV,
+  callersIn,
+  defaultEtc,
+  printerKeysIn,
+  rereadCallers,
+  rereadPrinterKeys,
+  setPassword,
+  whosePasswordChanged,
+  writePrinterKey,
+} from './credentials.js';
+import { SESSIONS_FILE, Sessions } from './sessions.js';
 import type { Callers } from './credentials.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 import { redacting, toStdout } from './log.js';
@@ -82,6 +94,16 @@ export function createCLI(): Command {
       await store.ready();
       const releaseData = await claimData(where.run);
 
+      // AIDEV-NOTE: picked up rather than started empty, so an update at 2am is not a wall display
+      // asking to be logged in to in the morning. A file it cannot read logs everybody out and says
+      // why - the safe direction, taken out loud rather than quietly.
+      const sessions = new Sessions({ keptIn: path.join(where.state, SESSIONS_FILE), log });
+      const pickedUpSessions = await sessions.pickUp().catch((failure: unknown) => {
+        log.error('could not read who was logged in, so everybody logs in again', { why: (failure as Error).message });
+
+        return 0;
+      });
+
       const machines = new OctoPrintMachines(() => printerKeys);
       const foreman = new Foreman(store, machines.reach, log);
 
@@ -145,6 +167,15 @@ export function createCLI(): Command {
         tryEverythingAgain(printer);
       };
 
+      // AIDEV-NOTE: written to the file and then read back into what this process holds, in that
+      // order and for the same reason a printer's key is - a password changed while the shop runs
+      // needs no signal and no restart. Read back rather than patched in memory so that what is in
+      // force is what the FILE says, which is what a re-read or a restart would find.
+      const keepTheirNewPassword = async (id: string, password: string): Promise<void> => {
+        await setPassword(etc, id, password);
+        callers = await callersIn(etc);
+      };
+
       const shopServer = await serve(
         store,
         options.port,
@@ -153,7 +184,9 @@ export function createCLI(): Command {
           started: tryEverythingAgain,
           shutDown: stopTheShop,
           callers: () => callers,
+          sessions,
           keyGiven: keepTheKey,
+          passwordChanged: keepTheirNewPassword,
           page: options.page,
           log,
         },
@@ -170,7 +203,18 @@ export function createCLI(): Command {
       // it now re-reads. Everything the shop was given is re-read, each independently: a callers file
       // somebody has just broken is no reason to leave a corrected key unread.
       process.on('SIGHUP', () => {
-        void rereadCallers(etc, callers, log).then((known) => (callers = known));
+        void rereadCallers(etc, callers, log).then((known) => {
+          // AIDEV-NOTE: the other half of what a new password is for. `caller password` says every
+          // browser logged in as them is logged out once the shop has re-read this, and this is the
+          // sentence that makes it true - without it a stolen password went on working in whatever
+          // browser already had a session, which is the one place it was certain to be.
+          for (const id of whosePasswordChanged(callers, known)) {
+            sessions.endEveryOneOf(id);
+            log.info('a changed password logged out every browser it was logged in on', { caller: id });
+          }
+
+          callers = known;
+        });
         void rereadPrinterKeys(etc, printerKeys, log).then((keys) => (printerKeys = keys));
       });
 
@@ -187,7 +231,16 @@ export function createCLI(): Command {
       // AIDEV-NOTE: which data directory and which credentials, because a process that outlives the run
       // started it is a process somebody has to identify later - and argv alone was not enough to do
       // that for two shops found still listening, one of them 14 hours old.
-      log.info('the shop is listening', { address: bound.address, port: bound.port, callers: callers.size, jobs: where.jobs, state: where.state, etc, page: options.page });
+      log.info('the shop is listening', {
+        address: bound.address,
+        port: bound.port,
+        callers: callers.size,
+        sessions: pickedUpSessions,
+        jobs: where.jobs,
+        state: where.state,
+        etc,
+        page: options.page,
+      });
       say([`3d-print-shop is listening on ${bound.address}:${bound.port}`, `${callers.size} caller(s) may ask`]);
 
       // A restart does not stop a machine. Prints that were already running are picked up first,

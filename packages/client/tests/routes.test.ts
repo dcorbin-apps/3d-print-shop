@@ -29,6 +29,7 @@ describe('every path this client asks the shop for', () => {
       anyway(shop.whoAmI()),
       anyway(shop.logIn('dave', 'a password of some length')),
       anyway(shop.logOut()),
+      anyway(shop.changeMyPassword('the password in use', 'a different password entirely')),
       anyway(shop.jobs()),
       anyway(shop.job(1)),
       anyway(shop.submit({ filaments: ['PLA-Red'] }, new Blob(['G1\n']))),

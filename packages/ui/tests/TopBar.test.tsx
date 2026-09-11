@@ -142,6 +142,56 @@ describe('the banner and what it says the shop is doing', () => {
       fireEvent.click(theName());
 
       expect(loggingOut()).toBeNull();
+      expect(screen.queryByRole('menu')).toBeNull();
+    });
+
+    // AIDEV-NOTE: their own password, behind their own name - the only thing on this page that is
+    // about the person rather than about the shop, and where somebody goes looking for it.
+    describe('and changing their password', () => {
+      const changed = jest.fn<(current: string, password: string) => Promise<void>>();
+      const changingIt = (): HTMLElement | null => screen.queryByRole('menuitem', { name: 'Change password' });
+
+      it('is offered behind the name, beside logging out', () => {
+        render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} onChangePassword={changed} />);
+
+        fireEvent.click(theName());
+
+        expect(changingIt()).not.toBeNull();
+      });
+
+      it('is not offered where the page was given no way to do it', () => {
+        render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} />);
+
+        fireEvent.click(theName());
+
+        expect(changingIt()).toBeNull();
+      });
+
+      it('asks for the passwords when it is chosen, and puts the menu away', () => {
+        render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} onChangePassword={changed} />);
+        fireEvent.click(theName());
+
+        fireEvent.click(changingIt() as HTMLElement);
+
+        expect(screen.getByLabelText('current password', { exact: false })).toBeDefined();
+        expect(changingIt()).toBeNull();
+      });
+
+      it('asks for nothing until it is chosen', () => {
+        render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} onChangePassword={changed} />);
+
+        expect(screen.queryByLabelText('current password', { exact: false })).toBeNull();
+      });
+
+      it('is put away by somebody who thought better of it', () => {
+        render(<TopBar summary={quiet} caller={asDave} onOut={goesOut} onChangePassword={changed} />);
+        fireEvent.click(theName());
+        fireEvent.click(changingIt() as HTMLElement);
+
+        fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+
+        expect(screen.queryByLabelText('current password', { exact: false })).toBeNull();
+      });
     });
   });
 

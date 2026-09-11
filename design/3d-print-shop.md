@@ -422,6 +422,36 @@ That leaves one asymmetry worth naming: a keys file that is GONE is read as no k
 means on a fresh install, where a missing callers file is a refusal. The machines go out of reach
 until it is back, which is visible, reversible, and stops nothing that is already printing.
 
+**Who is logged in is written down, so a restart is not everybody logging in again.** A shop is
+restarted by an update at 2am, and sessions held only in memory made that a wall display asking to
+be logged in to in the morning. They go in the shop's STATE, in a file of their own - not in
+`callers.json`, which is a file a person hand-edits, and not among the jobs, which is one directory
+per job and read by a scan of it. What is written is what the shop already holds: the DIGEST of each
+session's secret, whose it is, when it began, and roughly when it was last used. That is what makes
+the file safe to have at all - a stolen copy says who was logged in and when, which is worth 0600,
+and cannot be turned back into a cookie anybody can present.
+
+It is written the way everything else here is written, beside and renamed over, so a crash part way
+through leaves the old file rather than half of a new one. It is not waited for by anything
+answering a request: a session that outlives a restart is worth less than a login that waits on a
+disk, and a write that fails costs the surviving, not the session. Being seen is written at most
+every few minutes rather than on every request - the cost of that is an idle clock a few minutes
+stale after a restart, and the alternative, leaving it out, is worse than it looks: a session in
+constant use would come back looking untouched since it began and be thrown away as idle.
+
+Reading it is the one place that is loud. The file is refused rather than read as far as it goes, and
+what to do about that is the shop's to decide and not the file's: it starts, because jobs waiting to
+be printed matter more than a login, and it says in its log that everybody has to log in again and
+why. Everybody logging in again IS the safe direction; doing it silently is how a shop logs everybody
+out every morning with nobody knowing what changed.
+
+**A changed password ends the sessions it let in.** `caller password` promises that; without this it
+was not true, because the id still existed and every browser already logged in as that person went
+on being them - which is the one place a stolen password was certain to keep working. So the re-read
+compares each caller's password hash with the one the shop was holding, and where it changed, that
+caller's sessions end. Somebody either forgot theirs or believes somebody else has it; in both cases
+every browser logged in as them is one that should not be.
+
 The cost is deliberate and worth writing down: an admin may judge work that is not theirs, and
 afterwards nothing says they did. Approval discards the job, the shop keeps no history, and the
 verdict leaves no record of whose it was. That is the price of never holding a bed for a job nobody
@@ -577,6 +607,48 @@ clients. The dependency runs one way, and pointing it at a path is what keeps it
 And it is served without a credential, because the page nobody has logged in to yet is the page they
 log in ON. There is nothing in it worth protecting - a bundle and a stylesheet - and requiring one
 would be a login screen that cannot be fetched without having logged in.
+
+**A password is the person's, and changing it is theirs to do.** `caller password` is an operator at
+a terminal, which is right for setting one and wrong for the person who wants to change theirs -
+until this, nobody could change their own without finding somebody with a shell on the machine, and
+a password nobody can change is a password nobody ever does.
+
+It is `PUT /me/password`, open to every caller because it can only ever change the caller making the
+request: the id is taken from who the request turned out to be and never read out of the body, so
+there is no shape of request that changes somebody else's. Changing another person's stays an
+operator's act at the terminal and has no route at all.
+
+The password they have NOW travels with it and is checked, even though the session already names
+them. A session is a screen somebody walked away from, and a password nobody has to know to change
+is a password the next person to sit down owns. That makes this the same oracle a login is -
+something that says whether a guess was right - so it is counted and made to wait the same way. A
+wrong one is refused 403 rather than 401: the session is perfectly good, and a client that read it
+as an expired one would throw somebody off the page for mistyping.
+
+What follows a change is every OTHER session that caller holds ending, and the one that asked being
+kept. The reason for the first is the reason the SIGHUP path has it: somebody either forgot theirs or
+believes somebody else has it. The reason for the second is that asking a person to log in again for
+having just proved who they are is a page that punishes the safe thing.
+
+The writing is the running shop's rather than the store's, like a printer's key - the file is written
+and then read BACK into what the process holds, in that order, so what is in force is what the file
+says and a restart or a re-read finds the same thing. No signal, no restart.
+
+**The verdict is given on the page, because that is where the print was watched.** A printer holds
+its bed until a person says whether what came off it is usable, and that person is standing at the
+machine with the page in front of them - so a shop whose only way to say it was a terminal printed
+one thing per machine and then waited for somebody to walk to a keyboard. It is offered against the
+JOB rather than as a screen of its own: two machines can be waiting at once, and "approve" on its
+own does not say which bed is about to be freed.
+
+Three buttons rather than two, because the third is the one a shop cannot do without: a print that
+was no good and is not worth another still has to let go of what it is holding. The middle one says
+"print again" rather than "reject" - the shop's word says what a person thought of the print, and
+the button has to say what happens to the job.
+
+The page offers it on every job the shop showed the caller, and does not reason about who may give
+one. Ownership is the shop's to decide and it decides it in the route; a page that worked it out
+again would be a second copy of the rule, and the copy that drifts is the one in the browser.
 
 ## Sending a job to a printer
 

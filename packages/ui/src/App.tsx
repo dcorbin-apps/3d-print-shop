@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { PrinterRecord } from '@3d-print-shop/client/browser';
+import type { PrinterRecord, Verdict } from '@3d-print-shop/client/browser';
 import { LogIn } from './components/LogIn.js';
 import { JobsByFilament } from './components/JobsByFilament.js';
 import { PrinterGallery, stillHere } from './components/PrinterGallery.js';
@@ -30,6 +30,14 @@ export function App(): React.JSX.Element {
     askAgain();
   };
 
+  // AIDEV-NOTE: asked for again straight away rather than waiting for the next tick, because a
+  // verdict frees a bed - the printer holding it becomes free and the next job starts, and the page
+  // somebody just judged on should show that rather than the last poll's answer.
+  const judge = async (id: number, verdict: Verdict): Promise<void> => {
+    await shop.verdict(id, verdict);
+    askAgain();
+  };
+
   const selected = stillHere(printers, chosen);
 
   // AIDEV-NOTE: written when it SETTLES rather than when it is clicked, so that a printer removed
@@ -55,14 +63,25 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="shop">
-      <TopBar summary={summarise(printers, jobs)} trouble={trouble} caller={caller} onOut={() => void shop.logOut().then(askAgain)} />
+      <TopBar
+        summary={summarise(printers, jobs)}
+        trouble={trouble}
+        caller={caller}
+        onOut={() => void shop.logOut().then(askAgain)}
+        onChangePassword={(current, password) => shop.changeMyPassword(current, password)}
+      />
       <PrinterGallery
         printers={printers}
         selected={selected}
         onSelect={setChosen}
         onAdd={caller?.role === 'admin' ? addPrinter : undefined}
       />
-      <JobsByFilament jobs={jobs} totalJobs={totalJobs} selected={printers.find((printer) => printer.name === selected)} />
+      <JobsByFilament
+        jobs={jobs}
+        totalJobs={totalJobs}
+        selected={printers.find((printer) => printer.name === selected)}
+        onVerdict={judge}
+      />
 
       {!answered && <p className="asking">asking the shop...</p>}
     </div>
