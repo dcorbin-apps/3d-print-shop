@@ -137,13 +137,6 @@ a run of that file on its own.
   request line is an assumption about node and express, and goes to the third suite. The same move as
   `onePrinterName`
 
-- [ ] **Three body rules a route still keeps inline.** `loadedIn`, `stoppedIn`, `printerIn` and
-  `keyIn` were pulled out for exactly this reason; what was left behind is the verdict word (inline
-  in `PUT /jobs/:id/verdict`), the login body and the password-change body. `refuses %j as a login`
-  (3, 190-250ms each), `refuses %j as a change` (3, 190-256ms each) and `refuses a verdict it does
-  not know` are what they cost through a socket. `refuses %p as a key, and adds nothing` runs
-  `keyIn`'s four unit cases again, and one of the four carries the half a unit test cannot say
-
 - [ ] **The three functions that decide who is asking have no unit test at all.** `cookieIn`,
   `tokenIn` and `requireItCameFromHere` are pure or two headers wide, and all anybody knows about
   them is read back off a status code. The three `a write carrying a session` cases are a table plus

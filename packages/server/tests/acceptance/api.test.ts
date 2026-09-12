@@ -242,15 +242,6 @@ describe('the shop over HTTP', () => {
       expect((await send('PUT', `/jobs/${job.id}/verdict`, { verdict: 'abandoned' })).status).toBe(204);
       expect((await ask(`/jobs/${job.id}`)).status).toBe(404);
     });
-
-    it('refuses a verdict it does not know', async () => {
-      const job = await awaitingApproval();
-
-      const response = await send('PUT', `/jobs/${job.id}/verdict`, { verdict: 'good enough' });
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'a verdict is approved, rejected or abandoned, not "good enough"' });
-    });
   });
 
   // AIDEV-NOTE: every change is a moment something might be startable, so the shop is told about
@@ -452,8 +443,10 @@ describe('the shop over HTTP', () => {
       expect(mockKeyGiven).not.toHaveBeenCalled();
     });
 
-    it.each([[''], ['   '], [7], [null]])('refuses %p as a key, and adds nothing', async (key) => {
-      expect((await adding({ ...mini, key })).status).toBe(400);
+    // `keyIn` refuses four kinds of non-key in tests/api.test.ts. What is left here is the half it
+    // cannot reach: a refused key leaves no printer behind it either.
+    it('refuses a key that is no key, and adds nothing', async () => {
+      expect((await adding({ ...mini, key: '' })).status).toBe(400);
       expect(mockKeyGiven).not.toHaveBeenCalled();
       expect(JSON.stringify(await (await ask('/printers')).json())).not.toContain('mini');
     });
@@ -633,11 +626,13 @@ describe('the shop over HTTP', () => {
       expect((await logIn('slicer', USER)).status).toBe(401);
     }, 15_000);
 
-    it.each([[{ id: 'dave' }], [{ password: PASSWORD }], [{ id: 7, password: PASSWORD }]])('refuses %j as a login', async (body) => {
+    // `loginIn` refuses six shapes in tests/api.test.ts. One here, for what only a running shop can
+    // say: that this route - the one reached before the shop knows anybody - puts a body through it.
+    it('refuses a body that is not a login', async () => {
       const response = await fetch(`${loginUrl}/sessions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ id: 'dave' }),
       });
 
       expect(response.status).toBe(400);
@@ -834,19 +829,16 @@ describe('the shop over HTTP', () => {
         expect(mockKept).not.toHaveBeenCalled();
       }, 30_000);
 
-      it.each([[{ current: PASSWORD }], [{ password: NEW_PASSWORD }], [{ current: PASSWORD, password: 7 }]])(
-        'refuses %j as a change',
-        async (body) => {
-          const response = await fetch(`${changeUrl}/me/password`, {
-            method: 'PUT',
-            headers: { 'content-type': 'application/json', authorization: `Bearer ${ADMIN}` },
-            body: JSON.stringify(body),
-          });
+      // `passwordChangeIn` refuses six shapes in tests/api.test.ts; one here for the wiring.
+      it('refuses a body that is not a change', async () => {
+        const response = await fetch(`${changeUrl}/me/password`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${ADMIN}` },
+          body: JSON.stringify({ current: PASSWORD }),
+        });
 
-          expect(response.status).toBe(400);
-        },
-        30_000,
-      );
+        expect(response.status).toBe(400);
+      }, 30_000);
 
       // AIDEV-NOTE: what a new password is FOR - somebody either forgot theirs or believes somebody
       // else has it. The browser doing the changing is kept, because asking somebody to log in again

@@ -4,6 +4,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import type { Server } from 'node:http';
 import * as path from 'node:path';
 import { SHOP_ROUTES } from '@3d-print-shop/client';
+import type { Verdict } from '@3d-print-shop/client';
 import { InvalidSubmission } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
 import { NoSuchJob, NoSuchPrinter, DataUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
@@ -258,8 +259,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // miss, and scrypt in the middle whatever happens, so that "how long did it take" says nothing
   // either.
   api.post(SESSIONS_PATH, async (request, response) => {
-    const { id, password } = bodyOf(request.body);
-    if (typeof id !== 'string' || typeof password !== 'string') throw new UnusableRequest('a login is an id and a password');
+    const { id, password } = loginIn(request.body);
 
     const from = request.ip ?? 'nowhere';
     const waiting = attempts.mustWait(id);
@@ -404,10 +404,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   api.put('/me/password', async (request, response) => {
     if (passwordChanged === undefined) throw new UnusableRequest('this shop was not given anywhere to keep a password');
 
-    const { current, password } = bodyOf(request.body);
-    if (typeof current !== 'string' || typeof password !== 'string') {
-      throw new UnusableRequest('changing a password is the one you have now and the one you want');
-    }
+    const { current, password } = passwordChangeIn(request.body);
 
     const who = request.caller;
     const from = request.ip ?? 'nowhere';
@@ -462,12 +459,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // one is a value on the same route, and a verdict on a job that has not finished printing is a 409
   // on the thing being set. Only rejecting answers with a job - the other two leave nothing to say.
   api.put('/jobs/:id/verdict', async (request, response) => {
-    const { verdict } = bodyOf(request.body);
-
-    if (verdict !== 'approved' && verdict !== 'rejected' && verdict !== 'abandoned') {
-      throw new UnusableRequest(`a verdict is approved, rejected or abandoned, not ${JSON.stringify(verdict)}`);
-    }
-
+    const verdict = verdictIn(request.body);
     const id = jobId(request.params.id);
 
     // AIDEV-NOTE: after the body and before the shop is asked to do anything. Not this caller's is
@@ -818,6 +810,36 @@ export function printerIn(body: unknown): PrinterRecord {
   }
 
   return { name, buildVolume: { x, y, z } as BuildVolume, address: reachedAt, api: 'octoprint' };
+}
+
+// AIDEV-NOTE: the word itself rather than a route apiece, so `JSON.stringify` is what says what
+// arrived - a verdict of `null` and one of `"null"` are different mistakes and read differently.
+export function verdictIn(body: unknown): Verdict {
+  const { verdict } = bodyOf(body);
+
+  if (verdict !== 'approved' && verdict !== 'rejected' && verdict !== 'abandoned') {
+    throw new UnusableRequest(`a verdict is approved, rejected or abandoned, not ${JSON.stringify(verdict)}`);
+  }
+
+  return verdict;
+}
+
+// AIDEV-NOTE: shape only. Whether the password is RIGHT is the route's, and deliberately slow; what
+// this refuses is a body that was never a login, which costs nothing to say and reveals nothing.
+export function loginIn(body: unknown): { id: string; password: string } {
+  const { id, password } = bodyOf(body);
+  if (typeof id !== 'string' || typeof password !== 'string') throw new UnusableRequest('a login is an id and a password');
+
+  return { id, password };
+}
+
+export function passwordChangeIn(body: unknown): { current: string; password: string } {
+  const { current, password } = bodyOf(body);
+  if (typeof current !== 'string' || typeof password !== 'string') {
+    throw new UnusableRequest('changing a password is the one you have now and the one you want');
+  }
+
+  return { current, password };
 }
 
 // The message is the answer. Every refusal here is one a client can read and act on, and a stack

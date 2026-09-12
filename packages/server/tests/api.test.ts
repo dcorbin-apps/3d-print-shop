@@ -1,5 +1,18 @@
 import { describe, it, expect } from '@jest/globals';
-import { UnusableRequest, addressIn, bodyOf, keyIn, loadedIn, onePrinterName, printerIn, requireUsablePrinterName, stoppedIn } from '../src/api';
+import {
+  UnusableRequest,
+  addressIn,
+  bodyOf,
+  keyIn,
+  loadedIn,
+  loginIn,
+  onePrinterName,
+  passwordChangeIn,
+  printerIn,
+  requireUsablePrinterName,
+  stoppedIn,
+  verdictIn,
+} from '../src/api';
 
 // AIDEV-NOTE: the name in a QUERY string, which is the second of the three ways one arrives - the
 // others being a path segment, checked at the `/printers/:name` mount, and a body, checked in
@@ -278,4 +291,76 @@ describe('the printer a body describes', () => {
   it('refuses a protocol this shop does not speak', () => {
     expect(() => printerIn({ ...MK4, api: 'klipper' })).toThrow('is not a protocol this shop speaks');
   });
+});
+
+describe('the verdict a body gives', () => {
+  it.each([['approved'], ['rejected'], ['abandoned']])('takes %j, which is a verdict this shop records', (verdict) => {
+    expect(verdictIn({ verdict })).toBe(verdict);
+  });
+
+  // The word arrived and was not one of the three, which is a different mistake from bringing no
+  // body at all - and the answer says which by quoting what came.
+  it('refuses a word that is not one of the three, saying what it was given', () => {
+    expect(() => verdictIn({ verdict: 'good enough' })).toThrow('a verdict is approved, rejected or abandoned, not "good enough"');
+  });
+
+  it.each([[{}], [undefined], [{ verdict: null }], [{ verdict: 7 }], [{ verdict: ['approved'] }], [{ verdict: 'Approved' }]])(
+    'refuses %p',
+    (body) => {
+      expect(() => verdictIn(body)).toThrow(UnusableRequest);
+    }
+  );
+
+  // A request that brought nothing is a client's mistake worth naming as one, so the complaint still
+  // says what a verdict is rather than that something was undefined.
+  it('tells a request that brought no body what a verdict is', () => {
+    expect(() => verdictIn(undefined)).toThrow('a verdict is approved, rejected or abandoned, not undefined');
+  });
+});
+
+// AIDEV-NOTE: shape only, and that is the point - whether the password is RIGHT is the route's, and
+// deliberately slow. Refusing a body that was never a login costs nothing and says nothing about who
+// exists.
+describe('the login a body carries', () => {
+  it('is the name and the password it was given', () => {
+    expect(loginIn({ id: 'dave', password: 'a password of some length' })).toEqual({ id: 'dave', password: 'a password of some length' });
+  });
+
+  it('carries nothing else the body happened to hold', () => {
+    expect(loginIn({ id: 'dave', password: 'secret', role: 'admin' })).toEqual({ id: 'dave', password: 'secret' });
+  });
+
+  it.each([[{ id: 'dave' }], [{ password: 'a password' }], [{}], [undefined], [{ id: 7, password: 'a password' }], [{ id: 'dave', password: null }]])(
+    'refuses %p, which is not a name and a password',
+    (body) => {
+      expect(() => loginIn(body)).toThrow(UnusableRequest);
+      expect(() => loginIn(body)).toThrow('a login is an id and a password');
+    }
+  );
+
+  // Empty is a shape this takes and the route refuses by hashing it like any other wrong one, which
+  // is what keeps an empty password costing the same as a wrong one.
+  it('takes an empty password, which is refused later and at the same price', () => {
+    expect(loginIn({ id: 'dave', password: '' })).toEqual({ id: 'dave', password: '' });
+  });
+});
+
+describe('the password change a body asks for', () => {
+  it('is the one in use and the one wanted', () => {
+    expect(passwordChangeIn({ current: 'the old one', password: 'the new one' })).toEqual({ current: 'the old one', password: 'the new one' });
+  });
+
+  // The id is whoever the request turned out to be, so a body naming somebody is not a way to change
+  // theirs - there is nothing here for a name to land in.
+  it('carries no name, whoever the body names', () => {
+    expect(passwordChangeIn({ id: 'somebody else', current: 'a', password: 'b' })).toEqual({ current: 'a', password: 'b' });
+  });
+
+  it.each([[{ current: 'the old one' }], [{ password: 'the new one' }], [{}], [undefined], [{ current: 'a', password: 7 }], [{ current: null, password: 'b' }]])(
+    'refuses %p, which is not both of them',
+    (body) => {
+      expect(() => passwordChangeIn(body)).toThrow(UnusableRequest);
+      expect(() => passwordChangeIn(body)).toThrow('changing a password is the one you have now and the one you want');
+    }
+  );
 });

@@ -9,11 +9,14 @@ export {
   createApi,
   keyIn,
   loadedIn,
+  loginIn,
   onePrinterName,
+  passwordChangeIn,
   printerIn,
   requireUsablePrinterName,
   serve,
   stoppedIn,
+  verdictIn,
 } from './api.js';
 export type { ShopHooks } from './api.js';
 export {
