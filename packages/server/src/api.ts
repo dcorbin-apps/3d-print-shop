@@ -500,6 +500,12 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // `changed` hook above. A per-route list is a list somebody forgets to add to, and what would be
   // forgotten here is a recursive delete outside the data directory. Mounted on the path, so `POST /printers`
   // (which names a printer in its body, and is checked there) is not caught by it.
+  //
+  // AIDEV-NOTE: a name arrives three ways, and this mount is only one of them - a path segment here,
+  // a body on `POST /printers` (`printerIn`), and a query string on `GET /filaments`
+  // (`onePrinterName`). The query string was the one this list forgot; all three are checked now.
+  // A fourth arrival is the thing to watch for, and the store building the path is where it would
+  // stop being possible to forget - see PLAN.md.
   api.use('/printers/:name', (request, _response, next) => {
     requireUsablePrinterName(request.params.name);
     next();
@@ -831,12 +837,20 @@ function explainRefusal(log: Log, error: unknown, _request: Request, response: R
 // AIDEV-NOTE: express parses `?printer=a&printer=b` into an array and `?printer[x]=y` into an
 // object, so what arrives here is not a string because a caller wrote one. Answering for the shop
 // when a caller asked about a machine would be the wrong answer said confidently, so it is refused.
+//
+// AIDEV-NOTE: and then checked as a NAME, because this is the second way one arrives. The mount on
+// `/printers/:name` catches every name that comes in a path and cannot catch this one, which comes
+// in a query string - so `?printer=../../../somewhere` reached `printerNamed` and read a
+// printer.json outside the data directory. What it gave back was an oracle: a file that parses
+// answered 200, one that is not there 404, one that is not JSON 500.
 function onePrinterName(asked: unknown): string | undefined {
   if (asked === undefined) return undefined;
 
   if (typeof asked !== 'string' || asked.trim() === '') {
     throw new UnusableRequest('printer names one machine to answer for, and the whole shop answers when it is left out');
   }
+
+  requireUsablePrinterName(asked);
 
   return asked;
 }

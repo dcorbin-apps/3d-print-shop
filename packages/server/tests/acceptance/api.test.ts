@@ -30,7 +30,14 @@ describe('the shop over HTTP', () => {
 
   const MK4 = { x: 250, y: 210, z: 220 };
   const MK4_ADDRESS = 'http://octopi.local';
-  const asRegistered = { name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS, camera: `${MK4_ADDRESS}/webcam/?action=stream`, loaded: [] };
+  const asRegistered = {
+    name: 'mk4',
+    buildVolume: MK4,
+    api: 'octoprint',
+    address: MK4_ADDRESS,
+    camera: `${MK4_ADDRESS}/webcam/?action=stream`,
+    loaded: [],
+  };
 
   const playerBox: JobDetails = { filaments: ['PLA-SpaceGray'], displayName: 'Player Box' };
 
@@ -382,7 +389,13 @@ describe('the shop over HTTP', () => {
     it('takes nothing, and says to come back later without saying where it keeps its work', async () => {
       const lines: string[] = [];
       const full = new JobStore(where, { maxGcodeBytes: 1024, freeBytes: () => Promise.resolve(512) });
-      const server = await serve(full, 0, { callers: () => CALLERS, log: toStdout(() => new Date(), (line) => lines.push(line)) });
+      const server = await serve(full, 0, {
+        callers: () => CALLERS,
+        log: toStdout(
+          () => new Date(),
+          (line) => lines.push(line),
+        ),
+      });
 
       try {
         const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -740,11 +753,15 @@ describe('the shop over HTTP', () => {
                 ...(password === undefined ? [] : [{ kind: 'password' as const, hash: await hashPassword(password) }]),
                 ...(token === undefined ? [] : [{ kind: 'token' as const, hash: digestOf(token) }]),
               ],
-            }))
-          )
+            })),
+          ),
         );
 
-      const changeTo = (password: string, current: string, headers: Record<string, string> = { authorization: `Bearer ${ADMIN}` }): Promise<Response> =>
+      const changeTo = (
+        password: string,
+        current: string,
+        headers: Record<string, string> = { authorization: `Bearer ${ADMIN}` },
+      ): Promise<Response> =>
         fetch(`${changeUrl}/me/password`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json', ...headers },
@@ -768,7 +785,7 @@ describe('the shop over HTTP', () => {
           return naming(
             { id: 'dave', password: passwordOf('dave'), token: ADMIN },
             { id: 'slicer', token: USER },
-            { id: 'ada', password: passwordOf('ada'), token: A_USERS_TOKEN, role: 'user' }
+            { id: 'ada', password: passwordOf('ada'), token: A_USERS_TOKEN, role: 'user' },
           );
         };
 
@@ -842,7 +859,7 @@ describe('the shop over HTTP', () => {
 
           expect(response.status).toBe(400);
         },
-        30_000
+        30_000,
       );
 
       // AIDEV-NOTE: what a new password is FOR - somebody either forgot theirs or believes somebody
@@ -880,7 +897,7 @@ describe('the shop over HTTP', () => {
 
       // AIDEV-NOTE: a user's own password is the whole point of this route. Made an admin's, it
       // would be back to nobody being able to change their own - which is what it is here to fix.
-      it('is a user\'s to change as much as an admin\'s', async () => {
+      it("is a user's to change as much as an admin's", async () => {
         const response = await changeTo(NEW_PASSWORD, PASSWORD, { authorization: `Bearer ${A_USERS_TOKEN}` });
 
         expect(response.status).toBe(204);
@@ -1049,7 +1066,7 @@ describe('the shop over HTTP', () => {
       await mkdir(path.join(where.jobs, '9'), { recursive: true });
       await writeFile(
         path.join(where.jobs, '9', 'job.json'),
-        JSON.stringify({ id: 9, displayName: 'Old Box', filaments: ['PLA-SpaceGray'], submittedAt: new Date().toISOString(), gcodeBytes: 3 })
+        JSON.stringify({ id: 9, displayName: 'Old Box', filaments: ['PLA-SpaceGray'], submittedAt: new Date().toISOString(), gcodeBytes: 3 }),
       );
 
       return 9;
@@ -1145,7 +1162,7 @@ describe('the shop over HTTP', () => {
 
     // It counts everybody's work, which is more than the bare total a caller who owns none of it may
     // learn - and loading a machine is already an admin's to do.
-    it('is an admin\'s to ask, because it counts work that is not the caller\'s', async () => {
+    it("is an admin's to ask, because it counts work that is not the caller's", async () => {
       expect((await as(USER, 'GET', '/filaments')).status).toBe(403);
     });
 
@@ -1227,7 +1244,7 @@ describe('the shop over HTTP', () => {
       'takes %p',
       async (address) => {
         expect((await add(address)).status).toBe(201);
-      }
+      },
     );
 
     // Every request appends its own path, so a kept trailing slash would double the separator.
@@ -1292,6 +1309,43 @@ describe('the shop over HTTP', () => {
       expect(response.status).not.toBe(404);
     });
 
+    // AIDEV-NOTE: the SECOND way a name arrives, and the one the `/printers/:name` mount cannot
+    // catch. `?printer=../../../somewhere` read a printer.json outside the data directory, and told
+    // a caller which it was: 200 where the file parsed, 404 where there was none, 500 where it was
+    // not JSON. Asked here the way a client asks it, encoded, because that is what arrives.
+    it.each(REFUSED)('will not answer for %s, which arrives in a query rather than a path', async (name) => {
+      expect((await ask(`/filaments?printer=${encodeURIComponent(decodeURIComponent(name))}`)).status).toBe(400);
+    });
+
+    // Unencoded, which is what a query string carries perfectly well and what a client that built
+    // the URL by hand would send.
+    it.each([['../../../outside'], ['../..'], ['a/b']])('will not answer for %p written straight into the query', async (name) => {
+      expect((await ask(`/filaments?printer=${name}`)).status).toBe(400);
+    });
+
+    // The refusal is about the NAME, so it comes before the shop looks anything up - the same 400 and
+    // the same words a path gets, rather than the 404 or the 500 that said whether a file was there
+    // and whether it parsed.
+    it('refuses the name rather than saying whether anything is at that path', async () => {
+      const response = await ask('/filaments?printer=../../../outside');
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
+    });
+
+    // A query naming nothing is a caller who meant to leave the parameter out, and saying so is more
+    // use than telling them a space cannot be a directory. Refused either way.
+    it('says what to do about a query that names nothing at all', async () => {
+      const response = await ask('/filaments?printer=%20');
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining('printer names one machine') as unknown });
+    });
+
+    it('still answers for an ordinary name in a query', async () => {
+      expect((await ask('/filaments?printer=mk4')).status).toBe(200);
+    });
+
     it('still takes an ordinary name', async () => {
       expect((await send('PUT', '/printers/mk4/filament', { loaded: ['PLA'] })).status).toBe(200);
     });
@@ -1330,7 +1384,10 @@ describe('the shop over HTTP', () => {
       const missing = layoutUnder(path.join(parentOf(where), 'never-made'));
       const unusable = await serve(new JobStore(missing), 0, {
         callers: () => CALLERS,
-        log: toStdout(() => new Date(), (line) => lines.push(line)),
+        log: toStdout(
+          () => new Date(),
+          (line) => lines.push(line),
+        ),
       });
 
       try {

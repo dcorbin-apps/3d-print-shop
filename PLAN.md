@@ -13,13 +13,15 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 Found by auditing a running shop on 2026-09-12; each was reproduced against a real process rather
 than read out of the code. These come before the rest of the list.
 
-- [ ] `GET /filaments?printer=` does not check the name. Every other route naming a printer goes
-  through `requireUsablePrinterName` at the `api.use('/printers/:name', ...)` mount; this one takes
-  the name from a query string and never reaches it, so `?printer=../../../outside` reads a
-  `printer.json` outside the data directory. The three answers can be told apart - 200 for a file
-  that parses, 404 for one that is not there, 500 for one that is not JSON - which is an oracle for
-  any path the service user can read, and the build volume it read back then filters the queue.
-  Admin only. `onePrinterName` in `packages/server/src/api.ts` is the one place to fix
+- [ ] A printer's name is checked in three places, because it arrives three ways: a path segment
+  (the `/printers/:name` mount), a body (`printerIn`) and a query string (`onePrinterName`). The
+  query string is the one that list forgot, and it read a `printer.json` outside the data directory
+  until it did not. Three checks is two more than the note above the mount claims, and a fourth way
+  in is a fourth thing to remember - so the check belongs where a name BECOMES a path, which is
+  `printerDir()` in `JobStore.ts`, and every method that touches a printer's directory goes through
+  it. What stops that being a one-line move is the error: the store's vocabulary is `NoSuchPrinter`,
+  `WrongState` and `DataUnavailable`, none of which this is, and a new one needs a case in
+  `statusFor` or it is a 500. Worth doing, not worth doing carelessly
 
 - [ ] A client can write the shop's own fields into its job record. `submit` builds the record as
   `{ ...details, id, owner, ... }` and nothing validates the shape of `details`, so `heldBy` and
