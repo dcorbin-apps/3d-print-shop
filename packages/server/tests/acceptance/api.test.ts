@@ -902,9 +902,13 @@ describe('the shop over HTTP', () => {
     });
   });
 
-  // AIDEV-NOTE: over real HTTP because what is being proven is what a request carrying a token does,
-  // and every route is reached the way a caller reaches it. The permission table is the security
-  // boundary, so what a `user` may NOT do is asserted route by route rather than in the general.
+  // AIDEV-NOTE: the permission table is the security boundary, and it IS asserted route by route -
+  // against `requireTheirRole` in tests/api.test.ts, where the answer says which rule refused and in
+  // what words rather than being read back as a status code. That the guard asks it, is handed the
+  // path rather than the url, and sits above every route that holds work, is tests/guard.test.ts.
+  //
+  // What is left here is the credential half: a token on the wire, and that a shop which cannot name
+  // a caller says the same thing whichever way it failed to.
   describe('who is asking', () => {
     it('refuses a caller carrying no token at all', async () => {
       const response = await as(undefined, 'GET', '/jobs');
@@ -926,15 +930,6 @@ describe('the shop over HTTP', () => {
       expect(await wrong.json()).toEqual(await missing.json());
     });
 
-    it.each([
-      ['GET', '/jobs'],
-      ['GET', '/jobs/1'],
-      ['GET', '/printers'],
-      ['GET', '/me'],
-    ])('lets a user %s %s', async (method, path) => {
-      expect((await as(USER, method, path)).status).not.toBe(403);
-    });
-
     it('lets a user submit a job', async () => {
       const body = new FormData();
       body.append('job', JSON.stringify(playerBox));
@@ -943,56 +938,6 @@ describe('the shop over HTTP', () => {
       const response = await submitting(shopUrl, body, USER);
 
       expect(response.status).toBe(201);
-    });
-
-    it.each([
-      ['POST', '/shutdown', {}],
-      ['POST', '/printers', { name: 'mini', buildVolume: MK4, address: 'http://mini' }],
-      ['DELETE', '/printers/mk4', undefined],
-      ['PUT', '/printers/mk4/filament', { loaded: ['PLA'] }],
-      ['PUT', '/printers/mk4/status', { stopped: true, reason: 'door' }],
-    ])('will not let a user %s %s', async (method, path, body) => {
-      const response = await as(USER, method, path, body);
-
-      expect(response.status).toBe(403);
-      expect(await response.json()).toEqual({ error: `${method} ${path} is for an admin, and slicer is not one` });
-    });
-
-    it.each([
-      ['PUT', '/printers/mk4/filament', { loaded: ['PLA'] }],
-      ['PUT', '/printers/mk4/status', { stopped: true, reason: 'door' }],
-    ])('lets an admin %s %s', async (method, path, body) => {
-      expect((await as(ADMIN, method, path, body)).status).toBe(200);
-    });
-
-    // A route nobody classified needs an admin, so forgetting one makes the shop stricter.
-    it('needs an admin for a route it has never heard of', async () => {
-      expect((await as(USER, 'POST', '/something-added-later')).status).toBe(403);
-    });
-
-    // AIDEV-NOTE: express routes non-strictly, case-insensitively, and serves HEAD from a GET route
-    // - so all of these reach a route a user is entitled to. Comparing the raw path refused them,
-    // which failed CLOSED and so only ever broke the less privileged caller: a client using a
-    // trailing slash worked on an admin token and 403'd on a user one.
-    it.each([
-      ['GET', '/jobs/'],
-      ['GET', '/JOBS'],
-      ['GET', '/printers/'],
-      ['HEAD', '/jobs'],
-      // A verdict is open to any caller and refused on OWNERSHIP inside the route, so what a user
-      // must not meet here is a 403 about their role.
-      ['PUT', '/jobs/1/verdict/'],
-    ])('lets a user %s %s, which express routes to one they may have', async (method, path) => {
-      expect((await as(USER, method, path)).status).not.toBe(403);
-    });
-
-    // The normalising must not open anything: a trailing slash or a shout is still an admin route.
-    it.each([
-      ['POST', '/shutdown/'],
-      ['DELETE', '/PRINTERS/mk4'],
-      ['PUT', '/printers/mk4/status/'],
-    ])('still needs an admin for %s %s', async (method, path) => {
-      expect((await as(USER, method, path)).status).toBe(403);
     });
   });
 

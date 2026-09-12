@@ -15,6 +15,7 @@ export {
   passwordChangeIn,
   printerIn,
   requireItCameFromHere,
+  requireTheirRole,
   requireUsablePrinterName,
   serve,
   stoppedIn,

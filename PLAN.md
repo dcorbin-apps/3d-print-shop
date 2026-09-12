@@ -43,6 +43,15 @@ than read out of the code. These come before the rest of the list.
   could reach - a cookie that will not decode, and `Origin: null` - are fixed; this is the
   authenticated one, and the last of the three. `packages/server/src/Job.ts`
 
+- [ ] A caller who is not an admin cannot log out. `DELETE /sessions` is not on
+  `OPEN_TO_EVERY_CALLER`, so the role rule refuses it: a user logs in 201 and is answered
+  `DELETE /sessions is for an admin, and ada is not one` when they try to leave. Reproduced against
+  the real app on 2026-09-12. The route ends the session in the request's OWN cookie and can reach
+  nobody else's, which is the same reasoning that put `PUT /me/password` on the open list - so this
+  looks like an omission rather than a decision, and the fix is one line. Asked rather than done
+  because it is the security boundary. Nothing caught it: the acceptance tests for logging out all
+  used an admin. `packages/server/src/api.ts`
+
 - [ ] `see PLAN` in `OctoPrint.ts` at `send`, `cancel` and `filedAt` names nothing that is in this
   file. Either the work is still wanted and belongs here, or the reference goes
 
@@ -120,19 +129,6 @@ a unit test already makes, or could make better and faster. Every one has a sibl
 tested, which is what makes these oversights rather than decisions - the same test that found the
 last batch. `api.test.ts` is 142 cases in 10.8s and about 40 of them are below; the timings are from
 a run of that file on its own.
-
-- [ ] **The role table is a pure function asked over a socket.** `needsAdmin(method, path)` in
-  `api.ts` is a function of two strings, and the middleware hands it `request.path` verbatim - so
-  all of the normalising (HEAD as GET, a trailing slash, a shouted path) is inside it. Five blocks of
-  `who is asking` are its truth table: `lets a user %s %s` (4), `will not let a user %s %s` (5),
-  `needs an admin for a route it has never heard of` (1), `lets a user %s %s, which express routes to
-  one they may have` (5) and `still needs an admin for %s %s` (3). Export it and those 18 become a
-  table. The guard itself comes out beside it as a function over something request-shaped, so that
-  refusing a user by role and letting one through are unit tests too, and so is the order it is
-  mounted in - `createApi` answers a request without a listener, and neither the rule nor the
-  ordering is a thing about the request object. Nothing is left for an acceptance test: the raw
-  request line is an assumption about node and express, and goes to the third suite. The same move as
-  `onePrinterName`
 
 - [ ] **`statusFor` is said to be tested and is not.** The Tests section above leaves seven empty
   `Error` subclasses untested on the grounds that what matters about them is the status each maps to,

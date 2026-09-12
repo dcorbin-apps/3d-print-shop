@@ -12,6 +12,7 @@ import {
   passwordChangeIn,
   printerIn,
   requireItCameFromHere,
+  requireTheirRole,
   requireUsablePrinterName,
   stoppedIn,
   tokenIn,
@@ -464,5 +465,107 @@ describe('a write that has to have come from here', () => {
   // refused; what was wrong was being refused as the shop's fault.
   it.each([['null'], ['not a url'], [''], ['http://']])('refuses an origin of %j rather than throwing', (origin) => {
     expect(() => requireItCameFromHere(origin, HERE)).toThrow(NotTheirs);
+  });
+});
+
+// AIDEV-NOTE: the permission table, which is the security boundary - so what a user may NOT do is
+// asserted route by route rather than in the general. Eighteen of these stood up an HTTP server to
+// ask what a function makes of two strings, and answered with a status code; here the answer is
+// which rule refused and in what words.
+//
+// What express hands the guard for a real request line is not this function's to say, and is pinned
+// in tests/assumptions/theRequestLine.test.ts. That the guard is wired to this at all, and mounted
+// where it must be, is tests/guard.test.ts.
+describe('whether a route is an admin\'s', () => {
+  const user = { id: 'slicer', name: 'slicer', role: 'user' as const };
+  const admin = { id: 'dave', name: 'dave', role: 'admin' as const };
+
+  const asksOf =
+    (caller: typeof user | typeof admin, method: string, path: string): (() => void) =>
+    (): void =>
+      requireTheirRole(caller, method, path);
+
+  describe('a route every caller may reach', () => {
+    it.each([
+      ['GET', '/jobs'],
+      ['POST', '/jobs'],
+      ['GET', '/jobs/1'],
+      ['PUT', '/jobs/1/verdict'],
+      ['GET', '/printers'],
+      ['GET', '/me'],
+      ['PUT', '/me/password'],
+    ])('lets a user %s %s', (method, path) => {
+      expect(asksOf(user, method, path)).not.toThrow();
+    });
+  });
+
+  describe('a route only an admin may reach', () => {
+    it.each([
+      ['POST', '/shutdown'],
+      ['POST', '/printers'],
+      ['DELETE', '/printers/mk4'],
+      ['PUT', '/printers/mk4/filament'],
+      ['PUT', '/printers/mk4/status'],
+      ['GET', '/filaments'],
+      // AIDEV-NOTE: `DELETE /sessions` is deliberately absent. It is not on the open list, so a user
+      // is refused it - which means a non-admin cannot log out. That looks wrong rather than
+      // intended, and it is not this table's place to bless it; see PLAN.md.
+    ])('refuses a user %s %s', (method, path) => {
+      expect(asksOf(user, method, path)).toThrow(NotTheirs);
+    });
+
+    it.each([
+      ['POST', '/shutdown'],
+      ['DELETE', '/printers/mk4'],
+      ['GET', '/filaments'],
+    ])('lets an admin %s %s', (method, path) => {
+      expect(asksOf(admin, method, path)).not.toThrow();
+    });
+  });
+
+  // Says what was asked for and who asked, because a client that shows somebody what they may do has
+  // to be able to tell them why it would not.
+  it('says which route it was and that the caller is not an admin', () => {
+    expect(asksOf(user, 'DELETE', '/printers/mk4')).toThrow('DELETE /printers/mk4 is for an admin, and slicer is not one');
+  });
+
+  // A route nobody classified needs an admin, so forgetting one makes the shop stricter rather than
+  // looser - which is why the list is the routes a USER may have and not the ones an admin needs.
+  it('refuses a user a route it has never heard of', () => {
+    expect(asksOf(user, 'POST', '/something-added-later')).toThrow(NotTheirs);
+  });
+
+  // AIDEV-NOTE: express routes non-strictly, case-insensitively, and serves HEAD from a GET route, so
+  // every one of these REACHES a route a user is entitled to. Comparing the path as written refused
+  // them - and it failed CLOSED, so it only ever broke the less privileged caller: a client using a
+  // trailing slash worked on an admin token and 403'd on a user one.
+  describe('a path that reaches a route a user may have, written another way', () => {
+    it.each([
+      ['GET', '/jobs/'],
+      ['GET', '/jobs//'],
+      ['GET', '/JOBS'],
+      ['GET', '/Jobs'],
+      ['GET', '/printers/'],
+      ['HEAD', '/jobs'],
+      ['HEAD', '/jobs/'],
+      ['PUT', '/jobs/1/verdict/'],
+    ])('lets a user %s %s', (method, path) => {
+      expect(asksOf(user, method, path)).not.toThrow();
+    });
+
+    // The normalising must not open anything: a trailing slash or a shout is still an admin's route.
+    it.each([
+      ['POST', '/shutdown/'],
+      ['DELETE', '/PRINTERS/mk4'],
+      ['PUT', '/printers/mk4/status/'],
+      ['HEAD', '/filaments'],
+    ])('still refuses a user %s %s', (method, path) => {
+      expect(asksOf(user, method, path)).toThrow(NotTheirs);
+    });
+
+    // `/` is what a trailing-slash strip leaves of the root, and it is nobody's open route.
+    it('refuses a user the root, which is what stripping slashes leaves of one', () => {
+      expect(asksOf(user, 'GET', '/')).toThrow(NotTheirs);
+    });
   });
 });

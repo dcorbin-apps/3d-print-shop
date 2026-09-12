@@ -109,6 +109,19 @@ function needsAdmin(method: string, urlPath: string): boolean {
   return !OPEN_TO_EVERY_CALLER.some((open) => open.method === asRouted && new RegExp(open.path.source, 'i').test(withoutTrailingSlash));
 }
 
+// AIDEV-NOTE: a function over values rather than a check inside the guard, so what refused a caller
+// and what it said about it can be asked directly - through the guard all a test could read back was
+// a 403, which is the same 403 an ownership refusal would have given.
+//
+// The method and path are what EXPRESS hands the guard for a request; what those actually are for a
+// given request line is pinned in tests/assumptions/theRequestLine.test.ts, which is the one thing
+// this cannot say about itself.
+export function requireTheirRole(caller: Caller, method: string, urlPath: string): void {
+  if (needsAdmin(method, urlPath) && caller.role !== 'admin') {
+    throw new NotTheirs(`${method} ${urlPath} is for an admin, and ${caller.name} is not one`);
+  }
+}
+
 // AIDEV-NOTE: `Bearer` because it is what every HTTP client already knows how to send, and because
 // a header keeps the token out of a URL - which is where things get logged, cached and pasted.
 // AIDEV-NOTE: the owner, or any admin. A job with NO owner belongs to nobody - its submitter was
@@ -340,9 +353,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     // is not sent by a browser on anybody's behalf and needs none of this.
     if (whose !== undefined && request.method !== 'GET') requireItCameFromHere(request.header('origin'), request.header('host'));
 
-    if (needsAdmin(request.method, request.path) && caller.role !== 'admin') {
-      throw new NotTheirs(`${request.method} ${request.path} is for an admin, and ${caller.name} is not one`);
-    }
+    requireTheirRole(caller, request.method, request.path);
 
     request.caller = caller;
     request.session = session;
