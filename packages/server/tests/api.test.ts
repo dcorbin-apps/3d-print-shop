@@ -1,6 +1,8 @@
 import { describe, it, expect } from '@jest/globals';
 import {
+  NotAKnownCaller,
   NotTheirs,
+  TooManyGuesses,
   UnusableRequest,
   addressIn,
   bodyOf,
@@ -14,10 +16,14 @@ import {
   requireItCameFromHere,
   requireTheirRole,
   requireUsablePrinterName,
+  statusFor,
   stoppedIn,
   tokenIn,
   verdictIn,
 } from '../src/api';
+import { UnusableCredentials } from '../src/credentials';
+import { InvalidSubmission } from '../src/Job';
+import { DataUnavailable, NoPrinterCanTakeIt, NoSuchJob, NoSuchPrinter, TooMuchToTake, WrongState } from '../src/JobStore';
 
 // AIDEV-NOTE: the name in a QUERY string, which is the second of the three ways one arrives - the
 // others being a path segment, checked at the `/printers/:name` mount, and a body, checked in
@@ -568,4 +574,55 @@ describe('whether a route is an admin\'s', () => {
       expect(asksOf(user, 'GET', '/')).toThrow(NotTheirs);
     });
   });
+});
+
+// AIDEV-NOTE: the whole table, because a row nobody wrote is a 500 - the shop telling a client that
+// its own mistake was the shop's fault, and putting the reason in a log the client cannot read. That
+// is exactly what happened to `UnusableCredentials`: the one rule there is about a password was
+// enforced and never said to anybody. Reached before this only by whichever test happened to trip
+// each branch, which is how a branch goes missing without anything going red.
+describe('the status an error becomes', () => {
+  it.each([
+    [new NoSuchJob('no job 7'), 404],
+    [new NoSuchPrinter('no printer called ender'), 404],
+    [new WrongState('job 7 is queued'), 409],
+    [new DataUnavailable('the jobs directory is not there'), 503],
+    [new NotAKnownCaller('this shop does not know that token'), 401],
+    [new TooManyGuesses('too many tries'), 429],
+    [new NotTheirs('that is for an admin'), 403],
+    [new TooMuchToTake('gcode is longer than'), 413],
+    [new InvalidSubmission('a job needs a filament'), 400],
+    [new UnusableRequest('a verdict is approved, rejected or abandoned'), 400],
+    [new UnusableCredentials('a password is at least 12 characters'), 400],
+  ])('is %s for %p', (error, status) => {
+    expect(statusFor(error)).toBe(status);
+  });
+
+  // It is an InvalidSubmission, and its 400 comes from that rather than from a row of its own - so a
+  // change to what it extends would move it to 500 with nothing else to say so.
+  it('is 400 for a job no printer could take, by what it extends', () => {
+    expect(statusFor(new NoPrinterCanTakeIt('nothing here has room'))).toBe(400);
+  });
+
+  // What express.json() throws at a body that is not JSON. It carries the offending body, which is
+  // what tells it apart from a SyntaxError the shop made itself.
+  it("is 400 for the SyntaxError express raises at a body that is not JSON", () => {
+    const refused = Object.assign(new SyntaxError('Unexpected token'), { body: '{ name: mini' });
+
+    expect(statusFor(refused)).toBe(400);
+  });
+
+  it('is 500 for a SyntaxError that carries no body, which is the shop\'s own', () => {
+    expect(statusFor(new SyntaxError('Unexpected token'))).toBe(500);
+  });
+
+  // AIDEV-NOTE: the default, and the only status whose message never reaches a client - a failure the
+  // shop did not mean is written by whatever broke, and node's filesystem errors carry the path they
+  // failed on.
+  it.each([[new Error('ENOENT: no such file or directory')], [new TypeError('x is not a function')], [undefined], [null], ['a string'], [7]])(
+    'is 500 for %p, which the shop did not mean',
+    (error) => {
+      expect(statusFor(error)).toBe(500);
+    }
+  );
 });

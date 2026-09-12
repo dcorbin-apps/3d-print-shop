@@ -9,6 +9,7 @@ import { InvalidSubmission } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
 import { NoSuchJob, NoSuchPrinter, DataUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
 import { Attempts } from './attempts.js';
+import { UnusableCredentials } from './credentials.js';
 import type { Callers } from './credentials.js';
 import type { Caller } from './credentials.js';
 import { hashPassword, isThePassword, newToken } from './secrets.js';
@@ -927,7 +928,12 @@ export function onePrinterName(asked: unknown): string | undefined {
   return asked;
 }
 
-function statusFor(error: unknown): number {
+// AIDEV-NOTE: the one place an error becomes a status, and every empty `extends Error` class in this
+// shop is only as good as its row here - a class nobody added is a 500, which is the shop saying a
+// client's mistake was its own fault. That is what happened to `UnusableCredentials`: the password
+// rule was enforced and answered "why is in its log", so the one rule there is was never said to
+// anybody. Tabled in tests/api.test.ts, which is the only way a missing row shows up as a missing row.
+export function statusFor(error: unknown): number {
   if (error instanceof NoSuchJob || error instanceof NoSuchPrinter) return 404;
   if (error instanceof WrongState) return 409;
   // A shop whose data directory is not there was never installed. That is the machine's fault, not the
@@ -937,6 +943,11 @@ function statusFor(error: unknown): number {
   if (error instanceof TooManyGuesses) return 429;
   if (error instanceof NotTheirs) return 403;
   if (error instanceof TooMuchToTake) return 413;
+  // AIDEV-NOTE: 400 rather than 500, and the message goes out - which is the whole point, because
+  // the rule about a password is deliberately kept nowhere but here and a client has to be told it.
+  // Safe as a whole class: the ones about the FILE being malformed are raised when it is read, at
+  // startup or on a SIGHUP that keeps the old callers, and never while answering a request.
+  if (error instanceof UnusableCredentials) return 400;
   if (error instanceof InvalidSubmission || error instanceof UnusableRequest) return 400;
   // What express.json() throws at a body that is not JSON; it carries the offending body.
   if (error instanceof SyntaxError && 'body' in error) return 400;

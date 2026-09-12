@@ -32,12 +32,6 @@ than read out of the code. These come before the rest of the list.
   nowhere for a second answer to be written" and there is one. Copy the fields a job HAS rather than
   spreading, and leave `metadata` as the place a client puts its own. `packages/server/src/JobStore.ts`
 
-- [ ] The password rule is enforced and never said. `setPassword` refuses one shorter than twelve
-  characters, `statusFor` has no case for `UnusableCredentials`, so `PUT /me/password` answers 500
-  and "why is in its log". `ChangePassword.tsx` keeps no copy of the rule on purpose - "that rule is
-  the shop's, it says so in its own words" - so nobody is ever told what it is. A case in
-  `statusFor` in `packages/server/src/api.ts`
-
 - [ ] `validateDetails` reads `details.filaments.length` without checking it is an array, so `{}` and
   `{"filaments":"PLA"}` are 500s where 400 was intended. The two halves of this that an UNNAMED caller
   could reach - a cookie that will not decode, and `Origin: null` - are fixed; this is the
@@ -91,8 +85,9 @@ Both of the items that were here are done. What is left of that sweep, deliberat
 Error` subclasses (`NotAKnownCaller`, `NotTheirs`, `TooManyGuesses`, `TooMuchToTake`,
 `NoPrinterCanTakeIt`, `DataInUse`, `NotAuthenticated`), where a test would assert that a class
 extending Error extends Error - what is worth testing about them is the status each maps to, which is
-`statusFor` and is tested. The other five are the running things an AT is for: `createApi`,
-`claimData`, `pushSocket`, `OctoPrintMachines`, `startOctoPrintServer`.
+`statusFor` - which is tabled now, every row of it, because the row that was missing is what told a
+client its own mistake was the shop's fault. The other five are the running things an AT is for:
+`createApi`, `claimData`, `pushSocket`, `OctoPrintMachines`, `startOctoPrintServer`.
 
 **There is a third kind, and it does not run with the others.** An assumption test pins what
 THIRD-PARTY code we depend on actually does, where the shop's correctness rests on the answer: `ws`
@@ -120,12 +115,6 @@ a unit test already makes, or could make better and faster. Every one has a sibl
 tested, which is what makes these oversights rather than decisions - the same test that found the
 last batch. `api.test.ts` is 142 cases in 10.8s and about 40 of them are below; the timings are from
 a run of that file on its own.
-
-- [ ] **`statusFor` is said to be tested and is not.** The Tests section above leaves seven empty
-  `Error` subclasses untested on the grounds that what matters about them is the status each maps to,
-  "which is `statusFor` and is tested". It is reached only by whichever acceptance test happens to
-  trip each branch, and the missing `UnusableCredentials` case in the Security list - 500 where 400
-  was meant - is what an absent row looks like. This one adds cover rather than taking a test away
 
 - [ ] **`what to load next` re-asserts what `selection.test.ts` proves.** Busiest-first, and counting
   only what a named machine could take, are both unit tested over `waitingOn`. Both acceptance tests

@@ -18,6 +18,7 @@ export {
   requireTheirRole,
   requireUsablePrinterName,
   serve,
+  statusFor,
   stoppedIn,
   tokenIn,
   verdictIn,

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { serve } from '../../src/api';
 import { FREELY } from '../../src/attempts';
-import { Callers } from '../../src/credentials';
+import { Callers, UnusableCredentials } from '../../src/credentials';
 import { digestOf, hashPassword } from '../../src/secrets';
 import type { Job, JobDetails } from '../../src/Job';
 import { JobStore } from '../../src/JobStore';
@@ -861,6 +861,20 @@ describe('the shop over HTTP', () => {
 
         expect(response.status).toBe(204);
         expect(mockKept).toHaveBeenCalledWith('ada', NEW_PASSWORD);
+      }, 30_000);
+
+      // AIDEV-NOTE: the rule about a password is `setPassword`'s and is deliberately written down
+      // nowhere else - the page keeps no copy on purpose, "that rule is the shop's, it says so in its
+      // own words". Which it could not: `UnusableCredentials` had no row in `statusFor`, so this was
+      // a 500 and "why is in its log", and the one rule there is was never said to anybody.
+      it('says what is wrong with a password it will not take', async () => {
+        const why = 'a password is at least 12 characters, which is the only rule there is';
+        mockKept.mockRejectedValue(new UnusableCredentials(why));
+
+        const response = await changeTo('too short', PASSWORD);
+
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: why });
       }, 30_000);
 
       it('is refused by a shop that was given nowhere to keep one', async () => {
