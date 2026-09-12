@@ -12,9 +12,10 @@
     "build": "yarn workspaces foreach -A -pt run build",
     "typecheck": "yarn workspaces foreach -Apt run typecheck",
     "lint": "eslint .",
-    "ut": "./scripts/test.sh --testPathIgnorePatterns /tests/acceptance/",
+    "ut": "./scripts/test.sh --testPathIgnorePatterns /tests/acceptance/ /tests/assumptions/",
     "at": "./scripts/test.sh tests/acceptance",
-    "test": "./scripts/test.sh"
+    "assumptions": "./scripts/test.sh tests/assumptions",
+    "test": "./scripts/test.sh --testPathIgnorePatterns /tests/assumptions/"
   },
   "keywords": [],
   "author": "dcorbin",

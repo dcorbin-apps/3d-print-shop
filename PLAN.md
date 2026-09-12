@@ -149,13 +149,9 @@ a run of that file on its own.
   client's unit test, again in its acceptance test, and a third time under `changeMyPassword` there.
   One of them is the rule; the rest are the rule over a socket
 
-- [ ] **Make the third suite and move what belongs in it.** `tests/assumptions/` beside
-  `tests/acceptance/`, its own jest project and `yarn assumptions`; `yarn test` excludes it the way
-  `yarn ut` excludes acceptance - an exclusion rather than a list of directories, so a renamed one
-  cannot silently stop matching and report green. `pushSocket.test.ts` moves whole: its single test
-  is a claim about `ws` and about nothing this repository writes. Then the assumptions that have no
-  home at all today - busboy truncating at the cap, express's routing and `req.path`, and the raw
-  request line the guard is handed
+- [ ] **The assumptions with no home yet.** The suite exists and holds `ws`'s error text and the raw
+  request line. Still unwritten: busboy truncating at the cap and ending the stream as though the
+  file were whole, which is the reason `keeps nothing at all of one it refused` exists at all
 
 #### Re-opened by the rule above, and not yet decided
 
