@@ -97,7 +97,8 @@ Error` subclasses (`NotAKnownCaller`, `NotTheirs`, `TooManyGuesses`, `TooMuchToT
 extending Error extends Error - what is worth testing about them is the status each maps to, which is
 `statusFor` - which is tabled now, every row of it, because the row that was missing is what told a
 client its own mistake was the shop's fault. The other five are the running things an AT is for:
-`createApi`, `claimData`, `pushSocket`, `OctoPrintMachines`, `startOctoPrintServer`.
+`createApi`, `claimData`, `pushSocket`, `OctoPrintMachines`, `startOctoPrintServer` - and of those,
+`OctoPrintMachines` and `startOctoPrintServer` have since been given seams and are unit tested.
 
 **There is a third kind, and it does not run with the others.** An assumption test pins what
 THIRD-PARTY code we depend on actually does, where the shop's correctness rests on the answer: `ws`
@@ -144,9 +145,6 @@ it claims". That ground is gone, so each is here until it has been argued rather
 question for every one of them is the same: is the fake a unit test would need the thing the test
 claims?
 
-- [ ] `octoPrintStrictness` - whether an auth frame is acceptable (an api key in place of a session,
-  a session never issued, a frame that is not an auth frame) is a predicate inside the sim. What
-  needs the socket is that the server acts on it, and answers an unauthenticated socket with silence
 - [ ] `theRunningShop` - the `--help` cases. The check runs before commander is given argv, and the
   note says nothing calling `createCLI()` would notice if it did not - but a function over argv
   would. The other 35 are a spawned process and stay

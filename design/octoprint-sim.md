@@ -9,7 +9,10 @@ client - talks to it exactly as it would to a machine. There is no "simulated cl
 under test is always the one that will meet the real printer.
 
 It is a library, not an application. `startOctoPrintServer()` answers with a running server and the
-handles to drive it, so a test can decide what a submitted job does. A client of this repository may
+handles to drive it, so a test can decide what a submitted job does. Inside, it is three pieces: a
+`SimulatedPrinter` that holds what has been issued, what is on the bed and what has been run;
+`PushSockets`, which is who is listening and what they are told; and the transport - an express app
+and a `ws` server - over both. The split is what lets every rule be asked directly, without a port. A client of this repository may
 draw a window around it - one such is an Electron app that renders each submitted job and lets a
 person click Complete, Fail or Cancel - and that window is no part of this package.
 
@@ -54,9 +57,15 @@ of its coverage lives: `packages/server/tests/acceptance/reconnectRecovery.test.
 real `OctoPrint` against it - the real socket factory and all - and a break in upload, auth, events
 or completion stops it dead.
 
-Its own tests cover only what it REFUSES - a bad auth frame, a second job while one is printing.
-Those are the traps nothing else springs: loosen one and every suite above still passes, having
-quietly stopped proving anything. See `packages/octoprint-sim/tests/acceptance/octoPrintStrictness.test.ts`.
+Its own tests cover what it REFUSES - a bad auth frame, a second job while one is printing. Those are
+the traps nothing else springs: loosen one and every suite above still passes, having quietly stopped
+proving anything, which was measured rather than assumed.
+
+They are unit tests, and this package has no acceptance suite. `SimulatedPrinter` and `PushSockets`
+are asked directly, and the routes are driven through the express app without a port - an express app
+is a function of a request. A stand-in socket is not the claim here: what is claimed is what
+`PushSockets` does with a frame, and silence is the rejection either way. See
+`simulatedPrinter.test.ts`, `pushSockets.test.ts` and `octoPrintApp.test.ts`.
 
 ## Known gap: no filament metadata over the wire
 
