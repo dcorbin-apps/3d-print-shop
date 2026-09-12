@@ -149,14 +149,6 @@ describe('the shop over HTTP', () => {
         body: '{"current":"the password in use","password":"a different password entirely"}',
       });
     });
-
-    it('repeats what the shop said when it would not take one', async () => {
-      answers = { status: 403, body: { error: 'that is not the password this caller has now' } };
-
-      await expect(shop.changeMyPassword('not it', 'a different password entirely')).rejects.toThrow(
-        'that is not the password this caller has now',
-      );
-    });
   });
 
   describe('the printers', () => {
@@ -172,14 +164,12 @@ describe('the shop over HTTP', () => {
     });
   });
 
+  // AIDEV-NOTE: what a client MAKES of a refusal - its own words or a fallback to the status - is
+  // `refusal`, unit tested over four answers in tests/HttpShop.test.ts. Repeating it here would put
+  // a sentence into a stand-in and read the same sentence back out, which proves the stand-in. That
+  // the SHOP's own words survive to a caller is worth proving and is proved with both halves live,
+  // in the server's theShopAndItsClient.
   describe('when the shop will not', () => {
-    // Its own words, because the far end is what knows why; this end knows only that it was refused.
-    it('repeats what the shop said', async () => {
-      answers = { status: 400, body: { error: 'nothing here has room for 100x100x400mm - mk4 250x210x220mm' } };
-
-      await expect(shop.submit(playerBox, new Blob(['G1']))).rejects.toThrow('nothing here has room');
-    });
-
     // The shop is a service somebody starts, so this is the ordinary mistake rather than an
     // exceptional one, and worth a sentence saying what to do about it.
     it('says the shop is not running when nothing answers', async () => {

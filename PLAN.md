@@ -116,10 +116,6 @@ tested, which is what makes these oversights rather than decisions - the same te
 last batch. `api.test.ts` is 142 cases in 10.8s and about 40 of them are below; the timings are from
 a run of that file on its own.
 
-- [ ] **The client repeats one refusal rule four times.** `repeats what the shop said` is in the
-  client's unit test, again in its acceptance test, and a third time under `changeMyPassword` there.
-  One of them is the rule; the rest are the rule over a socket
-
 - [ ] **The assumptions with no home yet.** The suite exists and holds `ws`'s error text and the raw
   request line. Still unwritten: busboy truncating at the cap and ending the stream as though the
   file were whole, which is the reason `keeps nothing at all of one it refused` exists at all
