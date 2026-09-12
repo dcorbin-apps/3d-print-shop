@@ -22,13 +22,33 @@ describe('recovering a print outcome across a dropped connection', () => {
   let shop: JobStore;
   let machine: OctoPrint | undefined;
 
-  // The real backoff starts at 500ms; nothing here tests how long it waits. What matters is that
-  // these two are far apart: a print finishing BEFORE the client is back exercises recovery, and one
-  // finishing after it is just an ordinary live event.
+  // The real backoff starts at 500ms; nothing here tests how long it waits. What matters is only
+  // which side of the reconnect a print ends on.
   const RECONNECT_DELAY_MS = 80;
-  const OUTLASTS_RECONNECT_MS = RECONNECT_DELAY_MS * 4;
 
   const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // AIDEV-NOTE: a print that has to end AFTER the client is back used to wait four reconnect delays
+  // and assume. That is a race dressed as a wait: the assumption is real wall time on a machine
+  // running four jest projects at once, and when it missed, the event fired at nobody and the test
+  // failed sixty seconds later having proved nothing. This waits for the thing it was assuming.
+  //
+  // BOTH conditions, because they are a round trip apart. A socket is counted when it is accepted
+  // and only becomes a listener once it has presented its session - so `listening()` alone would
+  // still read 1 in the instant after `dropConnections()`, before the close has been processed, and
+  // the wait would fall straight through.
+  async function whenListeningAgain(acceptedBefore: number): Promise<void> {
+    const giveUpAt = Date.now() + 30_000;
+
+    while (server!.connectionsAccepted() <= acceptedBefore || server!.listening() === 0) {
+      if (Date.now() > giveUpAt) {
+        throw new Error(
+          `the client never came back: ${server!.connectionsAccepted()} accepted (was ${acceptedBefore}), ${server!.listening()} listening`,
+        );
+      }
+      await delay(5);
+    }
+  }
 
   // Starting a print and hearing how it ended are two calls now; every test here is about the
   // second one, so they go together.
@@ -59,7 +79,7 @@ describe('recovering a print outcome across a dropped connection', () => {
 
   function connectedTo(port: number): OctoPrint {
     machine = new OctoPrint({ baseUrl: `http://127.0.0.1:${port}`, apiKey: 'acceptance-key' }, undefined, undefined, () =>
-      delay(RECONNECT_DELAY_MS)
+      delay(RECONNECT_DELAY_MS),
     );
     return machine;
   }
@@ -112,12 +132,16 @@ describe('recovering a print outcome across a dropped connection', () => {
     expect(await printThrough(connectedTo(server.port))).toBe('failed');
   }, 60_000);
 
-  // AIDEV-NOTE: the hazard this pins down. A rejected print is run again under the SAME remote path,
-  // so the file's history holds the FIRST print's outcome while the second is still running. A
-  // client that reconnects mid-print and reads that history instead of the printer's flags would
-  // resolve the second print early - reporting an outcome for a print still on the bed. Asserting
-  // the outcome alone would not catch it, so this asserts the shop was still waiting when the
-  // second print really ended.
+  // AIDEV-NOTE: a rejected print is run again under the SAME remote path, so the file's history holds
+  // the FIRST print's outcome while the second is still running - and a client that read that
+  // history instead of the printer's flags would report an outcome for a print still on the bed.
+  //
+  // What THIS proves is that the sequence works against a real server: two prints down one path,
+  // across a real reconnect, and the shop still waiting when the second really ended. It does not
+  // pin the reading of the flags, and measurably does not - taking out the in-flight check leaves it
+  // green. That is `keeps waiting while the printer reports %s` in OctoPrint.test.ts, which stubs
+  // the history to a success and holds the printer printing, and which the same mutation fails at
+  // once. The logic is the unit test's; the protocol is this one's.
   it('does not mistake an earlier print of the same job for the one still running', async () => {
     let prints = 0;
     let secondPrintFinished = false;
@@ -130,8 +154,9 @@ describe('recovering a print outcome across a dropped connection', () => {
       }
 
       // The second print outlasts the reconnect, so the client is back and asking while it runs.
+      const accepted = server!.connectionsAccepted();
       server!.dropConnections();
-      void delay(OUTLASTS_RECONNECT_MS).then(() => {
+      void whenListeningAgain(accepted).then(() => {
         secondPrintFinished = true;
         complete('PrintDone');
       });
@@ -149,8 +174,9 @@ describe('recovering a print outcome across a dropped connection', () => {
 
   it('waits for the live event when the print is still running at reconnect', async () => {
     const handler: JobSubmittedHandler = (_job, complete) => {
+      const accepted = server!.connectionsAccepted();
       server!.dropConnections();
-      void delay(OUTLASTS_RECONNECT_MS).then(() => complete('PrintCancelled'));
+      void whenListeningAgain(accepted).then(() => complete('PrintCancelled'));
     };
     server = await startOctoPrintServer(0, handler);
     await submit();

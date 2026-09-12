@@ -90,11 +90,6 @@ extending Error extends Error - what is worth testing about them is the status e
 **`theRunningShop.test.ts` keeps all 39.** Restarts, signals, the data lock, the listen address and
 `init` - a spawned process is the only thing that can answer any of them.
 
-- [ ] `reconnectRecovery.test.ts` failed once in four full runs, timing out at 63 seconds, and passed
-  on its own and on the three runs after it. An acceptance test that fails one time in four is worth
-  less than no test there, because what it teaches is to run the suite again. It drives a real socket
-  through a reconnect and a backoff, so the suspect is a wait that is a race rather than a wait
-
 ### The service
 
 - [ ] The shop can say when IT is in trouble, rather than only what each printer is doing. A store

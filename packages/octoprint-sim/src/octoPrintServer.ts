@@ -46,6 +46,15 @@ export interface OctoPrintServer {
    */
   connectionsAccepted(): number;
   /**
+   * Test control: how many sockets are authenticated, and so would receive a broadcast now.
+   *
+   * Apart from `connectionsAccepted` because they answer different questions, and the gap between
+   * them is where a test goes flaky: a socket is COUNTED when it is accepted and only becomes a
+   * listener once it has presented a session, which is a round trip later. A test that fires an
+   * event when the count rises is firing it at a client that cannot hear it yet.
+   */
+  listening(): number;
+  /**
    * Test control: every api key a request has presented, in the order they arrived. Still not
    * checked - this remains a test double - but a client that was rebuilt with a corrected key is
    * otherwise indistinguishable from one that kept the old one.
@@ -85,7 +94,7 @@ function parseAuthFrame(raw: string): { name: string; session: string } | undefi
 export function startOctoPrintServer(
   port: number,
   onJobSubmitted: JobSubmittedHandler,
-  uploadLimitBytes: number = UPLOAD_LIMIT_BYTES
+  uploadLimitBytes: number = UPLOAD_LIMIT_BYTES,
 ): Promise<OctoPrintServer> {
   const app = express();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: uploadLimitBytes } });
@@ -238,7 +247,7 @@ export function startOctoPrintServer(
           console.error(`octo-sim: job handler failed for ${remotePath}:`, error);
         }
       })();
-    }
+    },
   );
 
   // Passive login: the step that yields the session key the push socket's auth frame requires.
@@ -309,6 +318,7 @@ export function startOctoPrintServer(
         uploadLimitBytes,
         broadcastEvent,
         connectionsAccepted: () => connectionsAccepted,
+        listening: () => authenticated.size,
         keysPresented: () => [...keysPresented],
         dropConnections: () => {
           // terminate(), not close() - a close handshake is an orderly goodbye, and the failure
