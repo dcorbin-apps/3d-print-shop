@@ -37,6 +37,16 @@ than read out of the code. These come before the rest of the list.
   could reach - a cookie that will not decode, and `Origin: null` - are fixed; this is the
   authenticated one, and the last of the three. `packages/server/src/Job.ts`
 
+- [ ] A description of exactly `fieldSize` is refused for being longer than it. Busboy flags a value
+  truncated on REACHING the limit rather than passing it, so a 1048576-byte `job` part arrives whole,
+  with nothing cut and JSON that would have parsed, and `PUT /jobs` answers `the job part is longer
+  than 1048576 bytes`. api.ts:36 names this exact trait - "busboy raises 'limit' on REACHING fileSize
+  rather than passing it - exactly that mistake waiting to happen" - as the reason there is no
+  fileSize, and then uses fieldSize, where it happens. One byte on a megabyte, so small; recorded
+  because the codebase reasoned about it and still met it. Pinned by
+  `tests/assumptions/multipartParts.test.ts`, which records what busboy does rather than what is
+  wanted. `packages/server/src/api.ts`
+
 - [ ] `see PLAN` in `OctoPrint.ts` at `send`, `cancel` and `filedAt` names nothing that is in this
   file. Either the work is still wanted and belongs here, or the reference goes
 
@@ -115,10 +125,6 @@ a unit test already makes, or could make better and faster. Every one has a sibl
 tested, which is what makes these oversights rather than decisions - the same test that found the
 last batch. `api.test.ts` is 142 cases in 10.8s and about 40 of them are below; the timings are from
 a run of that file on its own.
-
-- [ ] **The assumptions with no home yet.** The suite exists and holds `ws`'s error text and the raw
-  request line. Still unwritten: busboy truncating at the cap and ending the stream as though the
-  file were whole, which is the reason `keeps nothing at all of one it refused` exists at all
 
 #### Re-opened by the rule above, and not yet decided
 

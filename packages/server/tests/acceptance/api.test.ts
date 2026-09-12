@@ -352,8 +352,10 @@ describe('the shop over HTTP', () => {
       expect(await response.json()).toEqual({ error: `gcode is longer than the ${CAP} bytes this shop takes` });
     });
 
-    // busboy truncates at the cap and ends the stream as though the file were whole, so the danger
-    // is not a rejected job - it is an ACCEPTED one holding half a print.
+    // AIDEV-NOTE: the store refuses this, not busboy - there is no fileSize among SUBMISSION_LIMITS
+    // deliberately, so nothing truncates the gcode on the way in. What is worth proving is that a
+    // refusal part way through leaves NOTHING: the bytes already written are a job the shop would
+    // otherwise be holding half of, and it is the data directory that pays for it.
     it('keeps nothing at all of one it refused', async () => {
       await submitting(smallUrl, submission('G'.repeat(CAP + 1)));
 
