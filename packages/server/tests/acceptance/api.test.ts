@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, jest } from '@jest/globals';
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -8,11 +8,9 @@ import { serve } from '../../src/api';
 import { FREELY } from '../../src/attempts';
 import { Callers, UnusableCredentials } from '../../src/credentials';
 import { digestOf, hashPassword } from '../../src/secrets';
-import type { Job, JobDetails } from '../../src/Job';
+import type { JobDetails } from '../../src/Job';
 import { JobStore } from '../../src/JobStore';
-import { toStdout } from '../../src/log';
 import { aDataDirectory, parentOf } from '../aDataDirectory';
-import { layoutUnder } from '../../src/dataLayout';
 import type { DataLayout } from '../../src/dataLayout';
 
 // AIDEV-NOTE: real HTTP against a real listener on an ephemeral port, over a real data directory -
@@ -48,7 +46,6 @@ describe('the shop over HTTP', () => {
     { caller: { id: 'dave', name: 'dave', role: 'admin' }, credentials: [{ kind: 'token', hash: digestOf(ADMIN) }] },
     { caller: { id: 'slicer', name: 'slicer', role: 'user' }, credentials: [{ kind: 'token', hash: digestOf(USER) }] },
   ]);
-  const AS_ADMIN = { authorization: `Bearer ${ADMIN}` };
 
   function as(token: string | undefined, method: string, path: string, body?: unknown): Promise<Response> {
     return fetch(`${shopUrl}${path}`, {
@@ -73,17 +70,11 @@ describe('the shop over HTTP', () => {
     return submitting(shopUrl, body);
   }
 
-  async function submitted(details: unknown): Promise<Job> {
-    return (await submit(details)).json() as Promise<Job>;
-  }
 
   async function ask(path: string): Promise<Response> {
     return as(ADMIN, 'GET', path);
   }
 
-  async function send(method: string, path: string, body: unknown): Promise<Response> {
-    return as(ADMIN, method, path, body);
-  }
 
   beforeEach(async () => {
     where = await aDataDirectory('print-shop-api-');
@@ -110,63 +101,18 @@ describe('the shop over HTTP', () => {
     await rm(parentOf(where), { recursive: true, force: true });
   });
 
-  describe('submitting', () => {
-    it('takes a job in and answers with what the shop now holds', async () => {
-      const response = await submit(playerBox);
-
-      expect(response.status).toBe(201);
-      expect(await response.json()).toMatchObject({
-        id: 1,
-        displayName: 'Player Box',
-        state: 'queued',
-        gcodeBytes: 'G1 X100.000 Y100.000\n'.length,
-      });
-    });
-
-    it('holds each submission separately, in the order they arrived', async () => {
-      await submit(playerBox);
-      await submit({ filaments: ['PLA-Red'] });
-
-      const held = (await (await ask('/jobs')).json()) as { accessibleJobs: Job[]; totalJobs: number };
-
-      expect(held.accessibleJobs.map((job) => job.displayName).sort()).toEqual(['Job 2', 'Player Box']);
-      expect(held.totalJobs).toBe(2);
-    });
-
-    // AIDEV-NOTE: the order is the contract, not a convenience - the description is what lets a
-    // hopeless job be refused before its gcode is read. Accommodating the other order means holding
-    // tens of megabytes to find out they were not wanted.
-    it('refuses gcode that arrives before the description', async () => {
-      const body = new FormData();
-      body.append('gcode', new Blob(['G1 X100.000\n']), 'print.gcode');
-      body.append('job', JSON.stringify(playerBox));
-
-      const response = await submitting(shopUrl, body);
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'the job part has to come before the gcode part, and did not' });
-    });
-
-    it('refuses a description with no gcode beside it', async () => {
-      const body = new FormData();
-      body.append('job', JSON.stringify(playerBox));
-
-      const response = await submitting(shopUrl, body);
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'a submission needs a gcode part' });
-    });
-
-    it('refuses a job no printer here has room for, saying what the shop has', async () => {
-      const response = await submit({ ...playerBox, requiredBuildVolume: { x: 100, y: 100, z: 400 } });
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'nothing here has room for 100x100x400mm - mk4 250x210x220mm' });
-    });
-
-    // AIDEV-NOTE: at SIZE, because that is the only way the drain matters. The shop decides against
-    // this job before it has read any of it, and a client that is still writing megabytes has to
-    // stay connected long enough to read the answer - so what is left of the upload is drained.
+  // AIDEV-NOTE: a shop with somewhere to serve a page from. The files are made here rather than
+  // taken from the ui package, because what the shop is given is a DIRECTORY - it knows nothing
+  // about what is in one, and a test that reached for the real page would be the dependency this
+  // deliberately does not have.
+  // AIDEV-NOTE: the one submission left over a real socket, and the only test in this repository that
+  // needs one. At SIZE, because that is the only way the drain matters: the shop decides against this
+  // job before it has read any of it, and a client still writing megabytes has to stay connected long
+  // enough to read the answer - so what is left of the upload is drained rather than dropped. Driven
+  // in-process there is no "still arriving": the body is pushed whole before the app is ever called,
+  // and the test would be asserting against a stream it wrote itself. Every other job route is
+  // tests/jobRoutes.test.ts.
+  describe('submitting, while the client is still writing', () => {
     it('answers a refusal while the gcode it refused is still arriving', async () => {
       const tooTall = { ...playerBox, requiredBuildVolume: { x: 100, y: 100, z: 400 } };
 
@@ -176,242 +122,6 @@ describe('the shop over HTTP', () => {
     });
   });
 
-  describe('asking after a job', () => {
-    it('answers with the one asked for', async () => {
-      const job = await submitted(playerBox);
-
-      expect(await (await ask(`/jobs/${job.id}`)).json()).toMatchObject({ id: job.id, displayName: 'Player Box' });
-    });
-
-    it('says there is no such job when there is not', async () => {
-      const response = await ask('/jobs/9');
-
-      expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({ error: 'no job 9' });
-    });
-
-    // What the client asked for, rather than what Number() made of it - "no job NaN" tells nobody
-    // anything.
-    it('says what it was asked for when the id is not a number', async () => {
-      const response = await send('PUT', '/jobs/abc/verdict', { verdict: 'approved' });
-
-      expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({ error: 'no job abc' });
-    });
-  });
-
-  describe('a verdict', () => {
-    async function awaitingApproval(): Promise<Job> {
-      const job = await submitted(playerBox);
-      await shop.startPrinting('mk4', job.id);
-
-      return shop.finishedPrinting('mk4', 'finished');
-    }
-
-    it('approves a print, and the job leaves the shop', async () => {
-      const job = await awaitingApproval();
-
-      expect((await send('PUT', `/jobs/${job.id}/verdict`, { verdict: 'approved' })).status).toBe(204);
-      expect((await ask(`/jobs/${job.id}`)).status).toBe(404);
-    });
-
-    it('rejects a print, and the job goes back to be printed again', async () => {
-      const job = await awaitingApproval();
-
-      const response = await send('PUT', `/jobs/${job.id}/verdict`, { verdict: 'rejected' });
-
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ id: job.id, state: 'queued' });
-    });
-
-    it('will not judge a job that has not been printed', async () => {
-      const job = await submitted(playerBox);
-
-      const response = await send('PUT', `/jobs/${job.id}/verdict`, { verdict: 'approved' });
-
-      expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({ error: `job ${job.id} is queued, so there is no print to judge` });
-    });
-
-    it('abandons a print, and the job leaves the shop without being printed again', async () => {
-      const job = await awaitingApproval();
-
-      expect((await send('PUT', `/jobs/${job.id}/verdict`, { verdict: 'abandoned' })).status).toBe(204);
-      expect((await ask(`/jobs/${job.id}`)).status).toBe(404);
-    });
-  });
-
-  // AIDEV-NOTE: every change is a moment something might be startable, so the shop is told about
-  // all of them rather than about a chosen few - a per-route list is the thing somebody forgets to
-  // add to, and a missed wake-up is a job that sits queued for ever.
-  describe('saying that something changed', () => {
-    it('says so after a change', async () => {
-      await submit(playerBox);
-
-      expect(mockChanged).toHaveBeenCalledTimes(1);
-    });
-
-    it('says nothing after a mere look', async () => {
-      await ask('/jobs');
-
-      expect(mockChanged).not.toHaveBeenCalled();
-    });
-
-    // Nothing changed, so there is nothing new to start.
-    it('says nothing when the change was refused', async () => {
-      await send('PUT', '/printers/mk4/status', { stopped: true });
-
-      expect(mockChanged).not.toHaveBeenCalled();
-    });
-
-    // AIDEV-NOTE: apart from `changed`, because looking for work does not pick a lost print back up
-    // and nothing else tells the shop that a PERSON has been to look at this machine.
-    it('names the printer an operator started', async () => {
-      await send('PUT', '/printers/mk4/status', { stopped: false });
-
-      expect(mockStarted).toHaveBeenCalledWith('mk4');
-    });
-
-    it('says nobody started a printer that was only stopped', async () => {
-      await send('PUT', '/printers/mk4/status', { stopped: true, reason: 'the door is open' });
-
-      expect(mockStarted).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('closing the shop', () => {
-    // Answered before it happens, because a shop that has stopped cannot report that it stopped.
-    it('agrees to stop, and then does', async () => {
-      const response = await send('POST', '/shutdown', {});
-
-      expect(response.status).toBe(202);
-      expect(await response.json()).toEqual({ stopping: true });
-      expect(mockShutDown).toHaveBeenCalled();
-    });
-
-    // Looking for work on the way out could start a print the shop is about to stop watching.
-    it('is not a change worth looking for work over', async () => {
-      await send('POST', '/shutdown', {});
-
-      expect(mockChanged).not.toHaveBeenCalled();
-    });
-  });
-
-  // AIDEV-NOTE: the data directory IS the recovery model, so an upload that fills it loses every job the shop
-  // is holding and not only the one that overflowed. These are the limits that stop that, driven
-  // over real HTTP because what is being proven is where the bytes stop - not that a number was set.
-  describe('a submission bigger than the shop will take', () => {
-    let small: Server;
-    let smallUrl: string;
-
-    // Small enough that the test sends bytes rather than megabytes; the rule under test is the same.
-    const CAP = 64;
-
-    beforeEach(async () => {
-      const store = new JobStore(where, { maxGcodeBytes: CAP });
-      await store.addPrinter({ name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS });
-      small = await serve(store, 0, { callers: () => CALLERS });
-      smallUrl = `http://127.0.0.1:${(small.address() as AddressInfo).port}`;
-    });
-
-    afterEach(async () => {
-      await new Promise<void>((resolve) => small.close(() => resolve()));
-    });
-
-    function submission(gcode: string): FormData {
-      const body = new FormData();
-      body.append('job', JSON.stringify(playerBox));
-      body.append('gcode', new Blob([gcode]), 'print.gcode');
-      return body;
-    }
-
-    // The description arrives before the gcode by contract, so refusing an outsized one is refusing
-    // before anything has been written - which is why this one may refuse where a part count cannot.
-    it('refuses a description longer than it will read', async () => {
-      const body = new FormData();
-      body.append('job', JSON.stringify({ ...playerBox, metadata: { padding: 'x'.repeat(1024 * 1024) } }));
-      body.append('gcode', new Blob(['G1\n']), 'print.gcode');
-
-      const response = await submitting(smallUrl, body);
-
-      expect(response.status).toBe(413);
-      expect(await response.json()).toEqual({ error: `the job part is longer than ${1024 * 1024} bytes` });
-    });
-
-    it('takes one exactly as big as the cap', async () => {
-      expect((await submitting(smallUrl, submission('G'.repeat(CAP)))).status).toBe(201);
-    });
-
-    it('refuses one a single byte over', async () => {
-      const response = await submitting(smallUrl, submission('G'.repeat(CAP + 1)));
-
-      expect(response.status).toBe(413);
-      expect(await response.json()).toEqual({ error: `gcode is longer than the ${CAP} bytes this shop takes` });
-    });
-
-    // AIDEV-NOTE: the store refuses this, not busboy - there is no fileSize among SUBMISSION_LIMITS
-    // deliberately, so nothing truncates the gcode on the way in. What is worth proving is that a
-    // refusal part way through leaves NOTHING: the bytes already written are a job the shop would
-    // otherwise be holding half of, and it is the data directory that pays for it.
-    it('keeps nothing at all of one it refused', async () => {
-      await submitting(smallUrl, submission('G'.repeat(CAP + 1)));
-
-      expect(await (await fetch(`${smallUrl}/jobs`, { headers: AS_ADMIN })).json()).toEqual({ accessibleJobs: [], totalJobs: 0 });
-      await expect(readdir(where.jobs)).resolves.toEqual([]);
-    });
-
-    // Past the part count busboy discards rather than raising, which is the same thing that already
-    // happens to a part with a name the shop does not read. The first gcode part is the submission.
-    it('ignores a second gcode part rather than refusing a job it has already taken', async () => {
-      const body = submission('G1\n');
-      body.append('gcode', new Blob(['G2\n']), 'other.gcode');
-
-      const response = await submitting(smallUrl, body);
-
-      expect(response.status).toBe(201);
-      expect(await response.json()).toMatchObject({ id: 1, gcodeBytes: 3 });
-    });
-  });
-
-  // A full disk is the machine's fault, not the client's, so it is told to come back rather than
-  // told it did something wrong. Room for the BIGGEST job, because this one's size is not yet known.
-  describe('when there is no room left', () => {
-    it('takes nothing, and says to come back later without saying where it keeps its work', async () => {
-      const lines: string[] = [];
-      const full = new JobStore(where, { maxGcodeBytes: 1024, freeBytes: () => Promise.resolve(512) });
-      const server = await serve(full, 0, {
-        callers: () => CALLERS,
-        log: toStdout(
-          () => new Date(),
-          (line) => lines.push(line),
-        ),
-      });
-
-      try {
-        const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-        const body = new FormData();
-        body.append('job', JSON.stringify(playerBox));
-        body.append('gcode', new Blob(['G1\n']), 'print.gcode');
-
-        const response = await submitting(url, body);
-        const said = await response.text();
-
-        // A 503 rather than a 4xx: a client that comes back later is doing the right thing.
-        expect(response.status).toBe(503);
-        expect(JSON.parse(said)).toEqual({ error: 'the shop cannot get at the work it keeps, and why is in its log' });
-        expect(said).not.toContain(where.jobs);
-        // The operator's half of the same event: how much room there is, and which directory has it.
-        expect(lines.join('\n')).toContain(`${where.jobs} has 512 bytes free, and the shop keeps 1024 spare for a job`);
-      } finally {
-        await new Promise<void>((resolve) => server.close(() => resolve()));
-      }
-    });
-  });
-
-  // AIDEV-NOTE: a shop with somewhere to serve a page from. The files are made here rather than
-  // taken from the ui package, because what the shop is given is a DIRECTORY - it knows nothing
-  // about what is in one, and a test that reached for the real page would be the dependency this
-  // deliberately does not have.
   describe('serving a page beside the API', () => {
     let withAPage: Server;
     let pageUrl: string;
@@ -882,213 +592,6 @@ describe('the shop over HTTP', () => {
       const response = await submitting(shopUrl, body, USER);
 
       expect(response.status).toBe(201);
-    });
-  });
-
-  // AIDEV-NOTE: a role says what a caller may DO, and this is what is THEIRS - two questions, and
-  // only the second depends on the job. Everything here is decided inside the routes that name one,
-  // which is why none of it is in the admin list above.
-  describe('whose job it is', () => {
-    const asUser = (method: string, path: string, body?: unknown): Promise<Response> => as(USER, method, path, body);
-
-    async function submittedBy(token: string, details: JobDetails = playerBox): Promise<Job> {
-      const body = new FormData();
-      body.append('job', JSON.stringify(details));
-      body.append('gcode', new Blob(['G1\n']), 'print.gcode');
-
-      return (await submitting(shopUrl, body, token)).json() as Promise<Job>;
-    }
-
-    async function printedFor(token: string): Promise<number> {
-      const { id } = await submittedBy(token);
-      await shop.startPrinting('mk4', id);
-      await shop.finishedPrinting('mk4', 'finished');
-
-      return id;
-    }
-
-    // AIDEV-NOTE: what an install from before this has on disk. A record is written once and never
-    // rewritten, so a job from then stays ownerless until it leaves - which is indistinguishable
-    // from an owner who has since been revoked, and is handled as the same thing.
-    async function aJobFromBeforeOwners(): Promise<number> {
-      await mkdir(path.join(where.jobs, '9'), { recursive: true });
-      await writeFile(
-        path.join(where.jobs, '9', 'job.json'),
-        JSON.stringify({ id: 9, displayName: 'Old Box', filaments: ['PLA-SpaceGray'], submittedAt: new Date().toISOString(), gcodeBytes: 3 }),
-      );
-
-      return 9;
-    }
-
-    it('is the caller who submitted it, by the id that outlives their name', async () => {
-      expect(await submittedBy(USER)).toMatchObject({ owner: 'slicer' });
-    });
-
-    it('shows a caller their own work, and how much the shop holds altogether', async () => {
-      await submittedBy(ADMIN);
-      await submittedBy(USER, { filaments: ['PLA-Red'], displayName: 'Tray' });
-
-      expect(await (await asUser('GET', '/jobs')).json()).toMatchObject({
-        accessibleJobs: [{ displayName: 'Tray', owner: 'slicer' }],
-        totalJobs: 2,
-      });
-    });
-
-    it('shows an admin every job, whoever it belongs to', async () => {
-      await submittedBy(USER);
-      await submittedBy(ADMIN);
-
-      expect(await (await ask('/jobs')).json()).toMatchObject({
-        accessibleJobs: [{ owner: 'slicer' }, { owner: 'dave' }],
-        totalJobs: 2,
-      });
-    });
-
-    // AIDEV-NOTE: not theirs is answered as not here, deliberately. A 403 would tell a stranger that
-    // job 1 exists, and how many jobs the shop holds is the whole of what they are meant to learn.
-    it('answers a job that is not theirs as one that is not here', async () => {
-      const { id } = await submittedBy(ADMIN);
-
-      const response = await asUser('GET', `/jobs/${id}`);
-
-      expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({ error: `no job ${id}` });
-    });
-
-    it('lets a caller read their own', async () => {
-      const { id } = await submittedBy(USER);
-
-      expect((await asUser('GET', `/jobs/${id}`)).status).toBe(200);
-    });
-
-    it('refuses a verdict on a job that is not theirs, as one that is not here', async () => {
-      const id = await printedFor(ADMIN);
-
-      expect((await asUser('PUT', `/jobs/${id}/verdict`, { verdict: 'approved' })).status).toBe(404);
-    });
-
-    // Judging a plate is saying whether the thing you asked for came out the way you wanted, which
-    // is a question only the caller who asked can answer - so a user judges their own.
-    it('lets the owner judge their own print, whatever their role', async () => {
-      const id = await printedFor(USER);
-
-      expect((await asUser('PUT', `/jobs/${id}/verdict`, { verdict: 'approved' })).status).toBe(204);
-    });
-
-    // And an admin judges anybody's, which is what keeps a revoked owner's job from holding a bed
-    // for good - revocation is an absence, so nothing else would ever free it.
-    it('lets an admin judge a print that is not theirs', async () => {
-      const id = await printedFor(USER);
-
-      expect((await send('PUT', `/jobs/${id}/verdict`, { verdict: 'approved' })).status).toBe(204);
-    });
-
-    it('is nobody for a job written before the shop recorded an owner, leaving it to an admin', async () => {
-      const id = await aJobFromBeforeOwners();
-
-      expect((await asUser('GET', `/jobs/${id}`)).status).toBe(404);
-      expect((await ask(`/jobs/${id}`)).status).toBe(200);
-    });
-  });
-
-  // express.json() leaves the body undefined when there was none, and destructuring that threw a
-  // TypeError the client saw as a 500 - a client's mistake reported as the shop's fault.
-  // AIDEV-NOTE: the other half of the queue - what is waiting on each filament, which is what an
-  // operator standing at the machine is actually asking. `nextToPrint` is the shop's own question;
-  // this is theirs.
-  // AIDEV-NOTE: what the queue is waiting for is `waitingOn`, unit tested in tests/selection.test.ts
-  // over a dozen shops - busiest first, a tie broken alphabetically, the filament a job STARTS with,
-  // only what is queued, and only what a named machine could take. None of that is asked again here.
-  // What is left is the wiring: that the route answers with what `waitingOn` made of the shop's own
-  // jobs, and that it is handed the machine the query named rather than the whole shop.
-  describe('what to load next', () => {
-    it('answers with what the queue is waiting for', async () => {
-      await submit({ filaments: ['PLA-Red'] });
-
-      expect(await (await ask('/filaments')).json()).toEqual([{ filament: 'PLA-Red', jobs: 1 }]);
-    });
-
-    // Two machines and a job only one of them may take, because one machine would be satisfied by a
-    // route that read the query and then answered for the whole shop anyway.
-    it('answers for the machine the query named, and not for the shop', async () => {
-      await send('POST', '/printers', { name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini.local' });
-      await submit({ filaments: ['PLA-Red'], printer: 'mk4' });
-
-      expect(await (await ask('/filaments?printer=mini')).json()).toEqual([]);
-      expect(await (await ask('/filaments?printer=mk4')).json()).toEqual([{ filament: 'PLA-Red', jobs: 1 }]);
-    });
-
-    // The name in the query reaches the store, which is the other half of what `onePrinterName`
-    // hands on - it checks that a name is USABLE and cannot know whether the shop has one.
-    it('refuses to answer for a machine this shop does not have', async () => {
-      const response = await ask('/filaments?printer=nowhere');
-
-      expect(response.status).toBe(404);
-      expect(await response.json()).toMatchObject({ error: expect.stringContaining('no printer called nowhere') as unknown as string });
-    });
-  });
-
-  describe('a request that brought no body', () => {
-    it.each([
-      ['PUT', '/jobs/1/verdict', 'a verdict is approved, rejected or abandoned'],
-      ['PUT', '/printers/mk4/filament', 'loaded is the filaments on the machine'],
-      ['PUT', '/printers/mk4/status', 'a printer status says stopped true or false'],
-    ])('answers %s %s with what was missing', async (method, path, complaint) => {
-      const response = await fetch(`${shopUrl}${path}`, { method, headers: AS_ADMIN });
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: expect.stringContaining(complaint) as unknown });
-    });
-
-    it('says the same to a body that never claimed to be JSON', async () => {
-      const response = await fetch(`${shopUrl}/printers/mk4/filament`, { method: 'PUT', body: 'loaded=PLA', headers: AS_ADMIN });
-
-      expect(response.status).toBe(400);
-    });
-  });
-
-  // A failure the shop did not mean is written by whatever broke, and node's filesystem errors name
-  // the path they failed on - so the message is the one thing that must not go back to a caller.
-  describe('when something breaks that the shop did not expect', () => {
-    it('says where to look rather than what broke', async () => {
-      // A FILE standing where the next job's directory goes, so the mkdir every submission does
-      // fails with the path in its message - a fault of the machine rather than of the request.
-      await writeFile(path.join(where.jobs, '1'), 'not a directory');
-
-      const response = await submit(playerBox);
-      const said = await response.text();
-
-      expect(response.status).toBe(500);
-      expect(JSON.parse(said)).toEqual({ error: 'the shop could not do that, and why is in its log' });
-      expect(said).not.toContain(where.jobs);
-    });
-  });
-
-  // The data directory is made when the shop is installed and never by the shop - so a missing one is a
-  // machine that was never set up, which is the service's fault and not the client's.
-  describe('when the shop was never installed', () => {
-    it('says a client may as well come back later, and tells the operator which directory is missing', async () => {
-      const lines: string[] = [];
-      const missing = layoutUnder(path.join(parentOf(where), 'never-made'));
-      const unusable = await serve(new JobStore(missing), 0, {
-        callers: () => CALLERS,
-        log: toStdout(
-          () => new Date(),
-          (line) => lines.push(line),
-        ),
-      });
-
-      try {
-        const response = await fetch(`http://127.0.0.1:${(unusable.address() as AddressInfo).port}/jobs`, { headers: AS_ADMIN });
-        const said = await response.text();
-
-        expect(response.status).toBe(503);
-        expect(JSON.parse(said)).toEqual({ error: 'the shop cannot get at the work it keeps, and why is in its log' });
-        expect(said).not.toContain(missing.jobs);
-        expect(lines.join('\n')).toContain(`${missing.jobs} is not there - it is created when the shop is installed`);
-      } finally {
-        await new Promise<void>((resolve) => unusable.close(() => resolve()));
-      }
     });
   });
 
