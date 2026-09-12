@@ -72,8 +72,6 @@ export class TooManyGuesses extends Error {}
 /** Where a browser logs in and out. The one route a caller reaches before the shop knows them. */
 export const SESSIONS_PATH = '/sessions';
 
-
-
 // AIDEV-NOTE: a role is AUTHORITY, and ownership is what is THEIRS - two different questions, and
 // this list answers only the first. Whether a caller may see a particular job is `theirs()` below,
 // asked inside the routes that name one, because it depends on the job rather than on the route.
@@ -107,9 +105,7 @@ function needsAdmin(method: string, urlPath: string): boolean {
   const asRouted = method === 'HEAD' ? 'GET' : method;
   const withoutTrailingSlash = urlPath.replace(/\/+$/, '') || '/';
 
-  return !OPEN_TO_EVERY_CALLER.some(
-    (open) => open.method === asRouted && new RegExp(open.path.source, 'i').test(withoutTrailingSlash)
-  );
+  return !OPEN_TO_EVERY_CALLER.some((open) => open.method === asRouted && new RegExp(open.path.source, 'i').test(withoutTrailingSlash));
 }
 
 // AIDEV-NOTE: `Bearer` because it is what every HTTP client already knows how to send, and because
@@ -266,7 +262,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     if (typeof id !== 'string' || typeof password !== 'string') throw new UnusableRequest('a login is an id and a password');
 
     const from = request.ip ?? 'nowhere';
-    const waiting = attempts.mustWait(`id:${id}`, `from:${from}`);
+    const waiting = attempts.mustWait(id);
     if (waiting > 0) {
       log.info('a login was turned away for asking too often', { id, from, seconds: Math.ceil(waiting / 1000) });
       throw new TooManyGuesses(`too many tries - wait ${Math.ceil(waiting / 1000)} seconds`);
@@ -281,13 +277,13 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
 
     if (!right) {
       if (known?.password === undefined) await isThePassword(password, await nobody);
-      attempts.wasWrong(`id:${id}`, `from:${from}`);
+      attempts.wasWrong(id);
       log.info('a login was refused', { id, from });
 
       throw new NotAKnownCaller('that is not a name and a password this shop knows');
     }
 
-    attempts.wasRight(`id:${id}`, `from:${from}`);
+    attempts.wasRight(id);
     const secret = sessions.begin(known.caller.id);
     log.info('somebody logged in', { caller: known.caller.name, from });
 
@@ -415,14 +411,14 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
 
     const who = request.caller;
     const from = request.ip ?? 'nowhere';
-    const waiting = attempts.mustWait(`id:${who.id}`, `from:${from}`);
+    const waiting = attempts.mustWait(who.id);
     if (waiting > 0) throw new TooManyGuesses(`too many tries - wait ${Math.ceil(waiting / 1000)} seconds`);
 
     // A caller with no password is a machine's token, and there is nothing here for it to prove.
     // Giving one their first password is an operator's act, at the terminal, like taking one away.
     const held = callers().named(who.id)?.password;
     if (held === undefined || !(await isThePassword(current, held))) {
-      attempts.wasWrong(`id:${who.id}`, `from:${from}`);
+      attempts.wasWrong(who.id);
       log.info('a password change was refused', { caller: who.name, from });
 
       // Not 401: the session is perfectly good, and a client that read this as an expired one would
@@ -432,7 +428,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
 
     if (await isThePassword(password, held)) throw new UnusableRequest('that is the password already in use');
 
-    attempts.wasRight(`id:${who.id}`, `from:${from}`);
+    attempts.wasRight(who.id);
     await passwordChanged(who.id, password);
 
     // AIDEV-NOTE: every other one, and this one kept. Somebody changing their password either forgot
@@ -659,8 +655,6 @@ function submission(shop: JobStore, request: Request, owner: string): Promise<Jo
       }
     });
 
-
-
     parts.on('file', (name, contents) => {
       if (name !== GCODE_PART) {
         contents.resume();
@@ -748,8 +742,10 @@ function addressIn(address: string): string {
     return refuse('it is not a URL - it needs a scheme, as in http://octopi.local');
   }
 
-  if (reached.protocol !== 'http:' && reached.protocol !== 'https:') refuse(`this shop speaks http and https, not ${reached.protocol.replace(':', '')}`);
-  if (reached.username !== '' || reached.password !== '') refuse('it carries a username and password, and a printer is reached with its API key');
+  if (reached.protocol !== 'http:' && reached.protocol !== 'https:')
+    refuse(`this shop speaks http and https, not ${reached.protocol.replace(':', '')}`);
+  if (reached.username !== '' || reached.password !== '')
+    refuse('it carries a username and password, and a printer is reached with its API key');
   if (reached.search !== '' || reached.hash !== '') refuse('a printer is a host and a path, with nothing after them');
 
   // Every request appends its own path, so a trailing slash here would double the separator.

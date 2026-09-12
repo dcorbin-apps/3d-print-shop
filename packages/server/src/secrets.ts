@@ -1,7 +1,36 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { atMostAtOnce } from './turns.js';
 
-const derive = promisify(scrypt) as (secret: string, salt: Buffer, length: number, options: { N: number; r: number; p: number; maxmem: number }) => Promise<Buffer>;
+const onAThread = promisify(scrypt) as (
+  secret: string,
+  salt: Buffer,
+  length: number,
+  options: { N: number; r: number; p: number; maxmem: number },
+) => Promise<Buffer>;
+
+// AIDEV-NOTE: scrypt runs on the libuv threadpool, and so does every fs call the shop makes - so
+// hashing a password and reading a job record compete for the same four threads. MEASURED, against a
+// shop holding 25 jobs: below the pool size a login flood costs it nothing, AT the pool size a
+// `GET /jobs` goes from 1.4ms to 60ms, and at four times the pool it goes to 3.4 seconds. That last
+// one is the print queue stopping, because looking for work to start is the same kind of file read.
+//
+// So half the pool, leaving the other half to read a job record with. It bounds the MEMORY too,
+// which is the half that bites hardest: 32MB of scrypt state per hash in flight. Raising the pool
+// instead was measured and is worse - a pool of 64 turned a 112MB shop into a 2.1GB one under the
+// same flood, which on a workshop machine is the OOM killer rather than a slow login.
+const THREADPOOL = Number(process.env.UV_THREADPOOL_SIZE) || 4;
+
+/** How many passwords this process will hash at once. The rest wait, in the order they arrived. */
+export const HASHES_AT_ONCE = Math.max(1, Math.floor(THREADPOOL / 2));
+
+// AIDEV-NOTE: wrapped around `derive` rather than around either caller, so that the two below and
+// anything added later are bounded without having to remember - the same reasoning as the log's
+// redactor. This is the ONLY way scrypt is reached in the shop.
+const inTurn = atMostAtOnce(HASHES_AT_ONCE);
+
+const derive = (secret: string, salt: Buffer, length: number, options: { N: number; r: number; p: number; maxmem: number }): Promise<Buffer> =>
+  inTurn(() => onAThread(secret, salt, length, options));
 
 // AIDEV-NOTE: two kinds of secret, hashed two different ways, and the difference is where the
 // entropy came from. A TOKEN is 32 random bytes this shop generated - guessing one is not a thing
