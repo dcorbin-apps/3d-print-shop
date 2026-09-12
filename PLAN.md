@@ -137,14 +137,6 @@ a run of that file on its own.
   request line is an assumption about node and express, and goes to the third suite. The same move as
   `onePrinterName`
 
-- [ ] **Four acceptance tests that repeat a unit test by name.** `forgets what was counted against
-  somebody who then gets it right` is `attempts.test.ts`'s own sentence, run twice here - on the
-  login route (469ms) and on the password route (724ms). `is a different session every time, so an
-  old cookie is not the one in use` (201ms) is `sessions.test.ts`. `refuses a build volume with %s`
-  (2) is seven cases in `printerIn`'s. What each was meant to prove about wiring is proved by the
-  neighbour that stays: the two `makes somebody wait...` 429s already say Attempts is consulted on
-  both routes
-
 - [ ] **Three body rules a route still keeps inline.** `loadedIn`, `stoppedIn`, `printerIn` and
   `keyIn` were pulled out for exactly this reason; what was left behind is the verdict word (inline
   in `PUT /jobs/:id/verdict`), the login body and the password-change body. `refuses %j as a login`
