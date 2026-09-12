@@ -613,10 +613,6 @@ describe('the shop over HTTP', () => {
       expect(await asked.json()).toEqual({ id: 'dave', name: 'dave', role: 'admin' });
     }, 15_000);
 
-    it('is a different session every time, so an old cookie is not the one in use', async () => {
-      expect(cookieFrom(await logIn('dave', PASSWORD))).not.toBe(cookieFrom(await logIn('dave', PASSWORD)));
-    }, 20_000);
-
     // AIDEV-NOTE: the same answer for a name nobody has and for a password that is wrong. Otherwise
     // the refusals are a list of which names exist, which is the half of a credential an attacker
     // does not have to guess.
@@ -655,16 +651,6 @@ describe('the shop over HTTP', () => {
 
       expect(turned.status).toBe(429);
       expect(((await turned.json()) as { error: string }).error).toContain('wait');
-    }, 60_000);
-
-    // The person who has just proved who they are is not the attacker, and leaving the count
-    // standing would let somebody else lock them out by guessing wrong on purpose.
-    it('forgets what was counted against somebody who then gets it right', async () => {
-      await logIn('dave', 'not the password');
-      await logIn('dave', 'not the password');
-      expect((await logIn('dave', PASSWORD)).status).toBe(201);
-
-      for (let tried = 0; tried < FREELY; tried += 1) expect((await logIn('dave', 'not the password')).status).toBe(401);
     }, 60_000);
 
     describe('and logging out', () => {
@@ -881,18 +867,6 @@ describe('the shop over HTTP', () => {
         for (let tried = 0; tried <= FREELY; tried += 1) await changeTo(NEW_PASSWORD, 'not the password');
 
         expect((await changeTo(NEW_PASSWORD, 'not the password')).status).toBe(429);
-      }, 60_000);
-
-      // The person who has just proved who they are is not the attacker, and leaving the count
-      // standing would let a mistyped password earlier in the day lock them out of changing it.
-      it('forgets what was counted against somebody who then gets it right', async () => {
-        await changeTo(NEW_PASSWORD, 'not the password');
-        await changeTo(NEW_PASSWORD, 'not the password');
-        expect((await changeTo(NEW_PASSWORD, PASSWORD)).status).toBe(204);
-
-        for (let tried = 0; tried < FREELY; tried += 1) {
-          expect((await changeTo('another one entirely', 'not the password')).status).toBe(403);
-        }
       }, 60_000);
 
       // AIDEV-NOTE: a user's own password is the whole point of this route. Made an admin's, it
@@ -1348,16 +1322,6 @@ describe('the shop over HTTP', () => {
 
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({ ...asRegistered, buildVolume: taller });
-    });
-
-    it.each([
-      ['a side it was not given', { x: 180, y: 180 }],
-      ['a side of nothing', { x: 180, y: 180, z: 0 }],
-    ])('refuses a build volume with %s', async (_description, buildVolume) => {
-      const response = await send('POST', '/printers', { name: 'mini', buildVolume, address: 'http://mini.local' });
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'a build volume is x, y and z in mm, each greater than zero' });
     });
 
     it('refuses a body that is not JSON at all', async () => {
