@@ -97,6 +97,21 @@ extending Error extends Error - what is worth testing about them is the status e
 `statusFor` and is tested. The other five are the running things an AT is for: `createApi`,
 `claimData`, `pushSocket`, `OctoPrintMachines`, `startOctoPrintServer`.
 
+**There is a third kind, and it does not run with the others.** An assumption test pins what
+THIRD-PARTY code we depend on actually does, where the shop's correctness rests on the answer: `ws`
+raising libuv's error where node's own WebSocket collapses every failure into one sentence, busboy
+truncating at the cap and ending the stream as though the file were whole, express routing
+non-strictly and case-insensitively and serving HEAD from a GET route, and what node's HTTP parser
+leaves in `req.url`. None of that can change because somebody edited this repository, so none of it
+belongs on a commit - and a red one says the world moved rather than that you broke something, which
+is a different thing to be told and wants a different answer. Run it when a dependency or the node
+version goes up. The OS is deliberately out of scope: a kernel does not move under you the way a
+minor version does, so the data lock stays an acceptance test.
+
+Nothing runs it for you - there is no CI here - and a suite that runs only on upgrade is one that can
+sit red for a year and then be indistinguishable from the upgrade that found it. It is cheap, so run
+it oftener than the rule asks.
+
 **`theRunningShop.test.ts` keeps 35 of 39.** Restarts, signals, the data lock, the listen address
 and `init` - a spawned process is the only thing that can answer any of them. The `--help` cases are
 not among them; see Fix Tests.
@@ -118,8 +133,9 @@ a run of that file on its own.
   table. The guard itself comes out beside it as a function over something request-shaped, so that
   refusing a user by role and letting one through are unit tests too, and so is the order it is
   mounted in - `createApi` answers a request without a listener, and neither the rule nor the
-  ordering is a thing about the request object. One acceptance test is left, and it is the raw
-  request line: see below. The same move as `onePrinterName`
+  ordering is a thing about the request object. Nothing is left for an acceptance test: the raw
+  request line is an assumption about node and express, and goes to the third suite. The same move as
+  `onePrinterName`
 
 - [ ] **Four acceptance tests that repeat a unit test by name.** `forgets what was counted against
   somebody who then gets it right` is `attempts.test.ts`'s own sentence, run twice here - on the
@@ -158,6 +174,14 @@ a run of that file on its own.
   client's unit test, again in its acceptance test, and a third time under `changeMyPassword` there.
   One of them is the rule; the rest are the rule over a socket
 
+- [ ] **Make the third suite and move what belongs in it.** `tests/assumptions/` beside
+  `tests/acceptance/`, its own jest project and `yarn assumptions`; `yarn test` excludes it the way
+  `yarn ut` excludes acceptance - an exclusion rather than a list of directories, so a renamed one
+  cannot silently stop matching and report green. `pushSocket.test.ts` moves whole: its single test
+  is a claim about `ws` and about nothing this repository writes. Then the assumptions that have no
+  home at all today - busboy truncating at the cap, express's routing and `req.path`, and the raw
+  request line the guard is handed
+
 #### Re-opened by the rule above, and not yet decided
 
 These were off the list because an acceptance test was thought to be for "a route being wired to what
@@ -185,13 +209,11 @@ claims?
 
 Not re-opened, and now for a stated reason rather than by category:
 
-- `dataLock`, `pushSocket`, `reconnectRecovery` - the fake would be the kernel, libuv's own error
-  text, and a socket that really dies. Each is the claim itself
+- `dataLock`, `reconnectRecovery` - the fake would be the kernel and a socket that really dies. Each
+  is the claim itself, and the kernel is out of the third suite's scope on purpose
 - `theShopAndItsClient` - a fetch handed in would let the client drive the app in-process, but the
   request bridge written to do it is exactly where the assumption about how a URL becomes a path
   would be written down. That bridge is the claim
-- In `api.test.ts`, the raw request line reaching the guard: `/jobs/`, `/JOBS`, `HEAD /jobs`,
-  `/jobs?x=1`, `/printers/..%2F..%2Fetc`
 
 ### The service
 
