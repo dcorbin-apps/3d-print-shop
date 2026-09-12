@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { InvalidArgumentError } from 'commander';
-import { createCLI, readMegabytes, readJobId, readRole, readPort, unknownCommandIn } from '../src/cli';
+import { createCLI, readMegabytes, readJobId, readRole, readPort, run, unknownCommandIn } from '../src/cli';
 
 // AIDEV-NOTE: commander answers a --help anywhere in argv before deciding whether the command in
 // front of it exists, so a typo that happens to carry one was answered with help and exit 0 - which
@@ -65,6 +65,46 @@ describe('a command the shop does not have', () => {
 
   it.each([[''], ['--help'], ['-h']])('finds nothing to complain about in %p', (line) => {
     expect(asked(line)).toBeUndefined();
+  });
+
+  // The other half of the point: a REAL command asking for help is a request and not a mistake, so
+  // the check has to let it through to commander rather than naming the flag or the command.
+  it.each([['printer add --help'], ['printer --help'], ['job approve --help'], ['serve -h']])('lets %p through to be answered', (line) => {
+    expect(asked(line)).toBeUndefined();
+  });
+});
+
+// AIDEV-NOTE: the ORDER, which is the whole of the bug. commander answers a --help anywhere in argv
+// before deciding whether the command in front of it exists, so a typo carrying one was answered
+// with the general help and exit 0. This used to live in main.ts's module body, where the only way
+// to ask about it was to spawn a process.
+describe('running a command line', () => {
+  const said: string[] = [];
+  const running = (line: string): Promise<number> => {
+    said.length = 0;
+
+    return run(['node', 'shop', ...line.split(' ').filter((word) => word !== '')], (message) => said.push(message));
+  };
+
+  it.each([['nonsense'], ['add printer add --help'], ['printer nonsense --help'], ['nonsense -h']])(
+    'is a failure for %p, however it asks for help',
+    async (line) => {
+      expect(await running(line)).toBe(1);
+    }
+  );
+
+  it('says which word it did not know, the way commander says its own', async () => {
+    await running('printer nonsense --help');
+
+    expect(said).toEqual(["error: unknown command 'nonsense'"]);
+  });
+
+  // AIDEV-NOTE: proof that the check came FIRST. Reaching commander with this line would print the
+  // general help and answer 0, which is what it used to do - so a non-zero code with nothing but the
+  // one message says commander never saw it.
+  it('never reaches commander with a command it does not have', async () => {
+    expect(await running('nonsense --help')).toBe(1);
+    expect(said).toEqual(["error: unknown command 'nonsense'"]);
   });
 });
 

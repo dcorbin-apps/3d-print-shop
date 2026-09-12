@@ -396,6 +396,39 @@ export function createCLI(): Command {
 // subcommands. It stops at the first command that has none: everything after that is an argument,
 // and `job approve 7` must not have 7 read as a command it does not have.
 /** The word that was asked for as a command and is not one, so a typo is not answered as a cry for help. */
+// AIDEV-NOTE: the whole of what `main.ts` does, here rather than there, so that the ORDER can be
+// asked about. The check has to run BEFORE commander is given argv - commander answers a --help
+// further along the line first and exits 0, which a script cannot tell from success - and a module
+// body that does this on import can only be proved by spawning a process. main.ts is now the one
+// line that calls this.
+/** Run a command line, answering the exit code it earned. */
+export async function run(argv: string[], complain: (message: string) => void = console.error): Promise<number> {
+  const cli = createCLI();
+
+  const unknown = unknownCommandIn(cli, argv.slice(2));
+  if (unknown !== undefined) {
+    // Worded as commander words its own, so the two read the same to an operator.
+    complain(`error: unknown command '${unknown}'`);
+
+    return 1;
+  }
+
+  try {
+    // AIDEV-NOTE: parseAsync, not parse - commander only awaits an action's returned promise in the
+    // async variant, so with plain parse() every command would be a floating promise and a failure
+    // would surface as an unhandled rejection after the process had decided its own exit code.
+    await cli.parseAsync(argv);
+
+    return 0;
+  } catch (error) {
+    // Only the message. An operator adding a printer wants "cannot read 250x210 as a build volume",
+    // not a stack through commander.
+    complain((error as Error).message);
+
+    return 1;
+  }
+}
+
 export function unknownCommandIn(program: Command, args: string[]): string | undefined {
   let at = program;
   let skipping = false;

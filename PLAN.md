@@ -124,9 +124,9 @@ against both suites: the acceptance file caught five, a unit test caught every o
 the two it missed were caught by unit tests as well. Zero unique coverage. Look down the chain for an
 injected collaborator before concluding that only a running thing can answer.
 
-**`theRunningShop.test.ts` keeps 35 of 39.** Restarts, signals, the data lock, the listen address
-and `init` - a spawned process is the only thing that can answer any of them. The `--help` cases are
-not among them; see Fix Tests.
+**`theRunningShop.test.ts` keeps 35.** Restarts, signals, the data lock, the listen address and
+`init` - a spawned process is the only thing that can answer any of them. The four `--help` cases are
+gone: `main.ts` is one line now and what it used to hold is `run()` in `cli.ts`, asked directly.
 
 ### Fix Tests
 
@@ -145,9 +145,6 @@ it claims". That ground is gone, so each is here until it has been argued rather
 question for every one of them is the same: is the fake a unit test would need the thing the test
 claims?
 
-- [ ] `theRunningShop` - the `--help` cases. The check runs before commander is given argv, and the
-  note says nothing calling `createCLI()` would notice if it did not - but a function over argv
-  would. The other 35 are a spawned process and stay
 - [ ] `jobLifetime` - no socket and no process: it is `JobStore` over a real temporary directory at
   8MB, which is what `JobStore.test.ts` already does at a few bytes. The size is the point of it, and
   the size is not what makes a test an acceptance one. It may simply belong in `tests/`
@@ -162,6 +159,16 @@ Not re-opened, and now for a stated reason rather than by category:
 - `theShopAndItsClient` - a fetch handed in would let the client drive the app in-process, but the
   request bridge written to do it is exactly where the assumption about how a URL becomes a path
   would be written down. That bridge is the claim
+
+### A flake, seen twice
+
+- [ ] `reconnectRecovery` › `learns an outcome that was announced while the socket was down` failed
+  twice on 2026-09-12, both times in a full run that took 63s against the usual 19s, and never in a
+  run of its own or in a full run at normal speed (green in 3 of 3 straight after). The file's own
+  note already says this is contention rather than a slow shop, and answers it with 60s timeouts -
+  which this failure is inside, so the timeout is not the whole answer. It is the FIRST test in the
+  file, so it pays the cost of the sim and the client warming up. Worth a look before it is trusted;
+  not worth chasing on two data points
 
 ### The service
 

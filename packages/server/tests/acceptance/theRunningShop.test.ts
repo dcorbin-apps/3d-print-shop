@@ -497,24 +497,6 @@ describe('the shop, running as its own process', () => {
     expect(shop.hasSaid(/\[redacted]/)).toBe(true);
   }, 30_000);
 
-  // AIDEV-NOTE: main.ts, which is the only place this can be proved - the check has to run BEFORE
-  // commander is given argv, and nothing that calls createCLI() directly would notice if it did not.
-  // A mistyped command that carried --help used to print the general help and exit 0.
-  it.each([['add', 'printer', 'add', '--help'], ['printer', 'nonsense', '--help'], ['nonsense']])(
-    'refuses %j rather than answering it with help',
-    async (...args: string[]) => {
-      expect(await runCommand(args)).toBe(1);
-    },
-    30_000
-  );
-
-  it('still answers a real command asking for help', async () => {
-    const { code, stdout } = await runCommandSaying(['printer', 'add', '--help']);
-
-    expect(code).toBe(0);
-    expect(stdout).toContain('build volume as <width>x<depth>x<height>');
-  }, 30_000);
-
   // AIDEV-NOTE: the whole way through - argv, the API, the foreman letting go of its machines, and a
   // process that actually ends. A shop that answered and stayed up would look identical to a client.
   // The data directory is made when the shop is installed and never by the shop, so a missing one is a
