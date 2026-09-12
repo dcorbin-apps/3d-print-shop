@@ -843,7 +843,7 @@ function explainRefusal(log: Log, error: unknown, _request: Request, response: R
 // in a query string - so `?printer=../../../somewhere` reached `printerNamed` and read a
 // printer.json outside the data directory. What it gave back was an oracle: a file that parses
 // answered 200, one that is not there 404, one that is not JSON 500.
-function onePrinterName(asked: unknown): string | undefined {
+export function onePrinterName(asked: unknown): string | undefined {
   if (asked === undefined) return undefined;
 
   if (typeof asked !== 'string' || asked.trim() === '') {

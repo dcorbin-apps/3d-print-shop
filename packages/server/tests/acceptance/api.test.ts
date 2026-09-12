@@ -1309,41 +1309,17 @@ describe('the shop over HTTP', () => {
       expect(response.status).not.toBe(404);
     });
 
-    // AIDEV-NOTE: the SECOND way a name arrives, and the one the `/printers/:name` mount cannot
-    // catch. `?printer=../../../somewhere` read a printer.json outside the data directory, and told
-    // a caller which it was: 200 where the file parsed, 404 where there was none, 500 where it was
-    // not JSON. Asked here the way a client asks it, encoded, because that is what arrives.
-    it.each(REFUSED)('will not answer for %s, which arrives in a query rather than a path', async (name) => {
-      expect((await ask(`/filaments?printer=${encodeURIComponent(decodeURIComponent(name))}`)).status).toBe(400);
-    });
-
-    // Unencoded, which is what a query string carries perfectly well and what a client that built
-    // the URL by hand would send.
-    it.each([['../../../outside'], ['../..'], ['a/b']])('will not answer for %p written straight into the query', async (name) => {
-      expect((await ask(`/filaments?printer=${name}`)).status).toBe(400);
-    });
-
-    // The refusal is about the NAME, so it comes before the shop looks anything up - the same 400 and
-    // the same words a path gets, rather than the 404 or the 500 that said whether a file was there
-    // and whether it parsed.
-    it('refuses the name rather than saying whether anything is at that path', async () => {
+    // AIDEV-NOTE: ONE acceptance test for the query string, not twelve. What onePrinterName does
+    // with a name is a plain function over a value and is unit tested in tests/api.test.ts; what
+    // only a running shop can say is whether this route reaches it at all - which is the whole of
+    // what was wrong, since the `/printers/:name` mount catches a name in a path and cannot catch
+    // one in a query. Before this, `?printer=../../../somewhere` read a printer.json from outside
+    // the data directory and said which case it was: 200 parsed, 404 absent, 500 unparseable.
+    it('checks a name that arrives in a query string, not only one in a path', async () => {
       const response = await ask('/filaments?printer=../../../outside');
 
       expect(response.status).toBe(400);
       expect(await response.json()).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
-    });
-
-    // A query naming nothing is a caller who meant to leave the parameter out, and saying so is more
-    // use than telling them a space cannot be a directory. Refused either way.
-    it('says what to do about a query that names nothing at all', async () => {
-      const response = await ask('/filaments?printer=%20');
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: expect.stringContaining('printer names one machine') as unknown });
-    });
-
-    it('still answers for an ordinary name in a query', async () => {
-      expect((await ask('/filaments?printer=mk4')).status).toBe(200);
     });
 
     it('still takes an ordinary name', async () => {

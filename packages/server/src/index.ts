@@ -1,4 +1,14 @@
-export { DEFAULT_PORT, LOOPBACK, NotAKnownCaller, NotTheirs, UnusableRequest, createApi, requireUsablePrinterName, serve } from './api.js';
+export {
+  DEFAULT_PORT,
+  LOOPBACK,
+  NotAKnownCaller,
+  NotTheirs,
+  UnusableRequest,
+  createApi,
+  onePrinterName,
+  requireUsablePrinterName,
+  serve,
+} from './api.js';
 export type { ShopHooks } from './api.js';
 export {
   AlreadyHasCallers,
@@ -20,7 +30,17 @@ export { OctoPrintMachines } from './OctoPrintMachines.js';
 export type { Machines } from './Foreman.js';
 export type { BuildVolume, Job, JobDetails, JobPhase, JobRecord, JobState, PrinterOutcome } from './Job.js';
 export { InvalidSubmission, generatedDisplayName, validateDetails } from './Job.js';
-export { JobStore, MAX_GCODE_ENV, defaultMaxGcodeBytes, NoPrinterCanTakeIt, NoSuchJob, NoSuchPrinter, DataUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
+export {
+  JobStore,
+  MAX_GCODE_ENV,
+  defaultMaxGcodeBytes,
+  NoPrinterCanTakeIt,
+  NoSuchJob,
+  NoSuchPrinter,
+  DataUnavailable,
+  TooMuchToTake,
+  WrongState,
+} from './JobStore.js';
 export type { DataLimits } from './JobStore.js';
 export type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from './OctoPrint.js';
 export { OctoPrint, octoPrintCamera, pushSocket, reconnectAfter, reconnectDelayMs, whySocketFailed, whyUnreachable } from './OctoPrint.js';
