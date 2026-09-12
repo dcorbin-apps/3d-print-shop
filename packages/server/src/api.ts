@@ -91,6 +91,11 @@ const OPEN_TO_EVERY_CALLER: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: 'GET', path: /^\/printers$/ },
   // Themselves, and nobody else. See the route.
   { method: 'GET', path: /^\/me$/ },
+  // AIDEV-NOTE: leaving is everybody's, for the reason changing your own password is - the route ends
+  // the session in the request's OWN cookie and can reach nobody else's. It was missing from this
+  // list, so a caller who was not an admin could log in and then not log out, and every acceptance
+  // test of logging out used an admin and never met it.
+  { method: 'DELETE', path: /^\/sessions$/ },
   // Their OWN password, which is the whole point of it - it is open to everybody because it can only
   // ever change the caller making the request. Changing somebody else's is an operator's, at a
   // terminal, and has no route at all.

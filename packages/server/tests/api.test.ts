@@ -494,6 +494,9 @@ describe('whether a route is an admin\'s', () => {
       ['GET', '/printers'],
       ['GET', '/me'],
       ['PUT', '/me/password'],
+      // Leaving is everybody's. It ends the session in the request's own cookie and reaches nobody
+      // else's, which is the same reasoning that opens `PUT /me/password`.
+      ['DELETE', '/sessions'],
     ])('lets a user %s %s', (method, path) => {
       expect(asksOf(user, method, path)).not.toThrow();
     });
@@ -507,9 +510,6 @@ describe('whether a route is an admin\'s', () => {
       ['PUT', '/printers/mk4/filament'],
       ['PUT', '/printers/mk4/status'],
       ['GET', '/filaments'],
-      // AIDEV-NOTE: `DELETE /sessions` is deliberately absent. It is not on the open list, so a user
-      // is refused it - which means a non-admin cannot log out. That looks wrong rather than
-      // intended, and it is not this table's place to bless it; see PLAN.md.
     ])('refuses a user %s %s', (method, path) => {
       expect(asksOf(user, method, path)).toThrow(NotTheirs);
     });

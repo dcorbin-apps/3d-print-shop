@@ -7,6 +7,7 @@ import { createApi } from '../src/api';
 import { Callers } from '../src/credentials';
 import { JobStore } from '../src/JobStore';
 import { digestOf } from '../src/secrets';
+import { SESSION_COOKIE, Sessions } from '../src/sessions';
 import { aDataDirectory, parentOf } from './aDataDirectory';
 import type { DataLayout } from '../src/dataLayout';
 
@@ -21,6 +22,8 @@ import type { DataLayout } from '../src/dataLayout';
 // and the rule the guard applies is `requireTheirRole` in tests/api.test.ts.
 describe('where the guard sits', () => {
   let where: DataLayout;
+  let shop: JobStore;
+  let sessions: Sessions;
   let api: ReturnType<typeof createApi>;
 
   const ADMIN = 'dave-token';
@@ -36,7 +39,7 @@ describe('where the guard sits', () => {
     body: string;
   }
 
-  function answered(method: string, url: string, token?: string, body?: string): Promise<Answer> {
+  function answered(method: string, url: string, token?: string, body?: string, carrying: Record<string, string> = {}): Promise<Answer> {
     const request = new IncomingMessage(new Socket());
     request.method = method;
     request.url = url;
@@ -45,6 +48,7 @@ describe('where the guard sits', () => {
       host: 'shop.local',
       ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
       ...(payload === undefined ? {} : { 'content-type': 'application/json', 'content-length': String(payload.length) }),
+      ...carrying,
     };
     if (payload !== undefined) request.push(payload);
     request.push(null);
@@ -65,9 +69,10 @@ describe('where the guard sits', () => {
 
   beforeEach(async () => {
     where = await aDataDirectory('print-shop-guard-');
-    const shop = new JobStore(where);
+    shop = new JobStore(where);
     await shop.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://octopi.local' });
-    api = createApi(shop, { callers: () => callers });
+    sessions = new Sessions();
+    api = createApi(shop, { callers: () => callers, sessions });
   });
 
   afterEach(async () => {
@@ -102,6 +107,22 @@ describe('where the guard sits', () => {
 
     expect(refused.status).toBe(403);
     expect(refused.body).toContain('DELETE /printers/mk4 is for an admin, and slicer is not one');
+  });
+
+  // AIDEV-NOTE: leaving, which a caller who was not an admin could not do - `DELETE /sessions` was
+  // missing from the open list, so the role rule refused somebody the end of their own session. The
+  // session is begun directly rather than by logging in, because what is under test is the guard
+  // letting the request through, and a password would buy nothing but two scrypts.
+  it('lets a caller who is not an admin end their own session', async () => {
+    const secret = sessions.begin('slicer');
+
+    const out = await answered('DELETE', '/sessions', undefined, undefined, {
+      cookie: `${SESSION_COOKIE}=${secret}`,
+      origin: 'http://shop.local',
+    });
+
+    expect(out.status).toBe(204);
+    expect(sessions.whose(secret)).toBeUndefined();
   });
 
   // AIDEV-NOTE: `request.path` and not `request.url`, which is the whole of the bug this block exists

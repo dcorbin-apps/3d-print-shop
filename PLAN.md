@@ -43,15 +43,6 @@ than read out of the code. These come before the rest of the list.
   could reach - a cookie that will not decode, and `Origin: null` - are fixed; this is the
   authenticated one, and the last of the three. `packages/server/src/Job.ts`
 
-- [ ] A caller who is not an admin cannot log out. `DELETE /sessions` is not on
-  `OPEN_TO_EVERY_CALLER`, so the role rule refuses it: a user logs in 201 and is answered
-  `DELETE /sessions is for an admin, and ada is not one` when they try to leave. Reproduced against
-  the real app on 2026-09-12. The route ends the session in the request's OWN cookie and can reach
-  nobody else's, which is the same reasoning that put `PUT /me/password` on the open list - so this
-  looks like an omission rather than a decision, and the fix is one line. Asked rather than done
-  because it is the security boundary. Nothing caught it: the acceptance tests for logging out all
-  used an admin. `packages/server/src/api.ts`
-
 - [ ] `see PLAN` in `OctoPrint.ts` at `send`, `cancel` and `filedAt` names nothing that is in this
   file. Either the work is still wanted and belongs here, or the reference goes
 
