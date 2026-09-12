@@ -114,6 +114,15 @@ Nothing runs it for you - there is no CI here - and a suite that runs only on up
 sit red for a year and then be indistinguishable from the upgrade that found it. It is cheap, so run
 it oftener than the rule asks.
 
+**Ask whether ANY unit test can say it, not whether a unit test of this class can.** The rule above
+was applied to `octoPrintMachines` and got the wrong answer: a unit test of `OctoPrintMachines` must
+hand over a machine, so it cannot say that reaching a printer opens a connection - which looked like
+the fake being the claim. It was not. That claim is `OctoPrint`'s, whose socket factory is injected
+one level further down, and `OctoPrint.test.ts` already made it. The evidence was seven mutations run
+against both suites: the acceptance file caught five, a unit test caught every one of those five, and
+the two it missed were caught by unit tests as well. Zero unique coverage. Look down the chain for an
+injected collaborator before concluding that only a running thing can answer.
+
 **`theRunningShop.test.ts` keeps 35 of 39.** Restarts, signals, the data lock, the listen address
 and `init` - a spawned process is the only thing that can answer any of them. The `--help` cases are
 not among them; see Fix Tests.
@@ -135,11 +144,6 @@ it claims". That ground is gone, so each is here until it has been argued rather
 question for every one of them is the same: is the fake a unit test would need the thing the test
 claims?
 
-- [ ] `octoPrintMachines` - `refuses a printer whose key was left blank` and `refuses a printer
-  nobody has given a key, saying where one goes` involve no server in the claim at all. The client
-  keying - same printer, same client; a moved address or a corrected key, a new one - is a decision
-  over a record and could be a unit test with a client factory handed in. What needs the socket is
-  that reaching a printer OPENS one before anything is sent, and that `closeAll` really lets go
 - [ ] `octoPrintStrictness` - whether an auth frame is acceptable (an api key in place of a session,
   a session never issued, a frame that is not an auth frame) is a predicate inside the sim. What
   needs the socket is that the server acts on it, and answers an unauthenticated socket with silence

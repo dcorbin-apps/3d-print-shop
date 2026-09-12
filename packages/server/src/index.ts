@@ -41,6 +41,7 @@ export { Foreman } from './Foreman.js';
 export { redacting, silent, toStdout } from './log.js';
 export type { About, Log } from './log.js';
 export { OctoPrintMachines } from './OctoPrintMachines.js';
+export type { Machine, MakeMachine } from './OctoPrintMachines.js';
 export type { Machines } from './Foreman.js';
 export type { BuildVolume, Job, JobDetails, JobPhase, JobRecord, JobState, PrinterOutcome } from './Job.js';
 export { InvalidSubmission, generatedDisplayName, validateDetails } from './Job.js';

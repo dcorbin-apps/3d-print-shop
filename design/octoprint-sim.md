@@ -50,9 +50,9 @@ completing normally - a crash in a client's handler must not wedge the printer f
 ## What is tested, and where
 
 Driving a real client at this server is what shows it behaves like OctoPrint, so that is where most
-of its coverage lives: `packages/server/tests/acceptance/octoPrintMachines.test.ts` and
-`reconnectRecovery.test.ts` both run the shop's real `OctoPrint` against it, and a break in upload,
-auth, events or completion stops them dead.
+of its coverage lives: `packages/server/tests/acceptance/reconnectRecovery.test.ts` runs the shop's
+real `OctoPrint` against it - the real socket factory and all - and a break in upload, auth, events
+or completion stops it dead.
 
 Its own tests cover only what it REFUSES - a bad auth frame, a second job while one is printing.
 Those are the traps nothing else springs: loosen one and every suite above still passes, having

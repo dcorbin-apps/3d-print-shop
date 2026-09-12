@@ -1,9 +1,19 @@
 import { OctoPrint } from './OctoPrint.js';
+import type { OctoPrintConfig } from './OctoPrint.js';
 import { PRINTER_KEYS_FILE } from './credentials.js';
 import type { Machines } from './Foreman.js';
 import type { Printer } from './printing.js';
 import type { RegisteredPrinter } from './Printer.js';
 
+
+/** What this keeps of a machine: a printer that can also be opened and let go of. */
+export interface Machine extends Printer {
+  connect(): Promise<void>;
+  disconnect(): void;
+}
+
+/** How a machine is made, so that a test can hand over one that opens no socket. */
+export type MakeMachine = (config: OctoPrintConfig) => Machine;
 
 /**
  * Turns a registration into something that can actually be talked to.
@@ -14,7 +24,7 @@ import type { RegisteredPrinter } from './Printer.js';
  * a printer already printing is being watched, and nothing will have sent it anything.
  */
 export class OctoPrintMachines {
-  private readonly reached = new Map<string, { address: string; key: string; machine: OctoPrint }>();
+  private readonly reached = new Map<string, { address: string; key: string; machine: Machine }>();
 
   // AIDEV-NOTE: a key belongs in neither of a printer's files. `printer add` would put it in shell
   // history and in `ps`, and the data directory is the shop's working one rather than a credential
@@ -24,7 +34,10 @@ export class OctoPrintMachines {
   //
   // AIDEV-NOTE: asked afresh rather than handed over once, because the shop re-reads its keys on
   // SIGHUP - and a key read at startup is the one an operator is correcting.
-  constructor(private readonly keys: () => ReadonlyMap<string, string> = () => new Map()) {}
+  constructor(
+    private readonly keys: () => ReadonlyMap<string, string> = () => new Map(),
+    private readonly makeMachine: MakeMachine = (config): Machine => new OctoPrint(config)
+  ) {}
 
   // AIDEV-NOTE: a key that has changed is compared here and nowhere else, which is what makes
   // correcting one safe while prints are running. Replacing a client DISCONNECTS it, and a watcher
@@ -40,7 +53,7 @@ export class OctoPrintMachines {
     // or talking to the right one with a key it will not accept.
     already?.machine.disconnect();
 
-    const machine = new OctoPrint({ baseUrl: printer.address, apiKey: key });
+    const machine = this.makeMachine({ baseUrl: printer.address, apiKey: key });
     await machine.connect();
     this.reached.set(printer.name, { address: printer.address, key, machine });
 
