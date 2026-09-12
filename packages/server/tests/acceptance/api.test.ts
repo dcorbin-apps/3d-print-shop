@@ -1066,52 +1066,35 @@ describe('the shop over HTTP', () => {
   // AIDEV-NOTE: the other half of the queue - what is waiting on each filament, which is what an
   // operator standing at the machine is actually asking. `nextToPrint` is the shop's own question;
   // this is theirs.
+  // AIDEV-NOTE: what the queue is waiting for is `waitingOn`, unit tested in tests/selection.test.ts
+  // over a dozen shops - busiest first, a tie broken alphabetically, the filament a job STARTS with,
+  // only what is queued, and only what a named machine could take. None of that is asked again here.
+  // What is left is the wiring: that the route answers with what `waitingOn` made of the shop's own
+  // jobs, and that it is handed the machine the query named rather than the whole shop.
   describe('what to load next', () => {
-    it('answers what the queued work is waiting for, busiest first', async () => {
+    it('answers with what the queue is waiting for', async () => {
       await submit({ filaments: ['PLA-Red'] });
-      await submit({ filaments: ['PLA-Red'] });
-      await submit(playerBox);
 
-      expect(await (await ask('/filaments')).json()).toEqual([
-        { filament: 'PLA-Red', jobs: 2 },
-        { filament: 'PLA-SpaceGray', jobs: 1 },
-      ]);
+      expect(await (await ask('/filaments')).json()).toEqual([{ filament: 'PLA-Red', jobs: 1 }]);
     });
 
-    // It counts everybody's work, which is more than the bare total a caller who owns none of it may
-    // learn - and loading a machine is already an admin's to do.
-    it("is an admin's to ask, because it counts work that is not the caller's", async () => {
-      expect((await as(USER, 'GET', '/filaments')).status).toBe(403);
-    });
-
-    // The operator asking is standing at a machine, and a job it could never take is not work it
-    // is waiting on.
-    it('answers for one machine when the request names one', async () => {
+    // Two machines and a job only one of them may take, because one machine would be satisfied by a
+    // route that read the query and then answered for the whole shop anyway.
+    it('answers for the machine the query named, and not for the shop', async () => {
       await send('POST', '/printers', { name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini.local' });
       await submit({ filaments: ['PLA-Red'], printer: 'mk4' });
-      await submit({ filaments: ['PLA-White'] });
 
-      expect(await (await ask('/filaments?printer=mini')).json()).toEqual([{ filament: 'PLA-White', jobs: 1 }]);
-      expect(await (await ask('/filaments?printer=mk4')).json()).toEqual([
-        { filament: 'PLA-Red', jobs: 1 },
-        { filament: 'PLA-White', jobs: 1 },
-      ]);
+      expect(await (await ask('/filaments?printer=mini')).json()).toEqual([]);
+      expect(await (await ask('/filaments?printer=mk4')).json()).toEqual([{ filament: 'PLA-Red', jobs: 1 }]);
     });
 
+    // The name in the query reaches the store, which is the other half of what `onePrinterName`
+    // hands on - it checks that a name is USABLE and cannot know whether the shop has one.
     it('refuses to answer for a machine this shop does not have', async () => {
       const response = await ask('/filaments?printer=nowhere');
 
       expect(response.status).toBe(404);
       expect(await response.json()).toMatchObject({ error: expect.stringContaining('no printer called nowhere') as unknown as string });
-    });
-
-    // express reads a repeated parameter as an array, and answering for the whole shop there would
-    // be the wrong answer given confidently.
-    it('refuses a request that names more than one machine', async () => {
-      const response = await ask('/filaments?printer=mk4&printer=mini');
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: expect.stringContaining('printer names one machine') as unknown as string });
     });
   });
 

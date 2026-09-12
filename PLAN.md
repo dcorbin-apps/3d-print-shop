@@ -116,11 +116,6 @@ tested, which is what makes these oversights rather than decisions - the same te
 last batch. `api.test.ts` is 142 cases in 10.8s and about 40 of them are below; the timings are from
 a run of that file on its own.
 
-- [ ] **`what to load next` re-asserts what `selection.test.ts` proves.** Busiest-first, and counting
-  only what a named machine could take, are both unit tested over `waitingOn`. Both acceptance tests
-  stay, but for the wiring: that the route reaches `waitingOn` with the printer the query named,
-  rather than checking again what order it puts them in
-
 - [ ] **The client repeats one refusal rule four times.** `repeats what the shop said` is in the
   client's unit test, again in its acceptance test, and a third time under `changeMyPassword` there.
   One of them is the rule; the rest are the rule over a socket
