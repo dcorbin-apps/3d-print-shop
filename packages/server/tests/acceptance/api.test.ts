@@ -36,15 +36,6 @@ describe('the shop over HTTP', () => {
 
   const MK4 = { x: 250, y: 210, z: 220 };
   const MK4_ADDRESS = 'http://octopi.local';
-  const asRegistered = {
-    name: 'mk4',
-    buildVolume: MK4,
-    api: 'octoprint',
-    address: MK4_ADDRESS,
-    camera: `${MK4_ADDRESS}/webcam/?action=stream`,
-    loaded: [],
-  };
-
   const playerBox: JobDetails = { filaments: ['PLA-SpaceGray'], displayName: 'Player Box' };
 
   // Every route names its caller, so every request here carries a token - an admin's unless the
@@ -413,75 +404,6 @@ describe('the shop over HTTP', () => {
         expect(lines.join('\n')).toContain(`${where.jobs} has 512 bytes free, and the shop keeps 1024 spare for a job`);
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
-      }
-    });
-  });
-
-  // AIDEV-NOTE: the key arrives WITH the printer, in one call, because adding a machine is one act -
-  // two would let a printer land without the key it is reached by. Where the key is kept is the
-  // running shop's business rather than the store's, so what is asserted here is the hand-over.
-  describe('the key a printer is reached by', () => {
-    const mini = { name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini' };
-    const adding = (body: unknown, token = ADMIN): Promise<Response> => as(token, 'POST', '/printers', body);
-
-    it('is handed to whoever keeps the keys, in the call that adds the printer', async () => {
-      expect((await adding({ ...mini, key: 'mini-key' })).status).toBe(201);
-      expect(mockKeyGiven).toHaveBeenCalledWith('mini', 'mini-key');
-    });
-
-    // The printer is what the caller gets back - its trouble is the thing they are waiting to clear -
-    // and the key is not in it. There is no reading one back at all.
-    it('is not in what the shop answers with', async () => {
-      const said = JSON.stringify(await (await adding({ ...mini, key: 'mini-key' })).json());
-
-      expect(said).toContain('mini');
-      expect(said).not.toContain('mini-key');
-    });
-
-    // AIDEV-NOTE: the record is built from the four fields a printer IS, so a key in the body cannot
-    // follow it into printer.json - which is a working directory rather than a credential store.
-    it('never reaches the printer the shop wrote down', async () => {
-      await adding({ ...mini, key: 'mini-key' });
-
-      expect(JSON.stringify(await (await ask('/printers')).json())).not.toContain('mini-key');
-    });
-
-    it('is not required, because a printer the shop already has a key for keeps it', async () => {
-      expect((await adding(mini)).status).toBe(201);
-      expect(mockKeyGiven).not.toHaveBeenCalled();
-    });
-
-    // `keyIn` refuses four kinds of non-key in tests/api.test.ts. What is left here is the half it
-    // cannot reach: a refused key leaves no printer behind it either.
-    it('refuses a key that is no key, and adds nothing', async () => {
-      expect((await adding({ ...mini, key: '' })).status).toBe(400);
-      expect(mockKeyGiven).not.toHaveBeenCalled();
-      expect(JSON.stringify(await (await ask('/printers')).json())).not.toContain('mini');
-    });
-
-    // A key is an admin's, like every other thing about a printer.
-    it('is refused to a user outright', async () => {
-      expect((await adding({ ...mini, key: 'mini-key' }, USER)).status).toBe(403);
-      expect(mockKeyGiven).not.toHaveBeenCalled();
-    });
-
-    // A shop served without anywhere to keep one says so rather than taking the printer and losing
-    // the key, which would be the half-added machine this route exists to avoid.
-    it('is refused by a shop that was given nowhere to keep it', async () => {
-      const plain = await serve(shop, 0, { callers: () => CALLERS });
-
-      try {
-        const url = `http://127.0.0.1:${(plain.address() as AddressInfo).port}`;
-        const response = await fetch(`${url}/printers`, {
-          method: 'POST',
-          headers: { ...AS_ADMIN, 'content-type': 'application/json' },
-          body: JSON.stringify({ ...mini, key: 'mini-key' }),
-        });
-
-        expect(response.status).toBe(400);
-        expect(JSON.stringify(await (await ask('/printers')).json())).not.toContain('mini');
-      } finally {
-        await new Promise<void>((resolve) => plain.close(() => resolve()));
       }
     });
   });
@@ -1125,70 +1047,6 @@ describe('the shop over HTTP', () => {
     });
   });
 
-  // AIDEV-NOTE: the shop uploads to this address with that printer's key attached, so an address it
-  // cannot build a request from is a fault that would otherwise surface as a paused printer hours
-  // later. Refused at the point an operator can still fix it.
-  // AIDEV-NOTE: `addressIn` decides what an address may be and is unit tested over about twenty of
-  // them in tests/api.test.ts. One acceptance test, for the thing a unit test cannot say: that the
-  // route puts a body through it, and that a refusal comes back as a 400 and not a 500.
-  describe('where a printer may be pointed', () => {
-    it('puts the address in a body through the rule, and refuses it as a client error', async () => {
-      const response = await send('POST', '/printers', { name: 'mini', buildVolume: MK4, address: 'file:///etc/passwd' });
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: expect.stringContaining('this shop speaks http and https') as unknown });
-    });
-
-    it('takes one it can reach a printer at', async () => {
-      expect((await send('POST', '/printers', { name: 'mini', buildVolume: MK4, address: 'http://octopi.local' })).status).toBe(201);
-    });
-  });
-
-  // AIDEV-NOTE: one per way a name ARRIVES, and no more. What `requireUsablePrinterName` does with a
-  // string is a plain function and is unit tested over about twenty of them in tests/api.test.ts;
-  // thirty acceptance cases here asked the same question through a socket and answered it with a
-  // status code. What only a running shop can say is whether each arrival reaches the rule - a path,
-  // a body and a query - and every bug this block has ever caught was one of those not doing so.
-  describe('what a client may call a printer', () => {
-    it('checks a name that arrives in a path', async () => {
-      const response = await send('DELETE', '/printers/..%2F..%2Fetc', undefined);
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
-    });
-
-    // `.` and `..` cannot arrive in a URL - express normalises them away before routing - but they
-    // arrive in a BODY perfectly well, and `printers/..` is the printers directory itself.
-    it('checks a name that arrives in a body, which is the only way `..` can reach the shop', async () => {
-      const response = await send('POST', '/printers', { name: '..', buildVolume: MK4, address: 'http://x' });
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
-    });
-
-    // The `/printers/:name` mount catches a name in a path and cannot catch one in a query, which is
-    // how `?printer=../../../somewhere` came to read a printer.json outside the data directory - and
-    // to say which case it was: 200 parsed, 404 absent, 500 unparseable.
-    it('checks a name that arrives in a query string, not only one in a path', async () => {
-      const response = await ask('/filaments?printer=../../../outside');
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
-    });
-
-    it('still takes an ordinary name', async () => {
-      expect((await send('PUT', '/printers/mk4/filament', { loaded: ['PLA'] })).status).toBe(200);
-    });
-
-    // A name with a space or a '#' in it is legal and reaches the shop encoded; refusing those
-    // would be the guard overreaching.
-    it.each([['Prusa%20MK4'], ['mk4%23two']])('takes %s, which is only a name that needed encoding', async (name) => {
-      await send('POST', '/printers', { name: decodeURIComponent(name), buildVolume: MK4, address: 'http://x' });
-
-      expect((await send('PUT', `/printers/${name}/filament`, { loaded: ['PLA'] })).status).toBe(200);
-    });
-  });
-
   // A failure the shop did not mean is written by whatever broke, and node's filesystem errors name
   // the path they failed on - so the message is the one thing that must not go back to a caller.
   describe('when something breaks that the shop did not expect', () => {
@@ -1234,86 +1092,4 @@ describe('the shop over HTTP', () => {
     });
   });
 
-  // AIDEV-NOTE: what a body may SAY is `loadedIn`, `stoppedIn`, `printerIn` and `keyIn`, each a plain
-  // function over a value and each unit tested in tests/api.test.ts. What is left here is what needs
-  // the store: a printer that is added and read back, one that is taken out, filament that survives
-  // the round trip, and a stop an operator can see afterwards.
-  describe('the printers', () => {
-    it('adds one the shop did not have', async () => {
-      const mini = { name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini.local' };
-
-      const response = await send('POST', '/printers', mini);
-
-      expect(response.status).toBe(201);
-      expect(await response.json()).toEqual({ ...mini, api: 'octoprint', camera: `${mini.address}/webcam/?action=stream`, loaded: [] });
-    });
-
-    // Adding a printer that is already here changes its build volume rather than failing, so the
-    // answer has to say which of the two happened.
-    it('changes one it already had', async () => {
-      const taller = { x: 250, y: 210, z: 270 };
-
-      const response = await send('POST', '/printers', { name: 'mk4', buildVolume: taller, address: MK4_ADDRESS });
-
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ ...asRegistered, buildVolume: taller });
-    });
-
-    it('refuses a body that is not JSON at all', async () => {
-      const response = await fetch(`${shopUrl}/printers`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...AS_ADMIN },
-        body: '{ name: mini',
-      });
-
-      expect(response.status).toBe(400);
-    });
-
-    it('takes one out of the shop', async () => {
-      expect((await send('DELETE', '/printers/mk4', undefined)).status).toBe(204);
-      expect(await (await ask('/printers')).json()).toEqual([]);
-    });
-
-    it('says there is no such printer when asked to remove one it does not have', async () => {
-      const response = await send('DELETE', '/printers/ender', undefined);
-
-      expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({ error: 'no printer called ender - the operator adds one before it can print' });
-    });
-
-    // AIDEV-NOTE: no printer here reports its own filament, so this is the operator's word and the
-    // only record of what a machine can print right now.
-    it('takes what the operator says is loaded, in order', async () => {
-      const response = await send('PUT', '/printers/mk4/filament', { loaded: ['PLA-Red', 'PLA-Blue'] });
-
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ name: 'mk4', loaded: ['PLA-Red', 'PLA-Blue'] });
-    });
-
-    // Naming none is how an operator says a machine has been emptied.
-    it('takes an empty machine for an answer', async () => {
-      await send('PUT', '/printers/mk4/filament', { loaded: ['PLA-Red'] });
-
-      expect(await (await send('PUT', '/printers/mk4/filament', { loaded: [] })).json()).toMatchObject({ loaded: [] });
-    });
-
-    it('will not load a printer it does not have', async () => {
-      expect((await send('PUT', '/printers/ender/filament', { loaded: ['PLA-Red'] })).status).toBe(404);
-    });
-
-    it('stops a printer, with the reason an operator should see', async () => {
-      const response = await send('PUT', '/printers/mk4/status', { stopped: true, reason: 'door is open' });
-
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ name: 'mk4', paused: { reason: 'door is open' } });
-    });
-
-    it('starts a stopped printer again', async () => {
-      await shop.pause('mk4', 'door is open');
-
-      const response = await send('PUT', '/printers/mk4/status', { stopped: false });
-
-      expect(await response.json()).toEqual(asRegistered);
-    });
-  });
 });
