@@ -15,9 +15,15 @@ import { aDataDirectory, parentOf } from '../aDataDirectory';
 import { layoutUnder } from '../../src/dataLayout';
 import type { DataLayout } from '../../src/dataLayout';
 
-// AIDEV-NOTE: real HTTP against a real listener on an ephemeral port, over a real data directory. There is no
-// unit-level cover for the routes on purpose - what is worth proving here is what goes over the
-// wire, and a multipart body handed to a fake request would prove only that the test can build one.
+// AIDEV-NOTE: real HTTP against a real listener on an ephemeral port, over a real data directory -
+// for what only that can say. A multipart body handed to a fake request would prove only that the
+// test can build one, and a cookie's attributes, a drained upload and a 503 are things a client
+// reads off the wire.
+//
+// What does NOT need any of it has gone: the body rules are functions over a value in tests/api.test.ts,
+// the permission table is `requireTheirRole` beside them, and where the guard sits is tests/guard.test.ts,
+// which drives this same app in-process because an express app is a function of a request. What
+// express makes of a raw request line is tests/assumptions/theRequestLine.test.ts.
 describe('the shop over HTTP', () => {
   let where: DataLayout;
   let shop: JobStore;

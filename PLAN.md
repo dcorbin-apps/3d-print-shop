@@ -120,11 +120,13 @@ not among them; see Fix Tests.
 
 ### Fix Tests
 
-A second pass over every acceptance test, 2026-09-12. Each item is an acceptance test making a claim
-a unit test already makes, or could make better and faster. Every one has a sibling that IS unit
-tested, which is what makes these oversights rather than decisions - the same test that found the
-last batch. `api.test.ts` is 142 cases in 10.8s and about 40 of them are below; the timings are from
-a run of that file on its own.
+A second pass over every acceptance test, 2026-09-12. All seven items are done. The acceptance suite
+went 243 to 205 and `acceptance/api.test.ts` 142 to 107; unit tests went 1028 to 1148, and a third
+suite of 16 holds what third-party code does. It found three things that were not about tests at
+all: two 500s an unnamed caller could provoke, a missing row in `statusFor` that meant the one rule
+about a password was never said to anybody, and that nobody but an admin could log out.
+
+What is left of it is below: the files the corrected rule re-opened, which have not been argued yet.
 
 #### Re-opened by the rule above, and not yet decided
 
