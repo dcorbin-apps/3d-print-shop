@@ -77,49 +77,23 @@ work to do.
 An acceptance test is for what only a running thing can tell you - a process that restarts, a signal,
 a socket somebody else holds, a route being wired to what it claims. Everything else a unit test says
 faster and more precisely: an AT reports a status code where a UT reports which rule refused and why.
-Both of these came out of writing twelve acceptance tests for one pure function and being asked why.
 
-- [ ] Exported functions that no unit test names. Every one below has a sibling that IS unit tested,
-  which is what makes them oversights rather than decisions:
-  - `callerAdmin.ts` has no test file at all - `askForANewPassword`, `addSomebody`, `changePassword`,
-    `giveAToken`, `listCallers`, `migrateTheCallers`. It answers in LINES for exactly this reason, so
-    there is nothing to stand up to test it
-  - pure functions exercised only through HTTP, which reports a status where a UT would report the
-    rule: `requireUsablePrinterName` (api.ts, and ~30 acceptance cases lean on it), `fitsInside`,
-    `canTake` and `whereToWatch` (Printer.ts)
-  - `whySocketFailed` (OctoPrint.ts), beside `whyUnreachable`, `reconnectDelayMs` and
-    `octoPrintCamera`, which are all unit tested
-  - `readJobId` and `readRole` (cli.ts), beside `readPort` and `readMegabytes`, which are
-  - `askSecretlyTwice` (prompt.ts), beside `askSecretly`, which is
-  - `defaultToken` and `defaultShopUrl` (client) - an environment variable and a file, and nothing
-    reads either in a test
-  - `LogIn.tsx` and `useShop.ts` (ui) - the only two pieces of the page with no test of their own
+Both of the items that were here are done. What is left of that sweep, deliberately:
 
-  NOT this list, and deliberately: the empty `extends Error` classes (`NotAKnownCaller`, `NotTheirs`,
-  `TooManyGuesses`, `TooMuchToTake`, `NoPrinterCanTakeIt`, `DataInUse`, `NotAuthenticated`), where a
-  unit test would assert that `class X extends Error` extends Error. What is worth testing about them
-  is the status each maps to, which is `statusFor`. Nor `createApi`, `claimData`, `pushSocket`,
-  `OctoPrintMachines` or `startOctoPrintServer`, which are the running things ATs are for
+**Twelve exported things no unit test names, and none of them should.** Seven are empty `extends
+Error` subclasses (`NotAKnownCaller`, `NotTheirs`, `TooManyGuesses`, `TooMuchToTake`,
+`NoPrinterCanTakeIt`, `DataInUse`, `NotAuthenticated`), where a test would assert that a class
+extending Error extends Error - what is worth testing about them is the status each maps to, which is
+`statusFor` and is tested. The other five are the running things an AT is for: `createApi`,
+`claimData`, `pushSocket`, `OctoPrintMachines`, `startOctoPrintServer`.
 
-- [ ] Acceptance tests that a unit test would say better. Roughly 45 of the 125 declarations in
-  `tests/acceptance/api.test.ts` and 7 of the 20 in the client's `httpShop.test.ts` stand up a real
-  server to exercise a pure function:
-  - `what a client may call a printer` - nine declarations, about thirty cases, all of them
-    `requireUsablePrinterName` over a string. Keep one per arrival shape (a path, a body), which is
-    the wiring; the rest are a table
-  - `where a printer may be pointed` - `addressIn` over a URL. Private, so it wants exporting the way
-    `onePrinterName` just was
-  - `a request that brought no body` - `bodyOf`
-  - in `the printers`: `refuses a body that is not JSON at all`, `refuses filament that is not a list
-    of names`, `will not stop a printer without a reason`. These are body-shape rules written inline
-    in the route handlers, so this one is a refactor first - pull them out beside `printerIn` and
-    `keyIn`, then test them there
-  - in the client: the five `hands back ... as a time` and `escapes a name on its way into the path`
-    and `falls back to the status when a refusal says nothing` - `asJob`, `asPrinter`, `since`,
-    `printerPath` and `refusal`, none of which need a server
+**`theRunningShop.test.ts` keeps all 39.** Restarts, signals, the data lock, the listen address and
+`init` - a spawned process is the only thing that can answer any of them.
 
-  `theRunningShop.test.ts` is NOT on this list. Its 39 are restarts, signals, the data lock, the
-  listen address and `init` - a spawned process is the only thing that can answer any of them
+- [ ] `reconnectRecovery.test.ts` failed once in four full runs, timing out at 63 seconds, and passed
+  on its own and on the three runs after it. An acceptance test that fails one time in four is worth
+  less than no test there, because what it teaches is to run the suite again. It drives a real socket
+  through a reconnect and a backoff, so the suspect is a wait that is a race rather than a wait
 
 ### The service
 

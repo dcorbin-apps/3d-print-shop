@@ -1,5 +1,8 @@
 import type { Readable, Writable } from 'node:stream';
 
+/** Where a secret is typed. A terminal when there is one, and a stream that ends when there is not. */
+export type Asked = Readable & { isTTY?: boolean; setRawMode?: (raw: boolean) => void };
+
 // AIDEV-NOTE: a password is not an argument, ever. argv is in `ps` for every user on the machine and
 // in the shell's history file afterwards, which is the same reason a printer's key was never a flag.
 // So it is asked for, and the terminal is told not to echo it.
@@ -16,8 +19,8 @@ import type { Readable, Writable } from 'node:stream';
 export async function askSecretlyTwice(
   asking: string,
   again: string,
-  input: Readable & { isTTY?: boolean; setRawMode?: (raw: boolean) => void } = process.stdin,
-  output: Writable = process.stdout
+  input: Asked = process.stdin,
+  output: Writable = process.stdout,
 ): Promise<[string, string]> {
   if (input.isTTY === true && input.setRawMode !== undefined) {
     return [await askSecretly(asking, input, output), await askSecretly(again, input, output)];
@@ -29,11 +32,7 @@ export async function askSecretlyTwice(
 }
 
 /** Ask for something nobody should be able to read over a shoulder, and answer with what was typed. */
-export async function askSecretly(
-  asking: string,
-  input: Readable & { isTTY?: boolean; setRawMode?: (raw: boolean) => void } = process.stdin,
-  output: Writable = process.stdout
-): Promise<string> {
+export async function askSecretly(asking: string, input: Asked = process.stdin, output: Writable = process.stdout): Promise<string> {
   if (input.isTTY !== true || input.setRawMode === undefined) return readALine(input);
 
   output.write(asking);

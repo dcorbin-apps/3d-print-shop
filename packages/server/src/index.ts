@@ -4,10 +4,16 @@ export {
   NotAKnownCaller,
   NotTheirs,
   UnusableRequest,
+  addressIn,
+  bodyOf,
   createApi,
+  keyIn,
+  loadedIn,
   onePrinterName,
+  printerIn,
   requireUsablePrinterName,
   serve,
+  stoppedIn,
 } from './api.js';
 export type { ShopHooks } from './api.js';
 export {

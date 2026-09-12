@@ -258,7 +258,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // miss, and scrypt in the middle whatever happens, so that "how long did it take" says nothing
   // either.
   api.post(SESSIONS_PATH, async (request, response) => {
-    const { id, password } = bodyOf(request);
+    const { id, password } = bodyOf(request.body);
     if (typeof id !== 'string' || typeof password !== 'string') throw new UnusableRequest('a login is an id and a password');
 
     const from = request.ip ?? 'nowhere';
@@ -404,7 +404,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   api.put('/me/password', async (request, response) => {
     if (passwordChanged === undefined) throw new UnusableRequest('this shop was not given anywhere to keep a password');
 
-    const { current, password } = bodyOf(request);
+    const { current, password } = bodyOf(request.body);
     if (typeof current !== 'string' || typeof password !== 'string') {
       throw new UnusableRequest('changing a password is the one you have now and the one you want');
     }
@@ -462,7 +462,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // one is a value on the same route, and a verdict on a job that has not finished printing is a 409
   // on the thing being set. Only rejecting answers with a job - the other two leave nothing to say.
   api.put('/jobs/:id/verdict', async (request, response) => {
-    const { verdict } = bodyOf(request);
+    const { verdict } = bodyOf(request.body);
 
     if (verdict !== 'approved' && verdict !== 'rejected' && verdict !== 'abandoned') {
       throw new UnusableRequest(`a verdict is approved, rejected or abandoned, not ${JSON.stringify(verdict)}`);
@@ -563,32 +563,22 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // AIDEV-NOTE: the operator's word for what is on the machine, because no printer here reports its
   // own filament. It is also a wake-up: what a shop can print changes the instant this does.
   api.put('/printers/:name/filament', async (request, response) => {
-    const { loaded } = bodyOf(request);
-    if (!Array.isArray(loaded) || loaded.some((filament) => typeof filament !== 'string' || filament.trim() === '')) {
-      throw new UnusableRequest('loaded is the filaments on the machine, in order, and an empty list means none');
-    }
-
-    const printer = await shop.load(request.params.name, loaded as string[]);
+    const printer = await shop.load(request.params.name, loadedIn(request.body));
     log.info('filament loaded', { printer: printer.name, loaded: printer.loaded });
 
     response.json(printer);
   });
 
   api.put('/printers/:name/status', async (request, response) => {
-    const { stopped, reason } = bodyOf(request);
+    const asked = stoppedIn(request.body);
 
-    if (stopped === true) {
-      if (typeof reason !== 'string' || reason.trim() === '') {
-        throw new UnusableRequest('stopping a printer needs a reason an operator can act on');
-      }
-      await shop.pause(request.params.name, reason);
-      log.info('printer stopped', { printer: request.params.name, why: reason, by: request.caller.name });
-    } else if (stopped === false) {
+    if (asked.stopped) {
+      await shop.pause(request.params.name, asked.reason);
+      log.info('printer stopped', { printer: request.params.name, why: asked.reason, by: request.caller.name });
+    } else {
       await shop.resume(request.params.name);
       log.info('printer started', { printer: request.params.name, by: request.caller.name });
       started(request.params.name);
-    } else {
-      throw new UnusableRequest('a printer status says stopped true or false');
     }
 
     response.json(await shop.printerNamed(request.params.name));
@@ -736,7 +726,7 @@ export function requireUsablePrinterName(name: string): void {
 //
 // Credentials and a query are refused rather than dropped: silently ignoring half of what an
 // operator typed is how a shop ends up talking to something other than what they meant.
-function addressIn(address: string): string {
+export function addressIn(address: string): string {
   const refuse = (why: string): never => {
     throw new UnusableRequest(`${JSON.stringify(address)} is not an address this shop can reach a printer at: ${why}`);
   };
@@ -761,9 +751,7 @@ function addressIn(address: string): string {
 // AIDEV-NOTE: express.json() leaves `body` undefined when there was none, or when it did not say it
 // was JSON - and destructuring that throws a TypeError, which reaches the client as a 500. A request
 // with no body is the CLIENT's mistake, and the route's own check is what should name it.
-function bodyOf(request: Request): Record<string, unknown> {
-  const body = request.body as unknown;
-
+export function bodyOf(body: unknown): Record<string, unknown> {
   return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
 }
 
@@ -771,7 +759,7 @@ function bodyOf(request: Request): Record<string, unknown> {
 // it is what the shop reaches one with, and the two are kept in different files for that reason.
 // Absent is a printer whose key the shop already has, or one nobody has given a key to yet; empty is
 // somebody who meant to give one and did not, which is worth saying rather than storing.
-function keyIn(body: unknown): string | undefined {
+export function keyIn(body: unknown): string | undefined {
   const { key } = (body ?? {}) as { key?: unknown };
   if (key === undefined) return undefined;
   if (typeof key !== 'string' || key.trim() === '') throw new UnusableRequest('a key is the string the shop reaches the printer with');
@@ -779,7 +767,39 @@ function keyIn(body: unknown): string | undefined {
   return key;
 }
 
-function printerIn(body: unknown): PrinterRecord {
+// AIDEV-NOTE: out of the route and beside the other two, because a rule about a body is a rule about
+// a value - and inline it could only be reached by standing up a server and reading a status code
+// back, which says that something was refused and not which rule did it.
+/** What an operator says is on the machine, in extruder order. An empty list means nothing is. */
+export function loadedIn(body: unknown): string[] {
+  const { loaded } = bodyOf(body);
+  if (!Array.isArray(loaded) || loaded.some((filament) => typeof filament !== 'string' || filament.trim() === '')) {
+    throw new UnusableRequest('loaded is the filaments on the machine, in order, and an empty list means none');
+  }
+
+  return loaded as string[];
+}
+
+// A reason is asked for only when stopping: starting one needs no explanation, and demanding one
+// would be the shop asking an operator to justify fixing something.
+/** Whether an operator is stopping a printer or starting it, and what they said about stopping it. */
+export function stoppedIn(body: unknown): { stopped: true; reason: string } | { stopped: false } {
+  const { stopped, reason } = bodyOf(body);
+
+  if (stopped === true) {
+    if (typeof reason !== 'string' || reason.trim() === '') {
+      throw new UnusableRequest('stopping a printer needs a reason an operator can act on');
+    }
+
+    return { stopped: true, reason };
+  }
+
+  if (stopped === false) return { stopped: false };
+
+  throw new UnusableRequest('a printer status says stopped true or false');
+}
+
+export function printerIn(body: unknown): PrinterRecord {
   const { name, buildVolume, address, api } = (body ?? {}) as {
     name?: unknown;
     buildVolume?: unknown;

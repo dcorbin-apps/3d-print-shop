@@ -158,7 +158,7 @@ export class HttpShop implements Shop {
 }
 
 // A multipart body carries its own content type, boundary and all; JSON has to say so itself.
-function sending(body: unknown): { headers?: Record<string, string>; body?: FormData | string } {
+export function sending(body: unknown): { headers?: Record<string, string>; body?: FormData | string } {
   if (body === undefined) return {};
   if (body instanceof FormData) return { body };
 
@@ -167,7 +167,7 @@ function sending(body: unknown): { headers?: Record<string, string>; body?: Form
 
 // A name is whatever an operator typed, and one carrying a `#` would otherwise make a URL whose
 // path stops there.
-function printerPath(name: string): string {
+export function printerPath(name: string): string {
   return `/printers/${encodeURIComponent(name)}`;
 }
 
@@ -175,7 +175,7 @@ async function bodyOf(response: Response): Promise<unknown> {
   return response.status === 204 ? undefined : response.json();
 }
 
-async function refusal(response: Response): Promise<string> {
+export async function refusal(response: Response): Promise<string> {
   const said = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined;
 
   return typeof said?.error === 'string' ? said.error : `${response.status} ${response.statusText}`;
@@ -193,11 +193,11 @@ type WirePrinter = Omit<RegisteredPrinter, 'paused' | 'unreachable' | 'refused' 
   outOfContact?: WireTrouble;
 };
 
-function asJob(job: WireJob): Job {
+export function asJob(job: WireJob): Job {
   return { ...job, submittedAt: new Date(job.submittedAt) };
 }
 
-function asPrinter(printer: WirePrinter): RegisteredPrinter {
+export function asPrinter(printer: WirePrinter): RegisteredPrinter {
   return {
     ...printer,
     paused: since(printer.paused),
@@ -207,6 +207,6 @@ function asPrinter(printer: WirePrinter): RegisteredPrinter {
   };
 }
 
-function since(trouble: WireTrouble | undefined): { reason: string; since: Date } | undefined {
+export function since(trouble: WireTrouble | undefined): { reason: string; since: Date } | undefined {
   return trouble && { ...trouble, since: new Date(trouble.since) };
 }

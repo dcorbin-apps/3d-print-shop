@@ -2,17 +2,26 @@ import { TOKEN_ENV, defaultTokenFile } from '@3d-print-shop/client';
 import type { Role } from '@3d-print-shop/client';
 import { addCaller, callersIn, issueToken, migrateCallers, setPassword } from './credentials.js';
 import { askSecretlyTwice } from './prompt.js';
+import type { Asked } from './prompt.js';
+import type { Writable } from 'node:stream';
+
+// AIDEV-NOTE: handed in rather than reached for, because the alternative is a test that needs a
+// terminal - the same reason JobStore takes `freeBytes` and OctoPrint takes an http client. The
+// default is the real one, so nothing that calls these had to change.
+/** How a new password is got out of whoever is running the command. */
+export type AskForAPassword = () => Promise<string>;
 
 // AIDEV-NOTE: the operator's half of WHO, kept apart from the command line that calls it and
 // answering with lines rather than printing - the same shape as printerAdmin.ts and jobAdmin.ts,
 // and for the same reasons. Unlike those, these are not clients of a running shop: they write the
 // file `serve` reads, because a shop cannot be asked to give somebody a way in that it does not yet
 // answer. What they all end with is the same reminder, since a running shop is holding the old file.
-const AND_SIGNAL = 'the shop re-reads this on SIGHUP - `kill -HUP <pid>`, `systemctl reload 3d-print-shop`, or `launchctl kill HUP system/com.dcorbin.3d-print-shop`';
+const AND_SIGNAL =
+  'the shop re-reads this on SIGHUP - `kill -HUP <pid>`, `systemctl reload 3d-print-shop`, or `launchctl kill HUP system/com.dcorbin.3d-print-shop`';
 
 /** A password, asked for twice, because nobody can see what they typed the first time. */
-export async function askForANewPassword(asking = 'password: ', again = 'and again: '): Promise<string> {
-  const [said, confirmed] = await askSecretlyTwice(asking, again);
+export async function askForANewPassword(asking = 'password: ', again = 'and again: ', input?: Asked, output?: Writable): Promise<string> {
+  const [said, confirmed] = await askSecretlyTwice(asking, again, input, output);
 
   if (said !== confirmed) throw new Error('those are not the same password, and nothing was changed');
 
@@ -20,8 +29,15 @@ export async function askForANewPassword(asking = 'password: ', again = 'and aga
 }
 
 /** Add somebody this shop may answer: a person with a password, or a machine with a token. */
-export async function addSomebody(etc: string, id: string, name: string, role: Role, asAMachine: boolean): Promise<string[]> {
-  const token = await addCaller(etc, id, name, role, asAMachine ? undefined : await askForANewPassword());
+export async function addSomebody(
+  etc: string,
+  id: string,
+  name: string,
+  role: Role,
+  asAMachine: boolean,
+  asking: AskForAPassword = askForANewPassword,
+): Promise<string[]> {
+  const token = await addCaller(etc, id, name, role, asAMachine ? undefined : await asking());
 
   if (token === undefined) return [`${name} is an ${role} of this shop, and logs in with the password you just set.`, '', AND_SIGNAL];
 
@@ -34,8 +50,8 @@ export async function addSomebody(etc: string, id: string, name: string, role: R
  * Their tokens are left alone: a password is a person's and a token is a machine's, so changing one
  * is not a reason to go round every machine they slice with.
  */
-export async function changePassword(etc: string, id: string): Promise<string[]> {
-  await setPassword(etc, id, await askForANewPassword());
+export async function changePassword(etc: string, id: string, asking: AskForAPassword = askForANewPassword): Promise<string[]> {
+  await setPassword(etc, id, await asking());
 
   return [`${id} has a new password.`, '', 'every browser logged in as them is logged out once the shop has re-read this.', '', AND_SIGNAL];
 }

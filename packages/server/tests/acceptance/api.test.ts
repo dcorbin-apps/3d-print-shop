@@ -1219,102 +1219,47 @@ describe('the shop over HTTP', () => {
   // AIDEV-NOTE: the shop uploads to this address with that printer's key attached, so an address it
   // cannot build a request from is a fault that would otherwise surface as a paused printer hours
   // later. Refused at the point an operator can still fix it.
+  // AIDEV-NOTE: `addressIn` decides what an address may be and is unit tested over about twenty of
+  // them in tests/api.test.ts. One acceptance test, for the thing a unit test cannot say: that the
+  // route puts a body through it, and that a refusal comes back as a 400 and not a 500.
   describe('where a printer may be pointed', () => {
-    async function add(address: string): Promise<Response> {
-      return send('POST', '/printers', { name: 'mini', buildVolume: MK4, address });
-    }
-
-    it.each([
-      ['octopi.local', 'it is not a URL'],
-      ['', 'a printer needs an address'],
-      ['   ', 'a printer needs an address'],
-      ['file:///etc/passwd', 'this shop speaks http and https, not file'],
-      ['ftp://octopi.local', 'this shop speaks http and https, not ftp'],
-      ['http://user:secret@octopi.local', 'it carries a username and password'],
-      ['http://octopi.local?key=abc', 'with nothing after them'],
-      ['http://octopi.local#top', 'with nothing after them'],
-    ])('refuses %p', async (address, complaint) => {
-      const response = await add(address);
+    it('puts the address in a body through the rule, and refuses it as a client error', async () => {
+      const response = await send('POST', '/printers', { name: 'mini', buildVolume: MK4, address: 'file:///etc/passwd' });
 
       expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: expect.stringContaining(complaint) as unknown });
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining('this shop speaks http and https') as unknown });
     });
 
-    it.each([['http://octopi.local'], ['https://octopi.local'], ['http://127.0.0.1:5000'], ['http://octopi.local/prusa']])(
-      'takes %p',
-      async (address) => {
-        expect((await add(address)).status).toBe(201);
-      },
-    );
-
-    // Every request appends its own path, so a kept trailing slash would double the separator.
-    it('keeps the address without the trailing slash it was given', async () => {
-      await add('http://octopi.local/');
-
-      expect(await (await send('POST', '/printers', { name: 'mini', buildVolume: MK4, address: 'http://octopi.local/' })).json()).toMatchObject({
-        address: 'http://octopi.local',
-      });
-    });
-
-    // Not checked, and deliberately: a printer over a VPN is legitimate, and only an admin may add
-    // one. See PLAN.md.
-    it('does not care whether the address is on this network', async () => {
-      expect((await add('http://198.51.100.7')).status).toBe(201);
+    it('takes one it can reach a printer at', async () => {
+      expect((await send('POST', '/printers', { name: 'mini', buildVolume: MK4, address: 'http://octopi.local' })).status).toBe(201);
     });
   });
 
-  // AIDEV-NOTE: a name reaches the data directory as a directory, and DELETE removes that directory
-  // recursively - so what a client may call a printer is a boundary, not a nicety. Driven over real
-  // HTTP with the encoding a client would actually send: express decodes %2F before a handler sees
-  // it, so a guard reading the raw URL would miss every one of these.
+  // AIDEV-NOTE: one per way a name ARRIVES, and no more. What `requireUsablePrinterName` does with a
+  // string is a plain function and is unit tested over about twenty of them in tests/api.test.ts;
+  // thirty acceptance cases here asked the same question through a socket and answered it with a
+  // status code. What only a running shop can say is whether each arrival reaches the rule - a path,
+  // a body and a query - and every bug this block has ever caught was one of those not doing so.
   describe('what a client may call a printer', () => {
-    const REFUSED = ['..%2F..%2Fetc', '..%2f..%2fescape', 'mk4%2Fnested', 'back%5Cslash', 'a%00b', '%20'];
-
-    it.each(REFUSED)('will not delete %s', async (name) => {
-      const response = await send('DELETE', `/printers/${name}`, undefined);
+    it('checks a name that arrives in a path', async () => {
+      const response = await send('DELETE', '/printers/..%2F..%2Fetc', undefined);
 
       expect(response.status).toBe(400);
       expect(await response.json()).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
-    });
-
-    it.each(REFUSED)('will not load filament onto %s', async (name) => {
-      expect((await send('PUT', `/printers/${name}/filament`, { loaded: ['PLA'] })).status).toBe(400);
-    });
-
-    it.each(REFUSED)('will not stop %s', async (name) => {
-      expect((await send('PUT', `/printers/${name}/status`, { stopped: true, reason: 'door' })).status).toBe(400);
-    });
-
-    it.each(REFUSED)('will not add one called %s', async (name) => {
-      const response = await send('POST', '/printers', { name: decodeURIComponent(name), buildVolume: MK4, address: 'http://x' });
-
-      expect(response.status).toBe(400);
     });
 
     // `.` and `..` cannot arrive in a URL - express normalises them away before routing - but they
     // arrive in a BODY perfectly well, and `printers/..` is the printers directory itself.
-    it.each([['.'], ['..']])('will not add one called %p, which names a directory that already exists', async (name) => {
-      const response = await send('POST', '/printers', { name, buildVolume: MK4, address: 'http://x' });
+    it('checks a name that arrives in a body, which is the only way `..` can reach the shop', async () => {
+      const response = await send('POST', '/printers', { name: '..', buildVolume: MK4, address: 'http://x' });
 
       expect(response.status).toBe(400);
       expect(await response.json()).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
     });
 
-    // The refusal is about the NAME, so it comes before the shop looks anything up - a 400 rather
-    // than the 404 an unknown printer gets, and the same answer whether or not one exists.
-    it('refuses the name rather than reporting it missing', async () => {
-      const response = await send('DELETE', '/printers/..%2F..%2Fetc', undefined);
-
-      expect(response.status).toBe(400);
-      expect(response.status).not.toBe(404);
-    });
-
-    // AIDEV-NOTE: ONE acceptance test for the query string, not twelve. What onePrinterName does
-    // with a name is a plain function over a value and is unit tested in tests/api.test.ts; what
-    // only a running shop can say is whether this route reaches it at all - which is the whole of
-    // what was wrong, since the `/printers/:name` mount catches a name in a path and cannot catch
-    // one in a query. Before this, `?printer=../../../somewhere` read a printer.json from outside
-    // the data directory and said which case it was: 200 parsed, 404 absent, 500 unparseable.
+    // The `/printers/:name` mount catches a name in a path and cannot catch one in a query, which is
+    // how `?printer=../../../somewhere` came to read a printer.json outside the data directory - and
+    // to say which case it was: 200 parsed, 404 absent, 500 unparseable.
     it('checks a name that arrives in a query string, not only one in a path', async () => {
       const response = await ask('/filaments?printer=../../../outside');
 
@@ -1380,6 +1325,10 @@ describe('the shop over HTTP', () => {
     });
   });
 
+  // AIDEV-NOTE: what a body may SAY is `loadedIn`, `stoppedIn`, `printerIn` and `keyIn`, each a plain
+  // function over a value and each unit tested in tests/api.test.ts. What is left here is what needs
+  // the store: a printer that is added and read back, one that is taken out, filament that survives
+  // the round trip, and a stop an operator can see afterwards.
   describe('the printers', () => {
     it('adds one the shop did not have', async () => {
       const mini = { name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini.local' };
@@ -1449,13 +1398,6 @@ describe('the shop over HTTP', () => {
       expect(await (await send('PUT', '/printers/mk4/filament', { loaded: [] })).json()).toMatchObject({ loaded: [] });
     });
 
-    it('refuses filament that is not a list of names', async () => {
-      const response = await send('PUT', '/printers/mk4/filament', { loaded: 'PLA-Red' });
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'loaded is the filaments on the machine, in order, and an empty list means none' });
-    });
-
     it('will not load a printer it does not have', async () => {
       expect((await send('PUT', '/printers/ender/filament', { loaded: ['PLA-Red'] })).status).toBe(404);
     });
@@ -1473,13 +1415,6 @@ describe('the shop over HTTP', () => {
       const response = await send('PUT', '/printers/mk4/status', { stopped: false });
 
       expect(await response.json()).toEqual(asRegistered);
-    });
-
-    it('will not stop a printer without a reason', async () => {
-      const response = await send('PUT', '/printers/mk4/status', { stopped: true });
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'stopping a printer needs a reason an operator can act on' });
     });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Readable } from 'node:stream';
-import { CouldNotReach, OctoPrint, octoPrintCamera, reconnectAfter, reconnectDelayMs, whyUnreachable } from '../src';
+import { CouldNotReach, OctoPrint, octoPrintCamera, reconnectAfter, reconnectDelayMs, whySocketFailed, whyUnreachable } from '../src';
 import type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from '../src';
 
 interface MockPushSocket extends PushSocket {
@@ -52,7 +52,7 @@ describe('why a machine could not be reached', () => {
 
   it('falls back to what the failure said when there is no code at all', () => {
     expect(whyUnreachable(new Error('something else entirely'), 'http://octopi.local')).toBe(
-      'http://octopi.local could not be reached: something else entirely'
+      'http://octopi.local could not be reached: something else entirely',
     );
   });
 });
@@ -182,7 +182,7 @@ describe('OctoPrint', () => {
           method: 'POST',
           headers: { 'X-Api-Key': 'test-key', 'Content-Type': 'application/json' },
           body: JSON.stringify({ passive: true }),
-        })
+        }),
       );
     });
 
@@ -246,7 +246,7 @@ describe('OctoPrint', () => {
       mockWs.onclose!();
 
       await expect(promise).rejects.toThrow(
-        'the push socket to http://octoprint.local closed before it opened: nothing is listening at http://octoprint.local (ECONNREFUSED)'
+        'the push socket to http://octoprint.local closed before it opened: nothing is listening at http://octoprint.local (ECONNREFUSED)',
       );
     });
 
@@ -337,18 +337,12 @@ describe('OctoPrint', () => {
 
     it('POSTs to /api/files/local', async () => {
       await adapter.send(REMOTE_PATH, gcode());
-      expect(mockHttpClient).toHaveBeenCalledWith(
-        'http://octoprint.local/api/files/local',
-        expect.objectContaining({ method: 'POST' })
-      );
+      expect(mockHttpClient).toHaveBeenCalledWith('http://octoprint.local/api/files/local', expect.objectContaining({ method: 'POST' }));
     });
 
     it('includes X-Api-Key header', async () => {
       await adapter.send(REMOTE_PATH, gcode());
-      expect(mockHttpClient).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ headers: { 'X-Api-Key': 'test-key' } })
-      );
+      expect(mockHttpClient).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ headers: { 'X-Api-Key': 'test-key' } }));
     });
 
     it('sends a FormData body', async () => {
@@ -426,9 +420,7 @@ describe('OctoPrint', () => {
 
     it('throws when upload response is not ok', async () => {
       mockHttpClient.mockResolvedValue(makeErrorResponse(500, 'Internal Server Error'));
-      await expect(adapter.send(REMOTE_PATH, gcode())).rejects.toThrow(
-        'OctoPrint upload failed: 500 Internal Server Error'
-      );
+      await expect(adapter.send(REMOTE_PATH, gcode())).rejects.toThrow('OctoPrint upload failed: 500 Internal Server Error');
     });
 
     // The machine ANSWERED. Asking again re-sends the plate to be told the same thing, so this is
@@ -480,7 +472,7 @@ describe('OctoPrint', () => {
         },
         () => {
           settled = true;
-        }
+        },
       );
 
       sendEvent('PrintFailed', 'plates/other.gcode');
@@ -595,7 +587,7 @@ describe('OctoPrint', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ command: 'cancel' }),
-        })
+        }),
       );
     });
 
@@ -605,15 +597,13 @@ describe('OctoPrint', () => {
         expect.any(String),
         expect.objectContaining({
           headers: { 'X-Api-Key': 'test-key', 'Content-Type': 'application/json' },
-        })
+        }),
       );
     });
 
     it('throws when response is not ok', async () => {
       mockHttpClient.mockResolvedValue(makeErrorResponse(409, 'Conflict'));
-      await expect(adapter.cancel()).rejects.toThrow(
-        'OctoPrint cancel failed: 409 Conflict'
-      );
+      await expect(adapter.cancel()).rejects.toThrow('OctoPrint cancel failed: 409 Conflict');
     });
   });
 
@@ -650,13 +640,14 @@ describe('OctoPrint', () => {
     }
 
     function inFlightStatus(flag: string): unknown {
-      return { state: { flags: { printing: false, paused: false, pausing: false, cancelling: false, [flag]: true } }, job: { file: { path: TRAY_PATH } } };
+      return {
+        state: { flags: { printing: false, paused: false, pausing: false, cancelling: false, [flag]: true } },
+        job: { file: { path: TRAY_PATH } },
+      };
     }
 
     function respondTo(routes: Record<string, Response>): void {
-      mockHttpClient.mockImplementation((url) =>
-        Promise.resolve(routes[url] ?? makeOkResponse({ name: 'operator', session: 'sess-1' }))
-      );
+      mockHttpClient.mockImplementation((url) => Promise.resolve(routes[url] ?? makeOkResponse({ name: 'operator', session: 'sess-1' })));
     }
 
     function sendStatus(ws: MockPushSocket, status: unknown, key: 'history' | 'current' = 'history'): void {
@@ -810,7 +801,10 @@ describe('OctoPrint', () => {
     let currentTimeMs: number;
 
     function sendStatus(ws: MockPushSocket): void {
-      const status = { state: { flags: { printing: false, paused: false, pausing: false, cancelling: false } }, job: { file: { path: 'plates/tray.gcode' } } };
+      const status = {
+        state: { flags: { printing: false, paused: false, pausing: false, cancelling: false } },
+        job: { file: { path: 'plates/tray.gcode' } },
+      };
       ws.onmessage!(JSON.stringify({ history: status }));
     }
 
@@ -821,7 +815,7 @@ describe('OctoPrint', () => {
         mockHttpClient,
         mockWsFactory,
         mockReconnectDelay,
-        () => currentTimeMs
+        () => currentTimeMs,
       );
       await connectAdapter();
     });
@@ -941,5 +935,32 @@ describe('OctoPrint', () => {
       sendEvent('PrintDone');
       await expect(promise).resolves.toBe('finished');
     });
+  });
+});
+
+// AIDEV-NOTE: the reason a push socket never opened reaches an operator as `printer.paused.reason`,
+// so it has to say the same things a failed request says. A close with no error before it has nothing
+// to add, which is what a machine that answered and then hung up looks like.
+describe('why a push socket closed before it ever opened', () => {
+  const WHERE = 'http://octopi.local';
+
+  it('says only that it closed when nothing said why', () => {
+    expect(whySocketFailed(null, WHERE)).toBe(`the push socket to ${WHERE} closed before it opened`);
+  });
+
+  it('says the same for a close that carried nothing at all', () => {
+    expect(whySocketFailed(undefined, WHERE)).toBe(`the push socket to ${WHERE} closed before it opened`);
+  });
+
+  it('adds the reason when there was one, in the words a failed request uses', () => {
+    const refused = Object.assign(new Error('fetch failed'), { cause: Object.assign(new Error('x'), { code: 'ECONNREFUSED' }) });
+
+    expect(whySocketFailed(refused, WHERE)).toBe(
+      `the push socket to ${WHERE} closed before it opened: nothing is listening at ${WHERE} (ECONNREFUSED)`,
+    );
+  });
+
+  it('names the machine whatever went wrong', () => {
+    expect(whySocketFailed(new Error('something odd'), WHERE)).toContain(WHERE);
   });
 });

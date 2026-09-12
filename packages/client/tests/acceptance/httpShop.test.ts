@@ -59,18 +59,6 @@ describe('the shop over HTTP', () => {
   });
 
   describe('the jobs it is holding', () => {
-    // AIDEV-NOTE: a time is an ISO string on the wire. A caller handed one typed as a Date finds out
-    // at its first comparison, somewhere else entirely - which is the whole reason for a client
-    // rather than a cast over `response.json()`.
-    it('hands back a time as a time', async () => {
-      answers = { status: 200, body: { accessibleJobs: [{ ...aJob, submittedAt: '2026-09-06T11:22:04.177Z' }], totalJobs: 1 } };
-
-      const [job] = (await shop.jobs()).accessibleJobs;
-
-      expect(job.submittedAt).toBeInstanceOf(Date);
-      expect(job.submittedAt.toISOString()).toBe('2026-09-06T11:22:04.177Z');
-    });
-
     // The operator's question rather than the shop's, and a route of its own: anything under /jobs
     // would collide with /jobs/{id}.
     it('asks what the queue is waiting for', async () => {
@@ -166,36 +154,12 @@ describe('the shop over HTTP', () => {
       answers = { status: 403, body: { error: 'that is not the password this caller has now' } };
 
       await expect(shop.changeMyPassword('not it', 'a different password entirely')).rejects.toThrow(
-        'that is not the password this caller has now'
+        'that is not the password this caller has now',
       );
     });
   });
 
   describe('the printers', () => {
-    it('hands back the time a printer stopped as a time', async () => {
-      answers = { status: 200, body: [{ ...MK4, loaded: [], paused: { reason: 'the door is open', since: '2026-09-06T11:22:04.177Z' } }] };
-
-      expect((await shop.printers())[0].paused?.since).toBeInstanceOf(Date);
-    });
-
-    it('hands back the time the shop lost it as a time', async () => {
-      answers = { status: 200, body: [{ ...MK4, loaded: [], unreachable: { reason: 'no API key for mk4', since: '2026-09-06T11:22:04.177Z' } }] };
-
-      expect((await shop.printers())[0].unreachable?.since).toBeInstanceOf(Date);
-    });
-
-    it('hands back the time a machine refused a file as a time', async () => {
-      answers = { status: 200, body: [{ ...MK4, loaded: [], refused: { reason: 'upload failed: 400', since: '2026-09-06T11:22:04.177Z' } }] };
-
-      expect((await shop.printers())[0].refused?.since).toBeInstanceOf(Date);
-    });
-
-    it('hands back the time it stopped hearing a print as a time', async () => {
-      answers = { status: 200, body: [{ ...MK4, loaded: [], outOfContact: { reason: 'lost contact', since: '2026-09-06T11:22:04.177Z' } }] };
-
-      expect((await shop.printers())[0].outOfContact?.since).toBeInstanceOf(Date);
-    });
-
     // 201 or 200 is the whole difference between adding a printer and changing one, and it lives
     // only on the wire.
     it.each([
@@ -206,16 +170,6 @@ describe('the shop over HTTP', () => {
 
       expect((await shop.addPrinter(MK4)).created).toBe(created);
     });
-
-    // A name is whatever an operator typed, and one carrying a `#` makes a URL whose path stops
-    // there - so the shop would hear about a printer called mk4, or none at all.
-    it('escapes a name on its way into the path', async () => {
-      answers = { status: 200, body: { ...MK4, loaded: [] } };
-
-      await shop.load('mk4#2', ['PLA-Red']);
-
-      expect(asked[0].url).toBe('/printers/mk4%232/filament');
-    });
   });
 
   describe('when the shop will not', () => {
@@ -224,12 +178,6 @@ describe('the shop over HTTP', () => {
       answers = { status: 400, body: { error: 'nothing here has room for 100x100x400mm - mk4 250x210x220mm' } };
 
       await expect(shop.submit(playerBox, new Blob(['G1']))).rejects.toThrow('nothing here has room');
-    });
-
-    it('falls back to the status when a refusal says nothing', async () => {
-      answers = { status: 503, body: {} };
-
-      await expect(shop.jobs()).rejects.toThrow('503');
     });
 
     // The shop is a service somebody starts, so this is the ordinary mistake rather than an

@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { PassThrough } from 'node:stream';
-import { askSecretly } from '../src/prompt';
+import { askSecretly, askSecretlyTwice } from '../src/prompt';
 
 // AIDEV-NOTE: a password is never an argument, because argv is `ps` and shell history - so it is
 // asked for. What is proved here is the two paths that gives: a terminal, where the echo has to be
@@ -113,6 +113,93 @@ describe('asking for something nobody should read over a shoulder', () => {
       await asking;
 
       expect(said()).toBe('');
+    });
+  });
+});
+
+// AIDEV-NOTE: asked TWICE in one call rather than by calling askSecretly twice, because a stream that
+// is not a terminal ENDS - and a second read of an ended pipe waits for an 'end' that has already
+// happened, which is a process that neither answers nor stops.
+describe('asking for the same thing twice', () => {
+  function aTerminal(): PassThrough & { isTTY?: boolean; setRawMode?: (raw: boolean) => void } {
+    const input = new PassThrough() as PassThrough & { isTTY?: boolean; setRawMode?: (raw: boolean) => void };
+    input.isTTY = true;
+    input.setRawMode = () => undefined;
+
+    return input;
+  }
+
+  describe('at a terminal', () => {
+    it('answers with both of them, in the order they were typed', async () => {
+      const input = aTerminal();
+      const asking = askSecretlyTwice('password: ', 'and again: ', input, new PassThrough());
+
+      input.write('one\r');
+      input.write('two\r');
+
+      expect(await asking).toEqual(['one', 'two']);
+    });
+
+    it('asks both questions out loud', async () => {
+      const input = aTerminal();
+      const output = new PassThrough();
+      let written = '';
+      output.on('data', (chunk: Buffer) => (written += chunk.toString()));
+
+      const asking = askSecretlyTwice('password: ', 'and again: ', input, output);
+      input.write('one\r');
+      input.write('two\r');
+      await asking;
+
+      expect(written).toContain('password: ');
+      expect(written).toContain('and again: ');
+    });
+
+    it('writes neither of them', async () => {
+      const input = aTerminal();
+      const output = new PassThrough();
+      let written = '';
+      output.on('data', (chunk: Buffer) => (written += chunk.toString()));
+
+      const asking = askSecretlyTwice('password: ', 'and again: ', input, output);
+      input.write('a secret\r');
+      input.write('a secret\r');
+      await asking;
+
+      expect(written).not.toContain('a secret');
+    });
+  });
+
+  // A pipe, a script, a test: one read of the whole thing, split into lines - which is what lets
+  // this be driven without a terminal at all.
+  describe('anywhere else', () => {
+    it('reads the two as two lines', async () => {
+      const input = new PassThrough();
+      const asking = askSecretlyTwice('password: ', 'and again: ', input, new PassThrough());
+
+      input.end('one\ntwo\n');
+
+      expect(await asking).toEqual(['one', 'two']);
+    });
+
+    it('answers with what was given even when the two do not match', async () => {
+      const input = new PassThrough();
+      const asking = askSecretlyTwice('password: ', 'and again: ', input, new PassThrough());
+
+      input.end('one\nanother\n');
+
+      expect(await asking).toEqual(['one', 'another']);
+    });
+
+    // Nothing typed is still an answer: whether an empty password is allowed is the caller's rule,
+    // not this one's.
+    it('answers with two empty strings for two empty lines', async () => {
+      const input = new PassThrough();
+      const asking = askSecretlyTwice('password: ', 'and again: ', input, new PassThrough());
+
+      input.end('\n\n');
+
+      expect(await asking).toEqual(['', '']);
     });
   });
 });

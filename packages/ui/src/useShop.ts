@@ -30,7 +30,10 @@ const NOTHING: Answers = { printers: [], jobs: [], totalJobs: 0, answered: false
 // AIDEV-NOTE: polled, because the API has no way to push - every route is a question a client asks.
 // A failed ask leaves the last good answer on the screen and says what went wrong beside it: a shop
 // being restarted should not blank the wall display somebody is watching a print on.
-export function useShop(url = ''): ShopView {
+// AIDEV-NOTE: how often is handed in rather than reached for, the way `now` is to Sessions and
+// `freeBytes` is to JobStore - the default is the real one, so the page did not change. Without it a
+// test of this hook waits two real seconds per tick, or fights jest's fake timers with waitFor.
+export function useShop(url = '', every = POLL_MS): ShopView {
   const [view, setView] = useState<Answers>(NOTHING);
 
   // AIDEV-NOTE: no token. A browser is named by the session cookie the shop set when somebody logged
@@ -69,13 +72,13 @@ export function useShop(url = ''): ShopView {
     };
 
     askUnlessStopped();
-    const asking = setInterval(askUnlessStopped, POLL_MS);
+    const asking = setInterval(askUnlessStopped, every);
 
     return () => {
       stopped = true;
       clearInterval(asking);
     };
-  }, [ask]);
+  }, [ask, every]);
 
   return { ...view, shop, askAgain: () => void ask() };
 }
