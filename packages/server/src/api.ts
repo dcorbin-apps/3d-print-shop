@@ -121,10 +121,21 @@ function theirs(caller: Caller, job: Job): boolean {
 
 // AIDEV-NOTE: parsed here rather than by a dependency, because it is one header and one name, and
 // what a cookie parser would add is a place for a second opinion about what a cookie is.
-function cookieIn(header: string | undefined, name: string): string | undefined {
+export function cookieIn(header: string | undefined, name: string): string | undefined {
   for (const said of (header ?? '').split(';')) {
     const at = said.indexOf('=');
-    if (at > 0 && said.slice(0, at).trim() === name) return decodeURIComponent(said.slice(at + 1).trim());
+    if (at > 0 && said.slice(0, at).trim() === name) {
+      // AIDEV-NOTE: a value that will not decode is not a cookie this shop wrote - express encodes
+      // what it sets - so it is no cookie at all rather than an error. It used to throw a URIError
+      // from inside the guard, before any credential was looked at, which made a 500 and a stack
+      // trace out of a caller the shop could not even name. Now it falls through to the token and
+      // is refused 401 like anybody else it does not know.
+      try {
+        return decodeURIComponent(said.slice(at + 1).trim());
+      } catch {
+        return undefined;
+      }
+    }
   }
 
   return undefined;
@@ -135,17 +146,20 @@ function cookieIn(header: string | undefined, name: string): string | undefined 
 // refusing it safe. Compared against the Host the request arrived at rather than anything
 // configured: the shop does not know its own name, and whatever reached it is what a page served by
 // it would say.
-function requireItCameFromHere(request: Request): void {
-  const origin = request.header('origin');
+// AIDEV-NOTE: two headers rather than a request, so the rule is a function over values like every
+// other one here. `URL.parse` rather than `new URL`, because an origin that is not a URL is a thing
+// a browser really sends - `Origin: null` from a sandboxed iframe, and from a redirect across
+// origins - and a TypeError thrown in the guard made that a 500. It is refused either way; this
+// refuses it as the 403 it always meant.
+export function requireItCameFromHere(origin: string | undefined, host: string | undefined): void {
   if (origin === undefined) throw new NotTheirs('a write carrying a session has to say where it came from');
 
-  const host = request.header('host');
-  if (host === undefined || new URL(origin).host !== host) {
+  if (host === undefined || URL.parse(origin)?.host !== host) {
     throw new NotTheirs(`${origin} is not this shop, so a session from it is not one to act on`);
   }
 }
 
-function tokenIn(header: string | undefined): string | undefined {
+export function tokenIn(header: string | undefined): string | undefined {
   const said = /^Bearer (.+)$/.exec(header ?? '');
 
   return said?.[1];
@@ -324,7 +338,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     // rule the BROWSER keeps - this is the shop keeping it too. A cookie is sent by whatever page
     // asked, so a write that arrived with one has to have come from this shop's own page; a token
     // is not sent by a browser on anybody's behalf and needs none of this.
-    if (whose !== undefined && request.method !== 'GET') requireItCameFromHere(request);
+    if (whose !== undefined && request.method !== 'GET') requireItCameFromHere(request.header('origin'), request.header('host'));
 
     if (needsAdmin(request.method, request.path) && caller.role !== 'admin') {
       throw new NotTheirs(`${request.method} ${request.path} is for an admin, and ${caller.name} is not one`);

@@ -6,6 +6,7 @@ export {
   UnusableRequest,
   addressIn,
   bodyOf,
+  cookieIn,
   createApi,
   keyIn,
   loadedIn,
@@ -13,9 +14,11 @@ export {
   onePrinterName,
   passwordChangeIn,
   printerIn,
+  requireItCameFromHere,
   requireUsablePrinterName,
   serve,
   stoppedIn,
+  tokenIn,
   verdictIn,
 } from './api.js';
 export type { ShopHooks } from './api.js';

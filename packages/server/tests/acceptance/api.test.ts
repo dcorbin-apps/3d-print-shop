@@ -669,6 +669,11 @@ describe('the shop over HTTP', () => {
 
     // AIDEV-NOTE: SameSite is a rule the BROWSER keeps; this is the shop keeping it too. A cookie is
     // sent by whatever page asked, so a WRITE that arrived with one has to have come from here.
+    //
+    // The rule itself is `requireItCameFromHere`, unit tested over a dozen origins in tests/api.test.ts.
+    // What is left here is what only a running shop can say: that the guard hands it the two headers
+    // a request really arrived with, that the host half is compared rather than assumed, and that a
+    // token is subject to none of it.
     describe('a write carrying a session', () => {
       it('is taken when it came from this shop', async () => {
         const cookie = cookieFrom(await logIn('dave', PASSWORD));
@@ -688,18 +693,6 @@ describe('the shop over HTTP', () => {
         const response = await fetch(`${loginUrl}/printers/mk4/filament`, {
           method: 'PUT',
           headers: { cookie, origin: 'http://somewhere.else', 'content-type': 'application/json' },
-          body: JSON.stringify({ loaded: ['PLA-Red'] }),
-        });
-
-        expect(response.status).toBe(403);
-      }, 15_000);
-
-      it('is refused when it will not say where it came from', async () => {
-        const cookie = cookieFrom(await logIn('dave', PASSWORD));
-
-        const response = await fetch(`${loginUrl}/printers/mk4/filament`, {
-          method: 'PUT',
-          headers: { cookie, 'content-type': 'application/json' },
           body: JSON.stringify({ loaded: ['PLA-Red'] }),
         });
 

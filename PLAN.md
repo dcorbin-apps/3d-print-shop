@@ -38,13 +38,10 @@ than read out of the code. These come before the rest of the list.
   the shop's, it says so in its own words" - so nobody is ever told what it is. A case in
   `statusFor` in `packages/server/src/api.ts`
 
-- [ ] A request naming nobody can make the shop throw. `cookieIn` calls `decodeURIComponent` on the
-  raw header inside the guard, before any credential is looked at, so a cookie carrying a truncated
-  escape is a 500 and a stack trace in the log written for a caller the shop cannot name; `Origin:
-  null` from a sandboxed iframe does the same through `new URL(origin)`. Both still refuse, which is
-  the safe direction, but neither meant 500. `validateDetails` is the authenticated half of the same
-  thing: it reads `details.filaments.length` without checking it is an array, so `{}` and
-  `{"filaments":"PLA"}` are 500s where 400 was intended
+- [ ] `validateDetails` reads `details.filaments.length` without checking it is an array, so `{}` and
+  `{"filaments":"PLA"}` are 500s where 400 was intended. The two halves of this that an UNNAMED caller
+  could reach - a cookie that will not decode, and `Origin: null` - are fixed; this is the
+  authenticated one, and the last of the three. `packages/server/src/Job.ts`
 
 - [ ] `see PLAN` in `OctoPrint.ts` at `send`, `cancel` and `filedAt` names nothing that is in this
   file. Either the work is still wanted and belongs here, or the reference goes
@@ -136,13 +133,6 @@ a run of that file on its own.
   ordering is a thing about the request object. Nothing is left for an acceptance test: the raw
   request line is an assumption about node and express, and goes to the third suite. The same move as
   `onePrinterName`
-
-- [ ] **The three functions that decide who is asking have no unit test at all.** `cookieIn`,
-  `tokenIn` and `requireItCameFromHere` are pure or two headers wide, and all anybody knows about
-  them is read back off a status code. The three `a write carrying a session` cases are a table plus
-  a login apiece. The Security item above - a truncated escape in a cookie making `decodeURIComponent`
-  throw, and a 500 for a caller the shop cannot even name - cannot be written as a unit test today
-  because the function is not exported, which is the argument in one line
 
 - [ ] **`statusFor` is said to be tested and is not.** The Tests section above leaves seven empty
   `Error` subclasses untested on the grounds that what matters about them is the status each maps to,

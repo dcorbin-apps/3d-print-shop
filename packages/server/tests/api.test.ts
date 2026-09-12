@@ -1,16 +1,20 @@
 import { describe, it, expect } from '@jest/globals';
 import {
+  NotTheirs,
   UnusableRequest,
   addressIn,
   bodyOf,
+  cookieIn,
   keyIn,
   loadedIn,
   loginIn,
   onePrinterName,
   passwordChangeIn,
   printerIn,
+  requireItCameFromHere,
   requireUsablePrinterName,
   stoppedIn,
+  tokenIn,
   verdictIn,
 } from '../src/api';
 
@@ -363,4 +367,102 @@ describe('the password change a body asks for', () => {
       expect(() => passwordChangeIn(body)).toThrow('changing a password is the one you have now and the one you want');
     }
   );
+});
+
+// AIDEV-NOTE: the header a browser sends, read for one name. Every one of these was only ever
+// reachable through a socket, where all a test could read back was the status the guard answered.
+describe('the cookie a request carries', () => {
+  const SESSION = 'print-shop-session';
+
+  it('is the value written under the name asked for', () => {
+    expect(cookieIn(`${SESSION}=abc123`, SESSION)).toBe('abc123');
+  });
+
+  it('finds it among the others a browser sent', () => {
+    expect(cookieIn(`theme=dark; ${SESSION}=abc123; locale=en`, SESSION)).toBe('abc123');
+  });
+
+  it('minds the space a browser puts after each semicolon', () => {
+    expect(cookieIn(`theme=dark;${SESSION}=abc123`, SESSION)).toBe('abc123');
+  });
+
+  // What express writes is encoded, so what is read back is decoded. The two are one mechanism.
+  it('decodes what was encoded on the way out', () => {
+    expect(cookieIn(`${SESSION}=a%2Fb%20c`, SESSION)).toBe('a/b c');
+  });
+
+  it.each([[undefined], [''], ['theme=dark'], [`${SESSION}`], [`=abc123`]])('is nobody at all for %j', (header) => {
+    expect(cookieIn(header, SESSION)).toBeUndefined();
+  });
+
+  // AIDEV-NOTE: the 500 this used to be. `decodeURIComponent` throws a URIError on a truncated
+  // escape, and it threw inside the guard before any credential was looked at - so a caller the shop
+  // could not even name got a stack trace in its log. A cookie that will not decode is not one this
+  // shop wrote, so it is no cookie, and the caller is refused for being unknown like anybody else.
+  it.each([['%'], ['%E0'], ['%zz'], ['abc%']])('is nobody at all for a value of %j, rather than throwing', (value) => {
+    expect(cookieIn(`${SESSION}=${value}`, SESSION)).toBeUndefined();
+  });
+
+  // Only the one asked for: an undecodable cookie of another name must not hide a good session.
+  it('is unbothered by another cookie that will not decode', () => {
+    expect(cookieIn(`theme=%E0; ${SESSION}=abc123`, SESSION)).toBe('abc123');
+  });
+});
+
+describe('the token a request presents', () => {
+  it('is what follows Bearer', () => {
+    expect(tokenIn('Bearer abc123')).toBe('abc123');
+  });
+
+  it('keeps a token that has spaces in it, because the shop decides what a token may be', () => {
+    expect(tokenIn('Bearer one two')).toBe('one two');
+  });
+
+  it.each([[undefined], [''], ['abc123'], ['bearer abc123'], ['Bearer'], ['Bearer '], ['Basic abc123']])(
+    'is nobody at all for %j',
+    (header) => {
+      expect(tokenIn(header)).toBeUndefined();
+    }
+  );
+});
+
+// AIDEV-NOTE: the shop keeping the rule SameSite keeps in the browser. A cookie is sent by whatever
+// page asked, so a write carrying one has to have come from this shop's own page.
+describe('a write that has to have come from here', () => {
+  const HERE = 'shop.local:4000';
+
+  it('is let through when the origin is the host it arrived at', () => {
+    expect(() => requireItCameFromHere(`http://${HERE}`, HERE)).not.toThrow();
+  });
+
+  it('minds neither the scheme nor a path on the origin, because the host is the question', () => {
+    expect(() => requireItCameFromHere(`https://${HERE}`, HERE)).not.toThrow();
+  });
+
+  it('refuses one that came from somewhere else', () => {
+    expect(() => requireItCameFromHere('http://somewhere.else', HERE)).toThrow(NotTheirs);
+    expect(() => requireItCameFromHere('http://somewhere.else', HERE)).toThrow('is not this shop');
+  });
+
+  // A browser sends Origin on everything that is not a plain navigation, so one that says nothing is
+  // not a browser doing what browsers do.
+  it('refuses one that will not say where it came from', () => {
+    expect(() => requireItCameFromHere(undefined, HERE)).toThrow('has to say where it came from');
+  });
+
+  it('refuses one that arrived at nowhere it can name', () => {
+    expect(() => requireItCameFromHere(`http://${HERE}`, undefined)).toThrow(NotTheirs);
+  });
+
+  // A port is part of a host: a page on another port is another origin.
+  it('refuses the same name on another port', () => {
+    expect(() => requireItCameFromHere('http://shop.local:4001', HERE)).toThrow(NotTheirs);
+  });
+
+  // AIDEV-NOTE: the other 500. `Origin: null` is what a sandboxed iframe sends, and a redirect
+  // across origins - `new URL` threw a TypeError on it, inside the guard. It was always going to be
+  // refused; what was wrong was being refused as the shop's fault.
+  it.each([['null'], ['not a url'], [''], ['http://']])('refuses an origin of %j rather than throwing', (origin) => {
+    expect(() => requireItCameFromHere(origin, HERE)).toThrow(NotTheirs);
+  });
 });
