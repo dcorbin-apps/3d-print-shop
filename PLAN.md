@@ -138,20 +138,16 @@ about a password was never said to anybody, and that nobody but an admin could l
 
 What is left of it is below: the files the corrected rule re-opened, which have not been argued yet.
 
-#### Re-opened by the rule above, and not yet decided
+#### Re-opened by the rule above
 
 These were off the list because an acceptance test was thought to be for "a route being wired to what
-it claims". That ground is gone, so each is here until it has been argued rather than assumed. The
-question for every one of them is the same: is the fake a unit test would need the thing the test
-claims?
+it claims". That ground went, and each has now been argued rather than assumed. What is left of the
+acceptance suite is six files: a submission refused while it is still arriving, the data lock, a job's
+whole life at 8MB, reconnect recovery, the shop as a spawned process, and the shop against its client.
 
 - [ ] `jobLifetime` - no socket and no process: it is `JobStore` over a real temporary directory at
   8MB, which is what `JobStore.test.ts` already does at a few bytes. The size is the point of it, and
   the size is not what makes a test an acceptance one. It may simply belong in `tests/`
-- [ ] `api.test.ts` - the cookie's three attributes, the two 503s and the page-serving guard are all
-  express and the store, both of which run in-process. The multipart ordering and the drain are not:
-  a body built by hand is the thing being claimed
-
 Not re-opened, and now for a stated reason rather than by category:
 
 - `dataLock`, `reconnectRecovery` - the fake would be the kernel and a socket that really dies. Each
@@ -162,13 +158,18 @@ Not re-opened, and now for a stated reason rather than by category:
 
 ### A flake, seen twice
 
-- [ ] `reconnectRecovery` › `learns an outcome that was announced while the socket was down` failed
-  twice on 2026-09-12, both times in a full run that took 63s against the usual 19s, and never in a
-  run of its own or in a full run at normal speed (green in 3 of 3 straight after). The file's own
-  note already says this is contention rather than a slow shop, and answers it with 60s timeouts -
-  which this failure is inside, so the timeout is not the whole answer. It is the FIRST test in the
-  file, so it pays the cost of the sim and the client warming up. Worth a look before it is trusted;
-  not worth chasing on two data points
+- [ ] `reconnectRecovery` › `learns an outcome that was announced while the socket was down` fails
+  about one full run in five, measured over ten on 2026-09-12, and passes every time the file is run
+  on its own.
+
+  The cause and effect are the other way round from how this was first written down. The run is not
+  slow and therefore failing; the test HANGS, burns its whole 60s timeout and fails, and that is what
+  makes the run 63s against the usual 17s. Every failure has that signature and no failure has any
+  other. So it is not contention, and a longer timeout will not answer it: something in the reconnect
+  never settles. The handler drops every connection and completes the print with nobody listening, so
+  the outcome can only be learnt from the history a reconnecting client reads - and once in five that
+  never arrives. Either the client does not reconnect, or it reconnects and the reconciliation does
+  not fire. Worth chasing: it is the path a real print takes when the network blips
 
 ### The service
 
