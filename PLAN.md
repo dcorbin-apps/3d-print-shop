@@ -150,10 +150,8 @@ went.
   is `signals`, which address is taken is `serve`, what a command does is `operatorCommands`, and what
   node does with a signal or an empty event loop is the assumption suite
 - `httpShop` (15) - what the client puts on the wire, against a stand-in
-- `reconnectRecovery` (4) - a socket that really dies, and a print that really ends while nobody is
-  listening. It found a real bug this way
 
-Four went after that, and how they went is the most useful thing in this section. `drainingARefusedUpload`
+Five went after that, and how they went is the most useful thing in this section. `drainingARefusedUpload`
 kept a socket because a refused upload has to be READ to the end or the request never completes, and
 that was thought to need a real connection. It does not: the mechanism is node's stream backpressure,
 and a request that hands its body over only when asked reproduces it exactly. The harness had been
@@ -191,6 +189,16 @@ all the way, and once `reachTheShop` and `HttpShop` would each take a way to rea
 in-process - carrying the token is ours, carrying the bytes is node's. What is left is the sum:
 everything the shop holds is let go, so node ends it. Each part of that is tested; only the sum is
 not, and only a process can be asked whether it ended.
+
+`reconnectRecovery` was the last, and the measurement is worth keeping. Against the same mutations it
+caught strictly LESS of the reconnect logic than `OctoPrint.test.ts` does through an injected socket -
+it missed the frame spent on an empty map, which is the lost-outcome race found and fixed the same
+day. The frame shapes it appeared to pin are pinned by the sim's own tests on one side and
+`OctoPrint.test.ts` on the other. What it alone caught was `pushSocket`: a text frame arrives from
+`ws` as a Buffer where the DOM gives a string, and handing it on undecoded makes every frame the
+printer sends unreadable, which no injected socket would notice. That is six unit tests against a
+real `ws` server now, and they run in a second where the four scenarios took a minute and carried
+60-second timeouts against contention.
 
 ### The service
 

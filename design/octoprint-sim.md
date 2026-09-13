@@ -52,10 +52,18 @@ completing normally - a crash in a client's handler must not wedge the printer f
 
 ## What is tested, and where
 
-Driving a real client at this server is what shows it behaves like OctoPrint, so that is where most
-of its coverage lives: `packages/server/tests/acceptance/reconnectRecovery.test.ts` runs the shop's
-real `OctoPrint` against it - the real socket factory and all - and a break in upload, auth, events
-or completion stops it dead.
+Driving a real client at this server was where most of its coverage lived, in an acceptance test that
+reconnected a real `OctoPrint` against it over a real socket. That test is gone, and what it was for
+is worth recording: measured against the same mutations, it caught strictly LESS of the reconnect
+logic than `OctoPrint.test.ts` does through an injected socket - including the lost-outcome race that
+was found and fixed on 2026-09-12. The frame shapes it seemed to pin are pinned by this package's own
+unit tests on one side and `OctoPrint.test.ts` on the other.
+
+The one thing it alone caught was `pushSocket`, the adapter from `ws` to the interface the shop knows -
+a text frame arrives from `ws` as a Buffer where the DOM gives a string, and handing that on undecoded
+makes every frame unreadable. That is `packages/server/tests/pushSocket.test.ts` now, against a real
+`ws` server in-process, because a fake `ws` is precisely where the belief about what `ws` hands over
+would be written down.
 
 Its own tests cover what it REFUSES - a bad auth frame, a second job while one is printing. Those are
 the traps nothing else springs: loosen one and every suite above still passes, having quietly stopped
