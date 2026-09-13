@@ -258,6 +258,28 @@ declare module 'express-serve-static-core' {
 
 export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimits = {}): Express {
   const api = express();
+
+  // AIDEV-NOTE: on everything the shop answers, set here rather than per route so that a route added
+  // later cannot forget one. `nosniff` is what stops a browser deciding for itself that a body is a
+  // document: what a CLIENT sent comes back in those bodies - a job's name, its metadata, a filament -
+  // and a content type this shop has stated is not a browser's to second-guess. Express already puts
+  // it on its own error pages and on nothing else, which is the sort of thing that reads as covered
+  // from a quick look at a 404.
+  //
+  // `x-powered-by` is off because there is nothing to be had by volunteering what this is written in.
+  //
+  // AIDEV-NOTE: what is deliberately NOT here is a Content-Security-Policy, which is the one worth
+  // having and the one that is not a line. The page shows a camera per printer, at whatever address
+  // an operator gave that machine, so `img-src` would have to name origins that do not exist until a
+  // printer is added - and this layer is handed a DIRECTORY and told nothing about what is in it, so
+  // a policy written here is the server making claims about a page it is built not to know. See
+  // PLAN.md; the page has no injection point today, so what a policy buys is insurance.
+  api.disable('x-powered-by');
+  api.use((_request, response, next) => {
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
+
   api.use(express.json());
 
   const maxDescriptionBytes = limits.maxDescriptionBytes ?? DEFAULT_MAX_DESCRIPTION_BYTES;

@@ -78,6 +78,23 @@ describe('serving a page beside the API', () => {
     expect((await get('/printers', ADMIN)).status).toBe(200);
   });
 
+  // AIDEV-NOTE: set once for the whole app rather than per route, so what is asked here is that both
+  // halves carry it - the files, which go out through the static middleware, and an answer from the
+  // API, which does not. A refusal is asked for too, because that is the one a route never writes.
+  describe('what every answer carries', () => {
+    it('says a content type is not a browser to second-guess, on the page and on an answer alike', async () => {
+      expect((await get('/')).header('x-content-type-options')).toBe('nosniff');
+      expect((await get('/assets/shop.js')).header('x-content-type-options')).toBe('nosniff');
+      expect((await get('/printers', ADMIN)).header('x-content-type-options')).toBe('nosniff');
+      expect((await get('/printers')).header('x-content-type-options')).toBe('nosniff');
+    });
+
+    it('does not volunteer what it is written in', async () => {
+      expect((await get('/')).header('x-powered-by')).toBeUndefined();
+      expect((await get('/printers', ADMIN)).header('x-powered-by')).toBeUndefined();
+    });
+  });
+
   // Nothing is served at all unless the shop was pointed somewhere, which is what a shop with no page
   // installed looks like.
   it('serves nothing of the sort when it was given nowhere to serve from', async () => {

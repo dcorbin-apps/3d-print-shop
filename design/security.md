@@ -130,6 +130,16 @@ marked `Secure` only when the request actually arrived over TLS, because a shop 
 otherwise set a cookie the browser refuses to send back. Behind a TLS-terminating proxy that is worth
 revisiting, along with what the shop then believes about a request's address.
 
+**The page goes out with two headers and not a policy.** `nosniff` is set on everything the shop
+answers, because what a client sent comes back in those bodies and a stated content type is not a
+browser's to second-guess; `x-powered-by` is off. Framing needs nothing of its own - the session
+cookie is SameSite=Strict, so a shop framed by another site is a shop nobody is logged in to. A
+Content-Security-Policy is the one with real value and it is not configuration here, because the page
+shows a camera per printer at whatever address an operator gave that machine - so `img-src` cannot be
+written down ahead of the printers it would have to name, and the layer that would write it is handed
+a directory and told nothing about what is in it. It stays in PLAN.md rather than being added loose
+enough to mean little.
+
 **An admin may judge work that is not theirs, and afterwards nothing says they did.** That is the
 price of never holding a bed for a job nobody is left to judge, and the argument it makes is for the
 logging rather than for a field on a record that is written once.
