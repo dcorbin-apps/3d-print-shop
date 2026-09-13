@@ -144,15 +144,16 @@ It went 243 to 48 across this sweep, and every file left is there for something 
 say - argued one at a time rather than by category, and twice the argument was wrong and the file
 went.
 
-- `theRunningShop` (6) - that the process ENDS when asked; that a signal ARRIVES and the shop is
-  still there afterwards; that the address it binds is the one it was told, loopback unless it was
-  told otherwise; and one pair walking the whole chain from argv through the environment, the client,
-  a real socket and the guard, because every link of it is unit tested and only the composing is not
+- `aShopThatActuallyStops` (1) - that the process ENDS when asked, rather than answering and staying
+  up, which would look identical to a client. Everything it used to also cover has gone to where it
+  can be asked directly: what stopping lets go of and in what order is `running`, what a signal does
+  is `signals`, which address is taken is `serve`, what a command does is `operatorCommands`, and what
+  node does with a signal or an empty event loop is the assumption suite
 - `httpShop` (15) - what the client puts on the wire, against a stand-in
 - `reconnectRecovery` (4) - a socket that really dies, and a print that really ends while nobody is
   listening. It found a real bug this way
 
-Three went after that, and how they went is the most useful thing in this section. `drainingARefusedUpload`
+Four went after that, and how they went is the most useful thing in this section. `drainingARefusedUpload`
 kept a socket because a refused upload has to be READ to the end or the request never completes, and
 that was thought to need a real connection. It does not: the mechanism is node's stream backpressure,
 and a request that hands its body over only when asked reproduces it exactly. The harness had been
@@ -181,6 +182,15 @@ a multipart body still gets its boundary from the code that would write it to a 
 and answers it; only the wire is skipped, and what node's parser makes of one is already pinned. The
 contract still catches a 201 that stops being sent, a status that stops being read, a time that stops
 becoming a Date, and a camera that stops being answered.
+
+`theRunningShop` went from 39 to 1 over the sweep, and the last five went on the same question. Where
+a shop listens is its own decision and node's binding - the decision is `serve.test.ts`, and the
+binding is node's. A signal arriving is node's; which ones are answered and what each does is ours
+and needs no process. A token travelling from an environment through the client to a guard is ours
+all the way, and once `reachTheShop` and `HttpShop` would each take a way to reach, it composes
+in-process - carrying the token is ours, carrying the bytes is node's. What is left is the sum:
+everything the shop holds is let go, so node ends it. Each part of that is tested; only the sum is
+not, and only a process can be asked whether it ended.
 
 ### The service
 

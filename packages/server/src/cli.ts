@@ -3,7 +3,7 @@ import { Command, InvalidArgumentError } from 'commander';
 import type { AddressInfo } from 'node:net';
 import { HttpShop, SHOP_URL_ENV, defaultShopUrl, defaultToken } from '@3d-print-shop/client';
 import type { Role, Shop } from '@3d-print-shop/client';
-import { DEFAULT_PORT, LOOPBACK, serve } from './api.js';
+import { DEFAULT_PORT, serve } from './api.js';
 import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
@@ -49,8 +49,8 @@ export interface CliParts {
 // AIDEV-NOTE: the default `reach`, named so that what it makes of `--shop-url` can be asked. Left
 // inline it was the one line of the wiring no test could reach: a test hands its own `reach` in, so
 // dropping `options.shopUrl` here changed nothing anybody was looking at.
-export function reachTheShop(options: { shopUrl?: string }): Shop {
-  return new HttpShop(options.shopUrl ?? defaultShopUrl(), defaultToken());
+export function reachTheShop(options: { shopUrl?: string }, howToReach?: typeof fetch): Shop {
+  return new HttpShop(options.shopUrl ?? defaultShopUrl(), defaultToken(), howToReach);
 }
 
 export function createCLI({ reach, say: told, ask }: CliParts = {}): Command {
@@ -88,7 +88,6 @@ export function createCLI({ reach, say: told, ask }: CliParts = {}): Command {
       // brings a key with it - so they are what this process HOLDS rather than what it read once.
       let callers = foundations.callers;
       let printerKeys = foundations.printerKeys;
-      const listenOn = options.listen ?? LOOPBACK;
 
       const { sessions, pickedUp: pickedUpSessions } = await sessionsKeptIn(where, log);
 
@@ -134,7 +133,9 @@ export function createCLI({ reach, say: told, ask }: CliParts = {}): Command {
           page: options.page,
           log,
         },
-        listenOn
+        // Not defaulted here: `serve` holds the default, and a second copy of an address is a second
+        // thing to change. Undefined is "wherever serve says", which is loopback.
+        options.listen
       );
 
       const stopEverything = stoppingTheShop({

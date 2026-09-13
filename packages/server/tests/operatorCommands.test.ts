@@ -1,6 +1,14 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, afterEach, beforeEach, jest } from '@jest/globals';
+import { rm } from 'node:fs/promises';
 import { reachTheShop, run } from '../src/cli';
-import { defaultShopUrl } from '@3d-print-shop/client';
+import { TOKEN_ENV, defaultShopUrl } from '@3d-print-shop/client';
+import { createApi } from '../src/api';
+import { Callers } from '../src/credentials';
+import { JobStore } from '../src/JobStore';
+import { digestOf } from '../src/secrets';
+import { aDataDirectory, parentOf } from './aDataDirectory';
+import { throughTheApp } from './inProcess';
+import type { DataLayout } from '../src/dataLayout';
 import type { Shop } from '@3d-print-shop/client';
 import type { Job, JobsHeld, PrinterAdded, RegisteredPrinter, Verdict } from '@3d-print-shop/client';
 
@@ -212,6 +220,67 @@ describe('the commands an operator types', () => {
 
     it('is pointed where a client decides when nobody said', async () => {
       await expect(reachTheShop({}).jobs()).rejects.toThrow(defaultShopUrl());
+    });
+  });
+
+  // AIDEV-NOTE: the whole path a token travels, and the only place it is whole - an environment
+  // variable, into the client a command really builds, onto the request as a header, and back out as
+  // the role the shop enforces. Every link is tested on its own: `defaultToken` in token.test.ts, the
+  // guard in guard.test.ts, the rule in api.test.ts. What none of them can say is that they join up.
+  //
+  // This was two spawned processes with a socket between them until `reachTheShop` and `HttpShop`
+  // would each take a way to reach. It is not the socket that was ever the point: carrying a token
+  // from an environment to a guard is ours, and carrying bytes down a wire is node's.
+  describe('a token an operator is carrying', () => {
+    const ADMIN = 'dave-token';
+    const USER = 'slicer-token';
+    let where: DataLayout;
+    let held: string | undefined;
+
+    const shopKnowing = (): ReturnType<typeof throughTheApp> => {
+      const known = new Callers([
+        { caller: { id: 'dave', name: 'dave', role: 'admin' }, credentials: [{ kind: 'token', hash: digestOf(ADMIN) }] },
+        { caller: { id: 'slicer', name: 'slicer', role: 'user' }, credentials: [{ kind: 'token', hash: digestOf(USER) }] },
+      ]);
+
+      return throughTheApp(createApi(new JobStore(where), { callers: () => known }));
+    };
+
+    const carrying = (token: string, line: string): Promise<number> => {
+      process.env[TOKEN_ENV] = token;
+
+      return run(['node', 'shop', ...line.split(' ')], () => undefined, {
+        say: () => undefined,
+        reach: (options) => reachTheShop(options, shopKnowing()),
+      });
+    };
+
+    beforeEach(async () => {
+      where = await aDataDirectory('print-shop-token-');
+      held = process.env[TOKEN_ENV];
+    });
+
+    afterEach(async () => {
+      if (held === undefined) delete process.env[TOKEN_ENV];
+      else process.env[TOKEN_ENV] = held;
+      await rm(parentOf(where), { recursive: true, force: true });
+    });
+
+    it('is let in when it is one the shop knows', async () => {
+      expect(await carrying(ADMIN, 'printer list')).toBe(0);
+    });
+
+    it('is refused when the shop does not know it', async () => {
+      expect(await carrying('made-up-entirely', 'printer list')).toBe(1);
+    });
+
+    // The role travels with the token: the same command, the same shop, a different caller.
+    it('is refused a printer command when it is only a user', async () => {
+      expect(await carrying(USER, 'printer remove mk4')).toBe(1);
+    });
+
+    it('is let through a command a user may give', async () => {
+      expect(await carrying(USER, 'job list')).toBe(0);
     });
   });
 

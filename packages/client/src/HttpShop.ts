@@ -31,8 +31,12 @@ export class HttpShop implements Shop {
   constructor(
     private readonly url: string,
     private readonly token?: string,
-    private readonly howToReach: typeof fetch = (asked, sent) => fetch(asked, sent)
-  ) {}
+    howToReach?: typeof fetch
+  ) {
+    this.howToReach = howToReach ?? ((asked, sent) => fetch(asked, sent));
+  }
+
+  private readonly howToReach: typeof fetch;
 
   async whoAmI(): Promise<Caller> {
     return (await this.answered('GET', '/me')) as Caller;
