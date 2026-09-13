@@ -16,8 +16,17 @@ import type { DataLayout } from '../../src/dataLayout';
 // never completed - so the socket stays open, and a shop asked to stop waits for it for ever.
 //
 // Everything else the routes do is asked in-process, where an express app is a function of a
-// request: jobRoutes, printerRoutes, sessionRoutes, pageServing and guard. In-process there is no
-// connection to leave open, so this claim has nowhere to be made.
+// request: jobRoutes, printerRoutes, sessionRoutes, pageServing and guard. Not this, and the reason
+// was measured rather than assumed: driven in-process with the drain taken out, the request reports
+// `readableEnded` true and nothing unread, exactly as it does when the drain is there. The missing
+// drain is invisible.
+//
+// It is invisible because `request.pipe(parts)` empties the request into busboy either way. What
+// goes unread is busboy's FILE stream, and on a real socket that backpressures the parser, which
+// backpressures the request, which backpressures TCP - so the message never completes. In-process
+// the whole body is pushed into a buffer with no flow control, which is the same reason the size
+// threshold below exists on a socket and does not exist here. The fake removes the mechanism the
+// drain exists to relieve.
 describe('an upload the shop refuses without reading', () => {
   let where: DataLayout;
   let server: Server;

@@ -689,12 +689,8 @@ function submission(shop: JobStore, request: Request, owner: string): Promise<Jo
       taken = true;
 
       shop.submit(details, contents, owner).then(resolve, (refusal: unknown) => {
-        // AIDEV-NOTE: the answer is already decided, and it goes back either way - what this is for is
-        // the CONNECTION. A request whose body was never read is an HTTP message that never
-        // completed, so the socket stays open and a shop asked to stop waits for it for ever. Only
-        // above a certain size: below it the whole body is already buffered and completes on its
-        // own, which is why the test for this sends 400,000 lines. See
-        // tests/acceptance/drainingARefusedUpload.test.ts.
+        // The answer is already decided, but a client part way through an upload has to stay
+        // connected long enough to read it - so what is still arriving is drained, not dropped.
         contents.resume();
         reject(refusal);
       });
