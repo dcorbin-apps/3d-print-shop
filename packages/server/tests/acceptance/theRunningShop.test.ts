@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { digestOf } from '../../src/secrets';
@@ -474,31 +474,6 @@ describe('the shop, running as its own process', () => {
     expect(shop.hasSaid(/\[redacted]/)).toBe(true);
   }, 30_000);
 
-  // AIDEV-NOTE: the whole way through - argv, the API, the foreman letting go of its machines, and a
-  // process that actually ends. A shop that answered and stayed up would look identical to a client.
-  // The data directory is made when the shop is installed and never by the shop, so a missing one is a
-  // machine that was never set up - and it is worth finding out before anything is served.
-  it('will not start over a data directory that is not there', async () => {
-    await expect(startShopOver(path.join(dataRoot, 'never-made'))).rejects.toThrow('is not there');
-  }, 30_000);
-
-  // The other half of the same question: a data directory that IS there, and that anybody could rename a job
-  // directory out of. The shop sets 0700 on everything below it, and none of that survives this.
-  it('will not start over a data directory somebody else could write', async () => {
-    await chmod(where.jobs, 0o777);
-
-    await expect(startShop()).rejects.toThrow('may not be writable');
-  }, 30_000);
-
-  // AIDEV-NOTE: two shops over one data directory would both read `next-id` as 7 and both hand out 7, the
-  // second overwriting the first job's gcode with no error anywhere. A second `serve` on the same
-  // PORT already fails to listen; this is the case only the directory's own claim catches.
-  it('will not serve a data directory another shop already has', async () => {
-    await shopIsRunning();
-
-    await expect(startShop()).rejects.toThrow('already serving');
-  }, 30_000);
-
   it('stops when the operator asks it to', async () => {
     const shop = await shopIsRunning();
 
@@ -641,10 +616,6 @@ describe('the shop, running as its own process', () => {
   // `init` is the way out of that, and the only operator command that is not a client of a running
   // shop: until it has run there is nobody a shop would answer.
   describe('a machine nobody has set up yet', () => {
-    it('will not start when no callers are named', async () => {
-      await expect(startShopOver(dataRoot, [], path.join(dataRoot, 'no-credentials-here'))).rejects.toThrow('every route names its caller');
-    }, 30_000);
-
     // What proves `init` worked is not the file it wrote but a shop started over it answering the
     // token it printed. The mode, the shape and the token are each something a file can get wrong
     // while still looking right, and each of them is a shop that will not start or will not answer.

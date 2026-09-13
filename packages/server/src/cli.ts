@@ -8,25 +8,22 @@ import { DEFAULT_PORT, LOOPBACK, serve } from './api.js';
 import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
-import { JobStore, MAX_GCODE_ENV } from './JobStore.js';
+import { MAX_GCODE_ENV } from './JobStore.js';
 import {
   ETC_ENV,
   callersIn,
   defaultEtc,
-  printerKeysIn,
   setPassword,
   writePrinterKey,
 } from './credentials.js';
 import { SESSIONS_FILE, Sessions } from './sessions.js';
-import type { Callers } from './credentials.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
-import { redacting, toStdout } from './log.js';
 import { addSomebody, askForANewPassword, changePassword, giveAToken, listCallers, migrateTheCallers } from './callerAdmin.js';
 import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { answerSignals, rereadEverything } from './signals.js';
-import { claimData } from './dataLock.js';
-import { DATA_ROOT_ENV, defaultLayout, layoutUnder } from './dataLayout.js';
+import { layTheFoundations } from './foundations.js';
+import { DATA_ROOT_ENV } from './dataLayout.js';
 
 // AIDEV-NOTE: thin on purpose. Every printer command is a function in printerAdmin.ts answering with
 // lines, and serving is one call into api.ts; this only turns argv into a call and lines into
@@ -81,33 +78,15 @@ export function createCLI({ reach, say: told }: CliParts = {}): Command {
     // depending on a client, and that direction never runs.
     .option('--page <path>', 'a directory of files to serve beside the API, so a browser has somewhere to get the page')
     .action(async (options: { port: number; listen?: string; data?: string; maxGcode?: number; etc?: string; page?: string }) => {
-      // AIDEV-NOTE: named a place, everything goes under it; named none, each kind goes where this
-      // system keeps that kind. The branch is in dataLayout.ts and this is its first caller rather
-      // than its home - the server is a library too, and an embedder needs the same answer.
-      const where = options.data === undefined ? defaultLayout() : layoutUnder(options.data);
-      const store = new JobStore(where, { maxGcodeBytes: options.maxGcode });
-      const etc = options.etc ?? defaultEtc();
-
-      // AIDEV-NOTE: credentials come first, and a shop that has none does not start. Every route
-      // names its caller, so there is nothing for a shop with no callers to answer - and reading a
-      // missing file as "nobody configured yet" is how a fresh machine ends up serving anybody who
-      // reaches the port. A file that is THERE and wrong stops it for the same reason: answering a
-      // typo in the security file by removing the security is the failure nobody notices.
-      let callers: Callers = await callersIn(etc);
-      let printerKeys: ReadonlyMap<string, string> = await printerKeysIn(etc);
+      // Everything that has to be true before a request is answered, in the order it has to be true
+      // in - and every refusal it can make is asked for directly in tests/foundations.test.ts.
+      const foundations = await layTheFoundations(options);
+      const { where, store, etc, log, releaseData, holding } = foundations;
+      // Both change while the shop runs - a SIGHUP re-reads them, and a printer added over the API
+      // brings a key with it - so they are what this process HOLDS rather than what it read once.
+      let callers = foundations.callers;
+      let printerKeys = foundations.printerKeys;
       const listenOn = options.listen ?? LOOPBACK;
-
-      // AIDEV-NOTE: built from every secret this process HOLDS, which is now the printer keys and
-      // nothing else - a caller's token is kept as a digest and a session as a digest of one, so
-      // there is no token here to leak. What is left are the keys, which cannot be hashed because
-      // the shop has to present them to a machine. Asked for afresh on each line, because a key
-      // given while the shop runs is one this process did not hold when the log was made.
-      const log = redacting(toStdout(), () => printerKeys.values());
-
-      // Before anything else: a data directory that is not there, or is already being served, is a shop that
-      // must refuse to start rather than start and do damage.
-      await store.ready();
-      const releaseData = await claimData(where.run);
 
       // AIDEV-NOTE: picked up rather than started empty, so an update at 2am is not a wall display
       // asking to be logged in to in the morning. A file it cannot read logs everybody out and says
@@ -178,6 +157,7 @@ export function createCLI({ reach, say: told }: CliParts = {}): Command {
       // cannot reach a log written after it.
       const keepTheKey = async (printer: string, key: string): Promise<void> => {
         printerKeys = await writePrinterKey(etc, printer, key);
+        holding(printerKeys);
         log.info('a printer was given its key', { printer, etc });
         tryEverythingAgain(printer);
       };
@@ -214,6 +194,7 @@ export function createCLI({ reach, say: told }: CliParts = {}): Command {
           void rereadEverything(etc, { callers, printerKeys }, sessions, log).then((held) => {
             callers = held.callers;
             printerKeys = held.printerKeys;
+            holding(printerKeys);
           });
         },
       });
