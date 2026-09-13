@@ -30,6 +30,39 @@ export function validateDetails(details: JobDetails): void {
   if (details.displayName !== undefined) validateDisplayName(details.displayName);
   if (details.estimatedPrintSeconds !== undefined) validateEstimate(details.estimatedPrintSeconds);
   if (details.remotePath !== undefined) validateRemotePath(details.remotePath);
+  if (details.metadata !== undefined) validateMetadata(details.metadata);
+}
+
+// The longest a single metadata name or value may be. Not a bound on what a submission COSTS - the
+// description as a whole is already capped where it is read, and this is a fraction of that. It is a
+// bound on the shape: an entry longer than this is a document, and metadata is a label.
+const MAX_METADATA = 255;
+
+// AIDEV-NOTE: the one field the shop carries without ever reading, so what it takes is what it can
+// hand back unchanged - names against text. An object was always what the type said and a string was
+// always what it took, `"hi"` included. A client with structure of its own encodes it into a value
+// and decodes it again; the shop having no opinion about the content is not the same as having none
+// about the shape.
+function validateMetadata(metadata: unknown): void {
+  if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
+    throw new InvalidSubmission(`${JSON.stringify(metadata)} is not metadata - metadata is names against text`);
+  }
+
+  for (const [name, value] of Object.entries(metadata)) {
+    // The name's length first, so everything below may say which name it was without quoting a
+    // kilobyte of one back at the client.
+    if (name.length > MAX_METADATA) {
+      throw new InvalidSubmission(`a metadata name is at most ${MAX_METADATA} characters, and one here is ${name.length}`);
+    }
+
+    if (typeof value !== 'string') {
+      throw new InvalidSubmission(`metadata ${JSON.stringify(name)} is ${JSON.stringify(value)}, and metadata is text - encode what is not`);
+    }
+
+    if (value.length > MAX_METADATA) {
+      throw new InvalidSubmission(`metadata ${JSON.stringify(name)} is ${value.length} characters, and a metadata value is at most ${MAX_METADATA}`);
+    }
+  }
 }
 
 // AIDEV-NOTE: `unknown` for the reason `validateEstimate` is - `JobDetails` says what a client

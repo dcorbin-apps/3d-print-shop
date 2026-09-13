@@ -5,7 +5,7 @@ import type { Server } from 'node:http';
 import * as path from 'node:path';
 import { SHOP_ROUTES } from '@3d-print-shop/client';
 import type { Verdict } from '@3d-print-shop/client';
-import { InvalidSubmission } from './Job.js';
+import { InvalidSubmission, validateDetails } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
 import { NoSuchJob, NoSuchPrinter, DataUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
 import { Attempts } from './attempts.js';
@@ -677,10 +677,19 @@ function submission(shop: JobStore, request: Request, owner: string, maxDescript
         return;
       }
 
+      // AIDEV-NOTE: judged HERE, where the bytes a client sent are turned into a description, and
+      // not by the store it is handed to. `JobDetails` is a declaration about somebody else's JSON,
+      // so the layer that parses it is the layer that has to answer for it - and this is the earliest
+      // it can be answered, which is before a byte of gcode has been read.
+      //
+      // `details` is left unset when it will not do, so the gcode part below drains rather than
+      // being submitted: a rejected promise does not stop busboy parsing the rest of the body.
       try {
-        details = JSON.parse(value) as JobDetails;
-      } catch {
-        reject(new UnusableRequest(`the ${DESCRIPTION_PART} part is not JSON`));
+        const described = JSON.parse(value) as JobDetails;
+        validateDetails(described);
+        details = described;
+      } catch (refusal) {
+        reject(refusal instanceof SyntaxError ? new UnusableRequest(`the ${DESCRIPTION_PART} part is not JSON`) : refusal);
       }
     });
 

@@ -136,6 +136,31 @@ describe('the jobs, over the shop routes', () => {
       expect(answer.handedOver()).toBeGreaterThan(8_000_000);
     }, 30_000);
 
+    // AIDEV-NOTE: what a client may SAY is answered in the layer that reads what it sent, and the
+    // store is handed a description already answered for. Each RULE is a unit test of
+    // `validateDetails` in tests/Job.test.ts; what is here is that a route asks it at all, and at the
+    // moment it claims to - before a byte of the gcode part.
+    it('refuses a description it will not accept, and says which rule refused it', async () => {
+      const answer = await submit({ ...playerBox, filaments: [] });
+
+      expect(answer.status).toBe(400);
+      expect(answer.body).toEqual({ error: 'a job must say which filaments it needs' });
+      // Refused is refused: the gcode beside it is read to let the request finish, and nothing is kept.
+      expect((await ask('/jobs')).body).toMatchObject({ totalJobs: 0 });
+    });
+
+    // AIDEV-NOTE: a SECOND drain, and a different one - the description is refused in the field
+    // handler, before the gcode part has started, so nothing is holding the file to resume it. What
+    // keeps it drained is `details` being left unset, which sends the part down the branch that
+    // discards it. Rejecting the promise does not stop busboy parsing the rest of the body.
+    it('is drained when the description is what is refused, which is before the gcode part begins', async () => {
+      const answer = await submit({ ...playerBox, filaments: [] }, 'G1 X100.000 Y100.000\n'.repeat(400_000));
+
+      expect(answer.status).toBe(400);
+      expect(answer.wasDrained()).toBe(true);
+      expect(answer.handedOver()).toBeGreaterThan(8_000_000);
+    }, 30_000);
+
     it('refuses a job no printer here has room for, saying what the shop has', async () => {
       const answer = await submit({ ...playerBox, requiredBuildVolume: { x: 100, y: 100, z: 400 } });
 

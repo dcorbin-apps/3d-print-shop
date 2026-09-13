@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'n
 import * as path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { InvalidSubmission, generatedDisplayName, validateDetails } from './Job.js';
+import { InvalidSubmission, generatedDisplayName } from './Job.js';
 import type { BuildVolume, Job, JobDetails, JobRecord, PrinterOutcome } from './Job.js';
 import { canTake, whereToWatch } from './Printer.js';
 import type { Holding, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
@@ -103,13 +103,16 @@ export class JobStore {
     this.freeBytes = limits.freeBytes ?? spaceFreeOn;
   }
 
+  // AIDEV-NOTE: the DETAILS are not judged here. What a client may say is a question about a request,
+  // and it is answered where a request is read - `validateDetails` in api.ts, before a byte of gcode
+  // has arrived. What is judged here is what only the shop knows: whether it has the room, and
+  // whether any printer it has could ever take this.
   /**
-   * The details are checked before a byte is read; the gcode is streamed straight to disk, never
-   * held whole. Nothing incomplete is ever visible: the record is written last, and a stream that
-   * fails or delivers nothing takes the whole job directory with it.
+   * The gcode is streamed straight to disk, never held whole. Nothing incomplete is ever visible:
+   * the record is written last, and a stream that fails or delivers nothing takes the whole job
+   * directory with it.
    */
   async submit(details: JobDetails, gcode: Readable, owner: string): Promise<Job> {
-    validateDetails(details);
     await this.requireDataRoot();
     await this.requireRoomForOne();
     await this.requireSomePrinterCouldTakeIt(details);

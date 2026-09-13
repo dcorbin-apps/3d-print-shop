@@ -3,7 +3,6 @@ import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
-import { InvalidSubmission } from '../src/Job';
 import type { BuildVolume, Job, JobDetails, PrinterOutcome } from '../src/Job';
 import type { RegisteredPrinter } from '../src/Printer';
 import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, DataUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
@@ -97,14 +96,14 @@ describe('JobStore', () => {
     // Carried, never interpreted - it is how a client keeps its own meaning attached.
     it('carries the metadata, remote path and printer through untouched', async () => {
       const job = await submit(
-        details({ remotePath: 'plates/cards.gcode', printer: 'mk4', metadata: { pieces: [{ piece: 'cards' }] } }),
+        details({ remotePath: 'plates/cards.gcode', printer: 'mk4', metadata: { pieces: 'cards', kit: 'wingspan' } }),
         gcode()
       );
 
       expect(await shop.find(job.id)).toMatchObject({
         remotePath: 'plates/cards.gcode',
         printer: 'mk4',
-        metadata: { pieces: [{ piece: 'cards' }] },
+        metadata: { pieces: 'cards', kit: 'wingspan' },
       });
     });
 
@@ -144,10 +143,6 @@ describe('JobStore', () => {
 
       expect([job.heldBy, job.lastPrinterOutcome]).toEqual([undefined, undefined]);
       expect([stored?.heldBy, stored?.lastPrinterOutcome]).toEqual([undefined, undefined]);
-    });
-
-    it('refuses details it can see are wrong before reading the stream', async () => {
-      await expect(submit(details({ filaments: [] }), gcode())).rejects.toThrow(InvalidSubmission);
     });
   });
 

@@ -63,6 +63,46 @@ describe('validateDetails', () => {
     });
   });
 
+  // AIDEV-NOTE: the one field the shop never reads, so what it takes is what it can hand back
+  // unchanged. Its type said an object and it took a string; now it takes names against text, and a
+  // client with structure of its own encodes it.
+  describe('the meaning a client keeps attached', () => {
+    const carrying = (metadata: unknown): (() => void) => (): void =>
+      validateDetails(details({ metadata: metadata as Record<string, string> }));
+
+    it('takes names against text', () => {
+      expect(carrying({ pieces: 'cards', kit: 'wingspan' })).not.toThrow();
+    });
+
+    // Nothing to carry is as good as anything else to carry, and a client that sends it should not
+    // have to know that.
+    it('takes an empty one', () => {
+      expect(carrying({})).not.toThrow();
+    });
+
+    it.each([['hi'], [5], [null], [['a']], [true]])('refuses %p, which is not names against text', (metadata) => {
+      expect(carrying(metadata)).toThrow('is not metadata');
+    });
+
+    it.each([[5], [null], [{ nested: 'deep' }], [['a']]])('refuses a value of %p, and says which name carried it', (value) => {
+      expect(carrying({ pieces: value })).toThrow('metadata "pieces" is');
+    });
+
+    // The boundary both ways, on both halves of an entry - a name and a value are bounded separately
+    // and each says which it was.
+    it('takes a name and a value of exactly 255 characters', () => {
+      expect(carrying({ ['n'.repeat(255)]: 'v'.repeat(255) })).not.toThrow();
+    });
+
+    it('refuses a name of 256, without quoting it back', () => {
+      expect(carrying({ ['n'.repeat(256)]: 'cards' })).toThrow('a metadata name is at most 255 characters, and one here is 256');
+    });
+
+    it('refuses a value of 256, and says which name carried it', () => {
+      expect(carrying({ pieces: 'v'.repeat(256) })).toThrow('metadata "pieces" is 256 characters, and a metadata value is at most 255');
+    });
+  });
+
   // AIDEV-NOTE: a number the shop adds up, so what it refuses is what would poison the total. It is
   // cast from JSON on the way in, so a client can send anything at all under this name.
   describe('how long a client says the print takes', () => {

@@ -64,7 +64,7 @@ describe('the life of a job', () => {
           filaments: ['PLA-SpaceGray'],
           displayName: 'Player Box',
           requiredBuildVolume: { x: 120, y: 90, z: 40 },
-          metadata: { pieces: [{ piece: 'player_box' }] },
+          metadata: { pieces: 'player_box' },
         },
         realisticGcode(),
         DAVE

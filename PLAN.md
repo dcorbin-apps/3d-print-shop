@@ -13,12 +13,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 Found by auditing a running shop on 2026-09-12; each was reproduced against a real process rather
 than read out of the code. These come before the rest of the list.
 
-- [ ] `metadata` is typed `Record<string, unknown>` and anything JSON can hold is accepted under it -
-  `"hi"` is stored as a string. Nothing is wrong with that behaviour: metadata is carried and never
-  interpreted, so any value is as good as any other. What is wrong is the type claiming otherwise,
-  and widening it is a change to the wire contract rather than to the shop. Noticed while the fields
-  beside it were being checked `packages/client/src/Job.ts`
-
 **What an unauthenticated caller can make the shop spend is bounded in the shop, and the reasoning
 was wrong the first time it was written here.** `POST /sessions` is the one route reachable without a
 credential that does real work - scrypt, by design, at 50ms and 32MB a go. That was recorded as the

@@ -35,8 +35,14 @@ export interface JobDetails {
    * costs a total rather than counting as no work - see `FilamentDemand`.
    */
   estimatedPrintSeconds?: number;
-  /** Carried by the shop and never interpreted - how a client keeps its own meaning attached. */
-  metadata?: Record<string, unknown>;
+  /**
+   * Carried by the shop and never interpreted - how a client keeps its own meaning attached.
+   *
+   * Names against text, and nothing nested: the shop stores this and hands it back, so what it will
+   * take is what it can hand back unchanged. A client with structure of its own encodes it into one
+   * of these values and decodes it again on the way out.
+   */
+  metadata?: Record<string, string>;
 }
 
 /**
