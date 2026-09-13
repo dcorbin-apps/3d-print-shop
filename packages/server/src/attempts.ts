@@ -20,11 +20,24 @@
 export const FREELY = 3;
 
 const FIRST_WAIT_MS = 1000;
-const LONGEST_WAIT_MS = 5 * 60 * 1000;
 
 // Forgotten after this, so that a person locked out by a bad afternoon is not locked out for ever
 // and an operator does not have to restart a shop to let somebody in.
 const FORGOTTEN_MS = 15 * 60 * 1000;
+
+// AIDEV-NOTE: the cap IS the forget window and is never less than it, which is the whole of what
+// keeps a lockout from being something somebody else can hold open. `mustWait` expires an entry
+// before it reads a wait off one, so the longest anybody is ever held is min(cap, forget) - and
+// while the cap was the SHORTER of the two, five minutes against fifteen, there was a moment every
+// five minutes when the wait had run out and the entry had not yet gone cold. One wrong guess
+// landed in it put the clock back: twelve requests an hour held a caller out for as long as
+// somebody cared to, and knowing the right password did not help, because the wait is read before
+// the password is.
+//
+// At or above the forget window there is no such moment - the count is gone before the wait ends,
+// so a guesser who waits one out has to start from nothing. Derived rather than written as its own
+// number, because two constants that have to stand in a relation will not stay in it by hand.
+const LONGEST_WAIT_MS = FORGOTTEN_MS;
 
 interface Wrong {
   times: number;
@@ -48,7 +61,7 @@ export class Attempts {
     if (had === undefined || had.times <= FREELY) return 0;
 
     const since = this.now() - had.last;
-    if (since > FORGOTTEN_MS) {
+    if (since >= FORGOTTEN_MS) {
       this.wrong.delete(id);
       return 0;
     }
@@ -61,7 +74,7 @@ export class Attempts {
     const at = this.now();
     const had = this.wrong.get(id);
 
-    this.wrong.set(id, { times: had === undefined || at - had.last > FORGOTTEN_MS ? 1 : had.times + 1, last: at });
+    this.wrong.set(id, { times: had === undefined || at - had.last >= FORGOTTEN_MS ? 1 : had.times + 1, last: at });
     this.forgetTheExpired(at);
   }
 
@@ -83,7 +96,7 @@ export class Attempts {
   // every one of them was kept for as long as the shop ran.
   private forgetTheExpired(at: number): void {
     for (const [id, had] of this.wrong) {
-      if (at - had.last > FORGOTTEN_MS) this.wrong.delete(id);
+      if (at - had.last >= FORGOTTEN_MS) this.wrong.delete(id);
     }
   }
 }

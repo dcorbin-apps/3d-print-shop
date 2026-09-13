@@ -47,16 +47,6 @@ anything going wrong. The shop listens on loopback unless told otherwise and the
 so none of these is urgent - they are the places that read as gaps beside the rules the rest of the
 code keeps.
 
-- [ ] Decide what a lockout is worth, because right now anybody who can reach the port can hold a
-  caller out. `attempts.ts` counts against the id and nothing else, and `mustWait` is asked before
-  the password is - so four wrong guesses against a name put that caller behind a doubling wait, and
-  one more every quarter of an hour keeps them there indefinitely. Knowing the right password does
-  not help: `wasRight` is never reached. `PUT /me/password` shares the count, so they cannot change
-  their password out from under it either. Counting against the ADDRESS was worse and was removed for
-  the reasons written down there; what replaced it left nothing standing between an attacker and a
-  named caller. On one workshop's network that may be the right trade - but it should be a decision
-  rather than what fell out of fixing the other one
-
 - [ ] Serialise what writes the credential files. `changeCallers` and `writePrinterKey` in
   `credentials.ts` each read the whole file, change it, write `<file>.new` and rename over - with no
   lock and the same scratch name every time. Two password changes at once lose one of them, and the

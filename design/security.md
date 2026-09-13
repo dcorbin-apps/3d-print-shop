@@ -54,6 +54,37 @@ A dev server proxying to the shop has to forward the Host as the browser sent it
 rewriting it to the target's - otherwise the origin and the host disagree and every write is refused.
 That is not a special case for the login; it is what every session-carrying write already needed.
 
+## Guessing a password, and being held out of your own account
+
+Wrong guesses are counted against the **id** and nothing else. Counting them against the address as
+well was the obvious thing and was the bug: the shop listens on loopback, so the address never
+varies and one bucket was every caller's - four wrong guesses against a name the shop did not even
+have put everybody else behind a five-minute wait while holding the right password.
+
+Three misses are free, then the wait doubles to a cap. The wait is read **before** the password is,
+which is what keeps a guesser from spending the shop's scrypt - and it is also why a caller who is
+being held out cannot clear it by knowing their own password. Nothing checks a password to find out
+whether to honour a wait, because checking one is the cost the wait exists to bound.
+
+That makes the relation between two constants load-bearing, which is the kind of thing that reads as
+a coincidence unless it is said. `mustWait` expires an entry before it reads a wait off one, so the
+longest anybody is held is `min(cap, forget window)`. **The cap is therefore the forget window, and
+never less than it.** While the cap was the shorter of the two - five minutes against fifteen - there
+was a moment every five minutes when the wait had run out and the count had not yet gone cold, and a
+single wrong guess landed in it put the clock back. Twelve requests an hour held a caller out of
+their own account for as long as somebody cared to keep going.
+
+The alternative considered and rejected was to check the password first and let a right one through
+whatever the wait says. It removes the lockout, and it removes the only bound on how many guesses may
+be aimed at one name: the guess rate against a targeted caller goes from a handful per quarter-hour
+to whatever the process can hash, which against a password whose only rule is twelve characters is a
+worse trade than the one it fixes.
+
+What is NOT answered here is how much hashing the process will do in total - a guesser varying the id
+never accumulates a count and buys a scrypt per request. That is a question about a resource rather
+than about anybody's credential, and `HASHES_AT_ONCE` in `secrets.ts` answers it: half the libuv
+threadpool, so a login flood makes logging in slow and leaves the shop printing through it.
+
 ## What is deliberately accepted
 
 **A printer's address is not range-checked.** An admin may point a printer at any http or https
