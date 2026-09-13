@@ -88,18 +88,25 @@ describe('validateDetails', () => {
       expect(carrying({ pieces: value })).toThrow('metadata "pieces" is');
     });
 
-    // The boundary both ways, on both halves of an entry - a name and a value are bounded separately
-    // and each says which it was.
-    it('takes a name and a value of exactly 255 characters', () => {
-      expect(carrying({ ['n'.repeat(255)]: 'v'.repeat(255) })).not.toThrow();
+    // The boundary both ways, on both halves of an entry - a name is a label and a value is the
+    // client's payload, so they are bounded separately and each says which it was.
+    it('takes a name of exactly 255 and a value of exactly 4096', () => {
+      expect(carrying({ ['n'.repeat(255)]: 'v'.repeat(4096) })).not.toThrow();
     });
 
     it('refuses a name of 256, without quoting it back', () => {
       expect(carrying({ ['n'.repeat(256)]: 'cards' })).toThrow('a metadata name is at most 255 characters, and one here is 256');
     });
 
-    it('refuses a value of 256, and says which name carried it', () => {
-      expect(carrying({ pieces: 'v'.repeat(256) })).toThrow('metadata "pieces" is 256 characters, and a metadata value is at most 255');
+    it('refuses a value of 4097, and says which name carried it', () => {
+      expect(carrying({ pieces: 'v'.repeat(4097) })).toThrow('metadata "pieces" is 4097 characters, and a metadata value is at most 4096');
+    });
+
+    // The value's limit is the one a real client meets: a list of a dozen things encoded into one.
+    it('takes a value of the size a client actually sends', () => {
+      const pieces = Array.from({ length: 12 }, (_, n) => ({ piece: `player_box_insert_${n}`, copies: 2 }));
+
+      expect(carrying({ pieces: JSON.stringify(pieces) })).not.toThrow();
     });
   });
 

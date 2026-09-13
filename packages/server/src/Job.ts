@@ -33,10 +33,13 @@ export function validateDetails(details: JobDetails): void {
   if (details.metadata !== undefined) validateMetadata(details.metadata);
 }
 
-// The longest a single metadata name or value may be. Not a bound on what a submission COSTS - the
-// description as a whole is already capped where it is read, and this is a fraction of that. It is a
-// bound on the shape: an entry longer than this is a document, and metadata is a label.
-const MAX_METADATA = 255;
+// AIDEV-NOTE: two numbers, because a name and a value are not the same kind of thing. A name is a
+// label and 255 is generous for one; a value is the client's own payload, and a client with
+// structure of its own encodes it into one - a list of a dozen things is ordinary and does not fit
+// in 255. Neither bounds what a submission COSTS: the description as a whole is capped where it is
+// read, and both of these are a fraction of it.
+const MAX_METADATA_NAME = 255;
+const MAX_METADATA_VALUE = 4096;
 
 // AIDEV-NOTE: the one field the shop carries without ever reading, so what it takes is what it can
 // hand back unchanged - names against text. An object was always what the type said and a string was
@@ -51,16 +54,18 @@ function validateMetadata(metadata: unknown): void {
   for (const [name, value] of Object.entries(metadata)) {
     // The name's length first, so everything below may say which name it was without quoting a
     // kilobyte of one back at the client.
-    if (name.length > MAX_METADATA) {
-      throw new InvalidSubmission(`a metadata name is at most ${MAX_METADATA} characters, and one here is ${name.length}`);
+    if (name.length > MAX_METADATA_NAME) {
+      throw new InvalidSubmission(`a metadata name is at most ${MAX_METADATA_NAME} characters, and one here is ${name.length}`);
     }
 
     if (typeof value !== 'string') {
       throw new InvalidSubmission(`metadata ${JSON.stringify(name)} is ${JSON.stringify(value)}, and metadata is text - encode what is not`);
     }
 
-    if (value.length > MAX_METADATA) {
-      throw new InvalidSubmission(`metadata ${JSON.stringify(name)} is ${value.length} characters, and a metadata value is at most ${MAX_METADATA}`);
+    if (value.length > MAX_METADATA_VALUE) {
+      throw new InvalidSubmission(
+        `metadata ${JSON.stringify(name)} is ${value.length} characters, and a metadata value is at most ${MAX_METADATA_VALUE}`
+      );
     }
   }
 }
