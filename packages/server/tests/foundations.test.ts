@@ -1,11 +1,12 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
-import { layTheFoundations } from '../src/foundations';
+import { layTheFoundations, sessionsKeptIn } from '../src/foundations';
 import type { Foundations } from '../src/foundations';
 import { CALLERS_FILE, DataInUse, PRINTER_KEYS_FILE, claimData } from '../src';
+import { SESSIONS_FILE } from '../src/sessions';
 import { digestOf } from '../src/secrets';
 import { layoutUnder } from '../src/dataLayout';
 
@@ -19,7 +20,7 @@ describe('what a shop must have before it serves anything', () => {
   let letGo: (() => void)[];
   let said: string[];
 
-  const laying = (over: { data?: string; etc?: string } = {}): Promise<unknown> =>
+  const laying = (over: { data?: string; etc?: string } = {}): Promise<Foundations> =>
     layTheFoundations({ data, etc, writing: (line) => said.push(line), ...over }).then((laid) => {
       letGo.push(laid.releaseData);
 
@@ -159,6 +160,53 @@ describe('what a shop must have before it serves anything', () => {
       log.info('printer stopped', { printer: 'mini', reason: 'the key is a-key-from-a-browser' });
 
       expect(said.join('\n')).not.toContain('a-key-from-a-browser');
+    });
+  });
+
+  // AIDEV-NOTE: a restart is what this is FOR - an update at 2am should not be a wall display asking
+  // to be logged in to in the morning. `Sessions` answers for itself across a restart in
+  // sessions.test.ts; what is here is where a running shop puts the file, which is the half that
+  // decides whether a restart finds it at all.
+  describe('who was logged in last time', () => {
+    it('is nobody on a machine that has never had one', async () => {
+      const { log } = await laying();
+
+      await expect(sessionsKeptIn(layoutUnder(data), log)).resolves.toMatchObject({ pickedUp: 0 });
+    });
+
+    it('is still logged in after the shop has been stopped and started again', async () => {
+      const { log } = await laying();
+      const first = await sessionsKeptIn(layoutUnder(data), log);
+      const secret = first.sessions.begin('dave');
+      await first.sessions.settled();
+
+      const again = await sessionsKeptIn(layoutUnder(data), log);
+
+      expect(again.sessions.whose(secret)).toBe('dave');
+      expect(again.pickedUp).toBe(1);
+    });
+
+    it('is not logged in again by a restart after logging out', async () => {
+      const { log } = await laying();
+      const first = await sessionsKeptIn(layoutUnder(data), log);
+      const secret = first.sessions.begin('dave');
+      first.sessions.end(secret);
+      await first.sessions.settled();
+
+      expect((await sessionsKeptIn(layoutUnder(data), log)).sessions.whose(secret)).toBeUndefined();
+    });
+
+    // AIDEV-NOTE: with the STATE, because the jobs directory is one directory per job and the store
+    // reads every name in it. A file of its own there is something the shop would have to know not
+    // to read, for ever.
+    it('is kept with the state, and not among the jobs', async () => {
+      const { log } = await laying();
+      const { sessions } = await sessionsKeptIn(layoutUnder(data), log);
+      sessions.begin('dave');
+      await sessions.settled();
+
+      await expect(readdir(layoutUnder(data).state)).resolves.toContain(SESSIONS_FILE);
+      await expect(readdir(layoutUnder(data).jobs)).resolves.toEqual([]);
     });
   });
 

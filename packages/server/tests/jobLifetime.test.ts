@@ -2,12 +2,15 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import { Readable } from 'node:stream';
-import { JobStore } from '../../src/JobStore';
-import { aDataDirectory, parentOf } from '../aDataDirectory';
-import type { DataLayout } from '../../src/dataLayout';
+import { JobStore } from '../src/JobStore';
+import { aDataDirectory, parentOf } from './aDataDirectory';
+import type { DataLayout } from '../src/dataLayout';
 
 // AIDEV-NOTE: the unit tests take each transition on its own; this takes a job all the way through
 // one, in order, across a restart - which is the only way to find out whether the pieces compose.
+// A restart here is a second `JobStore` over the same directory, which is all a restart IS to the
+// store - so this needs no socket and no process, and was an acceptance test only because it is
+// slower than its neighbours. Slow is not what makes a test an acceptance one.
 //
 // It also prints a gcode of a realistic SIZE. Every unit test uses a few bytes, so nothing else here
 // would notice if the stream were being buffered whole or truncated part way; this is what makes

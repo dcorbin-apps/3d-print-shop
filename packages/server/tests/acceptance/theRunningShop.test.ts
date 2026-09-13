@@ -5,7 +5,6 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { digestOf } from '../../src/secrets';
-import { SESSIONS_FILE } from '../../src/sessions';
 import { aDataDirectory, parentOf } from '../aDataDirectory';
 import type { DataLayout } from '../../src/dataLayout';
 
@@ -165,9 +164,6 @@ describe('the shop, running as its own process', () => {
     });
   }
 
-  async function submitPlayerBox(shop: RunningShop): Promise<Response> {
-    return submitGcode(shop, GCODE);
-  }
 
 
   async function submitAs(shop: RunningShop, token: string, displayName: string): Promise<Response> {
@@ -202,13 +198,6 @@ describe('the shop, running as its own process', () => {
   }
 
 
-  async function submitGcode(shop: RunningShop, gcode: string): Promise<Response> {
-    const body = new FormData();
-    body.append('job', JSON.stringify({ filaments: ['PLA-SpaceGray'], displayName: 'Player Box' }));
-    body.append('gcode', new Blob([gcode]), 'print.gcode');
-
-    return fetch(`${shop.url}/jobs`, { method: 'POST', body, headers: asAdmin });
-  }
 
   function ask(shop: RunningShop, path: string): Promise<Response> {
     return fetch(`${shop.url}${path}`, { headers: asAdmin });
@@ -301,58 +290,6 @@ describe('the shop, running as its own process', () => {
 
       expect(hash).toContain('scrypt$');
       expect((await logIn(shop, 'dave', hash)).status).toBe(401);
-    }, 60_000);
-
-    // AIDEV-NOTE: the point of keeping them in a file at all, and provable only here: a process
-    // stopped and a DIFFERENT one started over the same directories, with the browser presenting
-    // what it was holding before.
-    it('is still logged in after the shop has been stopped and started again', async () => {
-      const credentials = await aMachineSomebodyCanLogInTo();
-      const before = await startShopOver(dataRoot, [], credentials);
-
-      const cookie = await cookieFor(before);
-      await before.stop();
-      await before.stopped;
-
-      const after = await startShopOver(dataRoot, [], credentials);
-
-      expect((await fetch(`${after.url}/me`, { headers: { cookie } })).status).toBe(200);
-    }, 60_000);
-
-    // AIDEV-NOTE: with the state, because the jobs directory is one directory per job and the store
-    // reads every name in it. A file of its own there is something the shop would have to know not to
-    // read, for ever.
-    it('keeps who is logged in with its state, not among the jobs', async () => {
-      const shop = await startShopOver(dataRoot, [], await aMachineSomebodyCanLogInTo());
-      await cookieFor(shop);
-
-      // A login does not wait for the disk, so the file is a moment behind the answer to it.
-      const appeared = async (file: string): Promise<boolean> => {
-        for (let asked = 0; asked < 200; asked += 1) {
-          if ((await stat(file).catch(() => undefined)) !== undefined) return true;
-          await new Promise((on) => setTimeout(on, 25));
-        }
-
-        return false;
-      };
-
-      expect(await appeared(path.join(where.state, SESSIONS_FILE))).toBe(true);
-      await expect(stat(path.join(where.jobs, SESSIONS_FILE))).rejects.toThrow();
-    }, 60_000);
-
-    // The other half: logging out is not undone by a restart either.
-    it('is not logged in again by a restart after logging out', async () => {
-      const credentials = await aMachineSomebodyCanLogInTo();
-      const before = await startShopOver(dataRoot, [], credentials);
-
-      const cookie = await cookieFor(before);
-      await fetch(`${before.url}/sessions`, { method: 'DELETE', headers: { cookie, origin: before.url } });
-      await before.stop();
-      await before.stopped;
-
-      const after = await startShopOver(dataRoot, [], credentials);
-
-      expect((await fetch(`${after.url}/me`, { headers: { cookie } })).status).toBe(401);
     }, 60_000);
 
     // AIDEV-NOTE: `caller password` says every browser logged in as them is logged out once the shop
@@ -450,17 +387,6 @@ describe('the shop, running as its own process', () => {
     expect(await runCommand(['shutdown', '--shop-url', shop.url])).toBe(0);
 
     await shop.stopped;
-  }, 30_000);
-
-  it('is still holding the job after it has been stopped and started again', async () => {
-    const first = await shopIsRunning();
-    await addMk4(first);
-    await submitPlayerBox(first);
-    await first.stop();
-
-    const again = await shopIsRunning();
-
-    expect(await (await ask(again, '/jobs')).json()).toMatchObject({ accessibleJobs: [{ id: 1, displayName: 'Player Box', state: 'queued' }] });
   }, 30_000);
 
   // AIDEV-NOTE: the whole path a token travels - an environment variable, into HttpShop, onto the

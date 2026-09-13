@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { Command, InvalidArgumentError } from 'commander';
 import type { AddressInfo } from 'node:net';
-import * as path from 'node:path';
 import { HttpShop, SHOP_URL_ENV, defaultShopUrl, defaultToken } from '@3d-print-shop/client';
 import type { Role, Shop } from '@3d-print-shop/client';
 import { DEFAULT_PORT, LOOPBACK, serve } from './api.js';
@@ -16,13 +15,12 @@ import {
   setPassword,
   writePrinterKey,
 } from './credentials.js';
-import { SESSIONS_FILE, Sessions } from './sessions.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 import { addSomebody, askForANewPassword, changePassword, giveAToken, listCallers, migrateTheCallers } from './callerAdmin.js';
 import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { answerSignals, rereadEverything } from './signals.js';
-import { layTheFoundations } from './foundations.js';
+import { layTheFoundations, sessionsKeptIn } from './foundations.js';
 import { keepReachingForWhatIsLost, lookingForWork, stoppingTheShop, tryingAgain } from './running.js';
 import { DATA_ROOT_ENV } from './dataLayout.js';
 
@@ -95,15 +93,7 @@ export function createCLI({ reach, say: told, ask }: CliParts = {}): Command {
       let printerKeys = foundations.printerKeys;
       const listenOn = options.listen ?? LOOPBACK;
 
-      // AIDEV-NOTE: picked up rather than started empty, so an update at 2am is not a wall display
-      // asking to be logged in to in the morning. A file it cannot read logs everybody out and says
-      // why - the safe direction, taken out loud rather than quietly.
-      const sessions = new Sessions({ keptIn: path.join(where.state, SESSIONS_FILE), log });
-      const pickedUpSessions = await sessions.pickUp().catch((failure: unknown) => {
-        log.error('could not read who was logged in, so everybody logs in again', { why: (failure as Error).message });
-
-        return 0;
-      });
+      const { sessions, pickedUp: pickedUpSessions } = await sessionsKeptIn(where, log);
 
       const machines = new OctoPrintMachines(() => printerKeys);
       const foreman = new Foreman(store, machines.reach, log);

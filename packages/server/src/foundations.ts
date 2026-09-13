@@ -2,10 +2,12 @@ import { claimData } from './dataLock.js';
 import { callersIn, defaultEtc, printerKeysIn } from './credentials.js';
 import { defaultLayout, layoutUnder } from './dataLayout.js';
 import { JobStore } from './JobStore.js';
+import { SESSIONS_FILE, Sessions } from './sessions.js';
 import { redacting, toStdout } from './log.js';
 import type { Callers } from './credentials.js';
 import type { DataLayout } from './dataLayout.js';
 import type { Log } from './log.js';
+import * as path from 'node:path';
 
 /** What a shop must have before it serves anything, and what it holds once it does. */
 export interface Foundations {
@@ -81,4 +83,25 @@ export async function layTheFoundations({ data, etc: said, maxGcode, writing }: 
       held = keys;
     },
   };
+}
+
+// AIDEV-NOTE: picked up rather than started empty, so an update at 2am is not a wall display asking
+// to be logged in to in the morning. A file it cannot read logs everybody out and says why - the
+// safe direction, taken out loud rather than quietly, because a shop that silently forgot everybody
+// looks exactly like one that was restarted on purpose.
+//
+// Kept with the STATE and not among the jobs: the jobs directory is one directory per job and the
+// store reads every name in it, so a file of its own there is something the shop would have to know
+// not to read, for ever.
+/** The sessions a shop carries over from the last time it ran, and how many it found. */
+export async function sessionsKeptIn(where: DataLayout, log: Log): Promise<{ sessions: Sessions; pickedUp: number }> {
+  const sessions = new Sessions({ keptIn: path.join(where.state, SESSIONS_FILE), log });
+
+  const pickedUp = await sessions.pickUp().catch((failure: unknown) => {
+    log.error('could not read who was logged in, so everybody logs in again', { why: (failure as Error).message });
+
+    return 0;
+  });
+
+  return { sessions, pickedUp };
 }
