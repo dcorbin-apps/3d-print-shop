@@ -196,9 +196,15 @@ it missed the frame spent on an empty map, which is the lost-outcome race found 
 day. The frame shapes it appeared to pin are pinned by the sim's own tests on one side and
 `OctoPrint.test.ts` on the other. What it alone caught was `pushSocket`: a text frame arrives from
 `ws` as a Buffer where the DOM gives a string, and handing it on undecoded makes every frame the
-printer sends unreadable, which no injected socket would notice. That is six unit tests against a
-real `ws` server now, and they run in a second where the four scenarios took a minute and carried
-60-second timeouts against contention.
+printer sends unreadable, which no injected socket would notice.
+
+That went the same way one question later. What `ws` emits and what the shop turns it into are two
+claims, and only the second is the shop's. `adapting` is a function over a socket-shaped thing now,
+asked with a stand-in and no socket at all - the stand-in is not the claim, because the claim is the
+MAPPING rather than what is being mapped - and it catches six mutations where the real-socket version
+caught four, because being open and a reason being passed on are easy to ask of a stand-in and
+awkward to ask of a server. What `ws` hands over is `whatWsEmits` in the assumption suite: a Buffer
+for a text frame, `isBinary` to tell one from the other, and a close that arrives unasked.
 
 ### The service
 

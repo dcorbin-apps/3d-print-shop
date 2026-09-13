@@ -38,8 +38,24 @@ export type PushSocketFactory = (url: string) => PushSocket;
 // sentence - "Received network error or non-101 status code." - with no code and no cause, so a
 // refused connection, a name that does not resolve and a 404 handshake are one thing to an
 // operator. `ws` hands over the error libuv raised, which is what whyUnreachable() has words for.
-export const pushSocket: PushSocketFactory = (url) => {
-  const socket = new WsWebSocket(url);
+/** As much of a `ws` socket as this adapter touches. */
+export interface WsLike {
+  on(event: 'open' | 'close', listener: () => void): unknown;
+  on(event: 'message', listener: (data: RawData, isBinary: boolean) => void): unknown;
+  on(event: 'error', listener: (failure: Error) => void): unknown;
+  send(frame: string): void;
+  close(): void;
+}
+
+export const pushSocket: PushSocketFactory = (url) => adapting(new WsWebSocket(url));
+
+// AIDEV-NOTE: what `ws` emits and what this turns it into are two claims, and only the second is
+// ours. What ws hands over - a Buffer for a text frame, `isBinary` to tell one from the other - is
+// pinned in tests/assumptions/whatWsEmits.test.ts, where a red line means the world moved. This is
+// what the shop DOES with that, and it is asked with a stand-in: the stand-in is not the claim,
+// because the claim is the mapping rather than what is being mapped.
+/** Turn a `ws` socket into the one push socket the rest of the shop knows. */
+export function adapting(socket: WsLike): PushSocket {
   const port: PushSocket = {
     onopen: null,
     onmessage: null,
@@ -50,15 +66,15 @@ export const pushSocket: PushSocketFactory = (url) => {
   };
 
   socket.on('open', () => port.onopen?.());
-  // A text frame arrives here as a Buffer where the DOM gives a string. A binary one is passed on
-  // as it came, so a frame this adapter cannot read stays unreadable rather than becoming
-  // plausible nonsense.
+  // A text frame arrives here as a Buffer where the DOM gives a string, and everything above parses
+  // what it is handed. A binary one is passed on as it came, so a frame this adapter cannot read
+  // stays unreadable rather than becoming plausible nonsense.
   socket.on('message', (data: RawData, isBinary: boolean) => port.onmessage?.(isBinary ? data : data.toString()));
   socket.on('error', (failure: Error) => port.onerror?.(failure));
   socket.on('close', () => port.onclose?.());
 
   return port;
-};
+}
 
 /**
   * Waits out the backoff before attempt `n`. Settles early when `cancelled` fires, and must let go

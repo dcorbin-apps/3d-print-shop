@@ -1,108 +1,115 @@
-import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
-import type { AddressInfo } from 'node:net';
-import { WebSocketServer } from 'ws';
-import type { WebSocket } from 'ws';
-import { pushSocket } from '../src/OctoPrint';
-import type { PushSocket } from '../src/OctoPrint';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { adapting } from '../src/OctoPrint';
+import type { PushSocket, WsLike } from '../src/OctoPrint';
+import type { RawData } from 'ws';
 
-// AIDEV-NOTE: the adapter from `ws` to the one interface the rest of this shop knows, and the one
-// thing about the push side that a fake socket cannot say. `OctoPrint` is driven through an injected
-// socket everywhere else - which proves it behaves as its author imagined `ws` behaves, and that is
-// exactly the assumption this pins.
-//
-// Against a real `ws` server in this process. Not because a socket is the claim: what is claimed is
-// what THIS code does with what `ws` hands it, and a fake `ws` would be where the belief about what
-// `ws` hands over gets written down. What `ws` reports when it cannot connect at all is its own, and
-// is in tests/assumptions/pushSocket.test.ts.
+// AIDEV-NOTE: the mapping from a `ws` socket to the one push socket the rest of the shop knows -
+// ours, and asked with a stand-in. The stand-in is not the claim: what is claimed is what this turns
+// each thing into, not what `ws` hands it. What `ws` hands it is tests/assumptions/whatWsEmits.test.ts,
+// and the two are separate because a red line in each means a different thing - one says somebody
+// broke the mapping, the other says the world moved.
 describe('the push socket the shop reaches a printer with', () => {
-  let server: WebSocketServer;
-  let url: string;
-  let connected: WebSocket[];
-  let opened: PushSocket[];
+  let listeners: Map<string, (...said: never[]) => void>;
+  let sent: string[];
+  let closed: number;
+  let ws: WsLike;
+  let port: PushSocket;
 
-  const reaching = (): Promise<PushSocket> =>
-    new Promise((open) => {
-      const socket = pushSocket(url);
-      opened.push(socket);
-      socket.onopen = () => open(socket);
-    });
+  const arriving = (event: string, ...said: unknown[]): void => {
+    listeners.get(event)?.(...(said as never[]));
+  };
 
-  const whenAsked = (): Promise<WebSocket> =>
-    new Promise((arrived) => {
-      if (connected.length > 0) arrived(connected[0]);
-      else server.once('connection', (client) => arrived(client));
-    });
+  beforeEach(() => {
+    listeners = new Map();
+    sent = [];
+    closed = 0;
 
-  beforeEach(async () => {
-    connected = [];
-    opened = [];
-    server = new WebSocketServer({ port: 0, host: '127.0.0.1' });
-    server.on('connection', (client) => connected.push(client));
-    await new Promise<void>((listening) => server.once('listening', () => listening()));
-    url = `ws://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    ws = {
+      on: jest.fn<(event: string, listener: (...said: never[]) => void) => unknown>((event, listener) => {
+        listeners.set(event, listener);
+
+        return ws;
+      }),
+      send: jest.fn<(frame: string) => void>((frame) => sent.push(frame)),
+      close: jest.fn<() => void>(() => {
+        closed += 1;
+      }),
+    } as unknown as WsLike;
+
+    port = adapting(ws);
   });
 
-  afterEach(async () => {
-    opened.forEach((socket) => socket.close());
-    await new Promise<void>((closed) => server.close(() => closed()));
+  it('listens for everything the shop is told about, and nothing else', () => {
+    expect([...listeners.keys()].sort()).toEqual(['close', 'error', 'message', 'open']);
   });
 
-  it('says when it is open', async () => {
-    await expect(reaching()).resolves.toBeDefined();
+  it('says when it is open', () => {
+    const opened = jest.fn<() => void>();
+    port.onopen = opened;
+
+    arriving('open');
+
+    expect(opened).toHaveBeenCalledTimes(1);
   });
 
-  // AIDEV-NOTE: a text frame arrives from `ws` as a BUFFER where the DOM would give a string, and
+  // AIDEV-NOTE: a text frame arrives from `ws` as a BUFFER where the DOM gives a string, and
   // everything above this parses what it is handed with `JSON.parse`. Handed the buffer, every frame
-  // the printer sends would be unreadable - and no test driving a fake socket would notice, because
-  // a fake hands over whatever its author thought `ws` hands over.
-  it('hands a text frame over as a string, which is what the shop parses', async () => {
-    const socket = await reaching();
-    const heard = new Promise<unknown>((said) => (socket.onmessage = said));
+  // a printer sends would be unreadable.
+  it('hands a text frame over as a string, which is what the shop parses', () => {
+    const heard: unknown[] = [];
+    port.onmessage = (frame) => heard.push(frame);
 
-    (await whenAsked()).send(JSON.stringify({ history: { state: 'Operational' } }));
+    arriving('message', Buffer.from(JSON.stringify({ history: {} })) as RawData, false);
 
-    const frame = await heard;
-    expect(typeof frame).toBe('string');
-    expect(JSON.parse(frame as string)).toEqual({ history: { state: 'Operational' } });
+    expect(heard).toEqual([JSON.stringify({ history: {} })]);
   });
 
   // A binary frame is passed on as it came, so one this adapter cannot read stays unreadable rather
   // than becoming plausible nonsense.
-  it('hands a binary frame over as it came', async () => {
-    const socket = await reaching();
-    const heard = new Promise<unknown>((said) => (socket.onmessage = said));
+  it('hands a binary frame over as it came', () => {
+    const heard: unknown[] = [];
+    port.onmessage = (frame) => heard.push(frame);
+    const bytes = Buffer.from([1, 2, 3]);
 
-    (await whenAsked()).send(Uint8Array.from([1, 2, 3]), { binary: true });
+    arriving('message', bytes as RawData, true);
 
-    expect(typeof (await heard)).not.toBe('string');
+    expect(heard).toEqual([bytes]);
   });
 
-  it('sends what it is given, so a printer hears the handshake', async () => {
-    const socket = await reaching();
-    const client = await whenAsked();
-    const heard = new Promise<string>((said) => client.once('message', (data) => said(data.toString())));
+  it('says nothing to a shop that is not listening for frames', () => {
+    expect(() => arriving('message', Buffer.from('{}') as RawData, false)).not.toThrow();
+  });
 
-    socket.send(JSON.stringify({ auth: 'operator:sess-1' }));
+  // The only thing this end is offered a reason by - a close carries none.
+  it('says what went wrong when the socket says so', () => {
+    const why = new Error('ECONNREFUSED');
+    const heard: unknown[] = [];
+    port.onerror = (failure) => heard.push(failure);
 
-    expect(JSON.parse(await heard)).toEqual({ auth: 'operator:sess-1' });
+    arriving('error', why);
+
+    expect(heard).toEqual([why]);
   });
 
   // What tells the shop a printer has gone quiet, and the only thing that starts a reconnect.
-  it('says when the far end has gone', async () => {
-    const socket = await reaching();
-    const gone = new Promise<void>((closed) => (socket.onclose = closed));
+  it('says when the far end has gone', () => {
+    const gone = jest.fn<() => void>();
+    port.onclose = gone;
 
-    (await whenAsked()).terminate();
+    arriving('close');
 
-    await expect(gone).resolves.toBeUndefined();
+    expect(gone).toHaveBeenCalledTimes(1);
   });
 
-  it('says when it has been closed from this end', async () => {
-    const socket = await reaching();
-    const gone = new Promise<void>((closed) => (socket.onclose = closed));
+  it('sends what it is given, so a printer hears the handshake', () => {
+    port.send(JSON.stringify({ auth: 'operator:sess-1' }));
 
-    socket.close();
+    expect(sent).toEqual([JSON.stringify({ auth: 'operator:sess-1' })]);
+  });
 
-    await expect(gone).resolves.toBeUndefined();
+  it('closes the socket underneath when it is closed', () => {
+    port.close();
+
+    expect(closed).toBe(1);
   });
 });
