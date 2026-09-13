@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { AlreadyHasCallers, CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys, writeFirstCaller, writePrinterKey, Callers, addCaller, issueToken, migrateCallers, setPassword, whosePasswordChanged } from '../src/credentials';
+import { AlreadyHasCallers, CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys, writeFirstCaller, writePrinterKey, Callers, addCaller, issueToken, migrateCallers, scratchBeside, setPassword, whosePasswordChanged } from '../src/credentials';
 import { digestOf, hashPassword, isThePassword } from '../src/secrets';
 import { toStdout } from '../src/log';
 import type { Log } from '../src/log';
@@ -657,6 +657,51 @@ describe('the credentials a shop is given', () => {
     it('is what the environment says instead', () => {
       process.env[ETC_ENV] = '/somewhere/else';
       expect(defaultEtc()).toBe('/somewhere/else');
+    });
+  });
+
+  // AIDEV-NOTE: two writers, one file, and the two things that went wrong with it. The SCRATCH path
+  // was shared, so two writes truncating and filling it left one's bytes under the other's tail -
+  // not JSON, renamed over every credential this shop knows, and a shop that will not start next
+  // time. And the read-modify-write was not serialised, so two changes in one process both read the
+  // same list and the second wrote the first one away.
+  describe('two changes at the same moment', () => {
+    it('gives each write a scratch of its own, beside the file it is for', () => {
+      const file = path.join(etc, CALLERS_FILE);
+
+      expect(scratchBeside(file)).not.toBe(scratchBeside(file));
+      expect(path.dirname(scratchBeside(file))).toBe(etc);
+      expect(path.basename(scratchBeside(file)).startsWith(CALLERS_FILE)).toBe(true);
+    });
+
+    it('keeps both callers when two are added at once', async () => {
+      await writeFirstCaller(etc, 'dave', 'dave', PASSWORD);
+
+      await Promise.all([addCaller(etc, 'ada', 'ada', 'user'), addCaller(etc, 'grace', 'grace', 'user')]);
+
+      const known = await callersIn(etc);
+      expect([...known.all()].map(({ caller }) => caller.id).sort()).toEqual(['ada', 'dave', 'grace']);
+    });
+
+    it('keeps both keys when two printers are given one at once', async () => {
+      await Promise.all([writePrinterKey(etc, 'mk4', 'one-key'), writePrinterKey(etc, 'mini', 'another')]);
+
+      await expect(printerKeysIn(etc)).resolves.toEqual(
+        new Map([
+          ['mk4', 'one-key'],
+          ['mini', 'another'],
+        ])
+      );
+    });
+
+    // Nothing is left beside the file for the next writer to wonder about, or to be published by
+    // mistake. A rename consumes the one it made; a failure takes it away again.
+    it('leaves no scratch behind it', async () => {
+      await writeFirstCaller(etc, 'dave', 'dave', PASSWORD);
+      await addCaller(etc, 'ada', 'ada', 'user');
+      await writePrinterKey(etc, 'mk4', 'a-key');
+
+      expect((await readdir(etc)).sort()).toEqual([CALLERS_FILE, PRINTER_KEYS_FILE]);
     });
   });
 });

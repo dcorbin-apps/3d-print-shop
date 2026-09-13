@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach, beforeEach, jest } from '@jest/globals
 import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { keepReachingForWhatIsLost, keepingTheKey, lookingForWork, stoppingTheShop, tryingAgain } from '../src/running';
-import { printerKeysIn } from '../src/credentials';
+import { PasswordDidNotStick, keepReachingForWhatIsLost, keepingTheKey, keepingTheirPassword, lookingForWork, stoppingTheShop, tryingAgain } from '../src/running';
+import { printerKeysIn, writeFirstCaller } from '../src/credentials';
 import { silent, toStdout } from '../src/log';
 import type { Log } from '../src/log';
 import type { Stopping, TheForeman, TheMachines } from '../src/running';
@@ -123,6 +123,40 @@ describe('a shop that is running', () => {
 
     afterEach(async () => {
       await rm(etc, { recursive: true, force: true });
+    });
+
+    // AIDEV-NOTE: the half that a lock cannot answer. `caller password` at a terminal writes this
+    // same file from a process of its own - deliberately, because a shop cannot be asked to give
+    // somebody a way in that it does not yet answer - so a change made over the API can still be
+    // overwritten whole. What must not happen then is the route acting as though it took: it ends
+    // every other session this caller holds and answers 204, which would leave them logged out
+    // everywhere holding a password the file does not have. A writer that does not write is what
+    // losing that race looks like from in here.
+    describe('keeping a password somebody just changed', () => {
+      const PASSWORD = 'a password of some length';
+      const WANTED = 'a different password entirely';
+
+      const lostIt: (etc: string, id: string, password: string) => Promise<void> = () => Promise.resolve();
+
+      beforeEach(async () => {
+        await writeFirstCaller(etc, 'dave', 'dave', PASSWORD);
+      });
+
+      it('answers with the callers the file now names', async () => {
+        const callers = await keepingTheirPassword(etc)('dave', WANTED);
+
+        expect(callers.named('dave')?.caller).toEqual({ id: 'dave', name: 'dave', role: 'admin' });
+      });
+
+      it('refuses when the file does not hold what it just wrote', async () => {
+        await expect(keepingTheirPassword(etc, lostIt)('dave', WANTED)).rejects.toThrow(PasswordDidNotStick);
+      });
+
+      // Said of the shop and its directory rather than of the caller, because nobody asking got
+      // anything wrong - which is also why it goes out as a 500 and the path stays in the log.
+      it('says what happened rather than blaming whoever asked', async () => {
+        await expect(keepingTheirPassword(etc, lostIt)('dave', WANTED)).rejects.toThrow(etc);
+      });
     });
 
     it('is written where the shop reads its keys', async () => {

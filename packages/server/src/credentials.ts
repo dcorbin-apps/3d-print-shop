@@ -1,8 +1,10 @@
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Caller, Role } from '@3d-print-shop/client';
 import type { Log } from './log.js';
 import { digestOf, hashPassword, newToken } from './secrets.js';
+import { atMostAtOnce } from './turns.js';
 
 // AIDEV-NOTE: two files, not one, and deliberately. `callers` lets somebody into the SHOP; `printer
 // keys` let somebody into the PRINTERS, bypassing the shop entirely. One file holding both means
@@ -43,6 +45,50 @@ export class AlreadyHasCallers extends Error {}
 
 const FILE_MODE = 0o600;
 const DIRECTORY_MODE = 0o700;
+
+// AIDEV-NOTE: one at a time, and wrapped around the read-modify-write rather than around any caller -
+// the same reasoning as the bound on scrypt in secrets.ts, so that anything added later is covered
+// without having to remember. Each of these reads the whole file, changes it and writes it back, and
+// the gap is not small: setting a password hashes one in the middle of it, which is fifty
+// milliseconds before it queues behind whatever else is hashing. Two overlapping lose one of the
+// changes, and the caller whose change was lost has already been told it took.
+//
+// What this cannot reach is the OPERATOR'S terminal. `caller add`, `caller password`, `caller token`
+// and `callers migrate` run in a process of their own and write this same file - deliberately,
+// because a shop cannot be asked to give somebody a way in that it does not yet answer. A lock those
+// could share would have to be a file, and a file outlives the process that took it: see dataLock.ts,
+// which reached for a listening socket rather than leave the next writer guessing what a leftover
+// means, and a socket is the wrong shape for a fifty-millisecond turn taken over and over. So that
+// half is answered where the DAMAGE is instead - `keepingTheirPassword` in running.ts reads back what
+// it wrote, and a change that was overwritten is refused rather than reported as done.
+const oneAtATime = atMostAtOnce(1);
+
+// AIDEV-NOTE: written beside and renamed over, because a rename is atomic and a write is not - and
+// beside under a name nothing else will pick, which is the half that was missing. `writeFile`
+// truncates on open and writes from nought on a handle of its own, so two of these overlapping on one
+// scratch path leave the shorter one's bytes with the longer one's tail behind them: a file that is
+// not JSON, published by whichever renamed first, over the credentials of every caller this shop
+// knows. A shop already running survives that - it keeps what it holds and says why - but the next
+// restart refuses to start, and the fix is a person with a text editor.
+//
+// The name is this write's alone, so there is nothing to lock and nothing left behind that a later
+// writer has to interpret. It is removed again if the rename never happens, because a crash is
+// allowed to orphan one and a failure is not.
+export function scratchBeside(file: string): string {
+  return `${file}.${process.pid}.${randomBytes(6).toString('hex')}.new`;
+}
+
+async function writtenBesideAndRenamedOver(file: string, contents: string): Promise<void> {
+  const being = scratchBeside(file);
+
+  try {
+    await writeFile(being, contents, { mode: FILE_MODE });
+    await rename(being, file);
+  } catch (failure) {
+    await rm(being, { force: true });
+    throw failure;
+  }
+}
 
 /** What a caller is on disk. The credentials are hashes; nothing here is ever what was presented. */
 interface WrittenCaller {
@@ -100,13 +146,13 @@ export async function writeFirstCaller(etc: string, id: string, name: string, pa
 // than to what this process last saw, and renamed over so a crash part way through cannot leave a
 // shop with a file naming nobody, which is a shop that will not start.
 async function changeCallers(etc: string, changing: (known: WrittenCaller[]) => Promise<WrittenCaller[]>): Promise<void> {
-  const file = path.join(etc, CALLERS_FILE);
-  const known = (await callersIn(etc)).all().map(({ caller, credentials }) => ({ ...caller, credentials }));
-  const changed = await changing(known);
+  await oneAtATime(async () => {
+    const file = path.join(etc, CALLERS_FILE);
+    const known = (await callersIn(etc)).all().map(({ caller, credentials }) => ({ ...caller, credentials }));
+    const changed = await changing(known);
 
-  const being = `${file}.new`;
-  await writeFile(being, `${JSON.stringify(changed, null, 2)}\n`, { mode: FILE_MODE });
-  await rename(being, file);
+    await writtenBesideAndRenamedOver(file, `${JSON.stringify(changed, null, 2)}\n`);
+  });
 }
 
 /** Add somebody this shop may answer, with a password for a person or a token for a machine. */
@@ -180,27 +226,27 @@ export async function issueToken(etc: string, id: string): Promise<string> {
 // see a token in the clear, which is the point of doing it once and never again.
 /** Turn a file of plaintext tokens into one of hashes, keeping every token that is in it. */
 export async function migrateCallers(etc: string): Promise<number> {
-  const file = path.join(etc, CALLERS_FILE);
-  const listed = await readOnlyByItsOwner(file);
+  return oneAtATime(async () => {
+    const file = path.join(etc, CALLERS_FILE);
+    const listed = await readOnlyByItsOwner(file);
 
-  if (!Array.isArray(listed)) throw new UnusableCredentials(`${file} is not a list of callers`);
+    if (!Array.isArray(listed)) throw new UnusableCredentials(`${file} is not a list of callers`);
 
-  let hashed = 0;
-  const migrated = (listed as unknown[]).map((entry) => {
-    const { token, credentials, ...caller } = (entry ?? {}) as Record<string, unknown> & { token?: unknown; credentials?: unknown };
-    if (typeof token !== 'string' || token.trim() === '') return entry as WrittenCaller;
+    let hashed = 0;
+    const migrated = (listed as unknown[]).map((entry) => {
+      const { token, credentials, ...caller } = (entry ?? {}) as Record<string, unknown> & { token?: unknown; credentials?: unknown };
+      if (typeof token !== 'string' || token.trim() === '') return entry as WrittenCaller;
 
-    hashed += 1;
-    const already = Array.isArray(credentials) ? (credentials as WrittenCaller['credentials']) : [];
+      hashed += 1;
+      const already = Array.isArray(credentials) ? (credentials as WrittenCaller['credentials']) : [];
 
-    return { ...caller, credentials: [...already, { kind: 'token' as const, hash: digestOf(token) }] } as WrittenCaller;
+      return { ...caller, credentials: [...already, { kind: 'token' as const, hash: digestOf(token) }] } as WrittenCaller;
+    });
+
+    await writtenBesideAndRenamedOver(file, `${JSON.stringify(migrated, null, 2)}\n`);
+
+    return hashed;
   });
-
-  const being = `${file}.new`;
-  await writeFile(being, `${JSON.stringify(migrated, null, 2)}\n`, { mode: FILE_MODE });
-  await rename(being, file);
-
-  return hashed;
 }
 
 function requireAnId(id: string): void {
@@ -504,19 +550,17 @@ export async function printerKeysIn(etc: string = defaultEtc()): Promise<Map<str
 export async function writePrinterKey(etc: string, printer: string, key: string): Promise<Map<string, string>> {
   if (key.trim() === '') throw new UnusableCredentials(`${printer} cannot be given an empty key`);
 
-  const keys = await printerKeysIn(etc);
-  keys.set(printer, key);
+  return oneAtATime(async () => {
+    const keys = await printerKeysIn(etc);
+    keys.set(printer, key);
 
-  const file = path.join(etc, PRINTER_KEYS_FILE);
-  const asObject = Object.fromEntries([...keys.entries()].sort(([one], [other]) => one.localeCompare(other)));
+    const file = path.join(etc, PRINTER_KEYS_FILE);
+    const asObject = Object.fromEntries([...keys.entries()].sort(([one], [other]) => one.localeCompare(other)));
 
-  // Written beside and renamed over, because a crash part way through would otherwise leave the
-  // shop with a file holding no keys at all rather than the ones it had a moment ago.
-  const being = `${file}.new`;
-  await writeFile(being, `${JSON.stringify(asObject, null, 2)}\n`, { mode: FILE_MODE });
-  await rename(being, file);
+    await writtenBesideAndRenamedOver(file, `${JSON.stringify(asObject, null, 2)}\n`);
 
-  return keys;
+    return keys;
+  });
 }
 
 // AIDEV-NOTE: the mode is checked rather than assumed, the way ssh refuses a private key anyone can

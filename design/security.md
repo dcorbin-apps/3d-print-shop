@@ -85,6 +85,37 @@ never accumulates a count and buys a scrypt per request. That is a question abou
 than about anybody's credential, and `HASHES_AT_ONCE` in `secrets.ts` answers it: half the libuv
 threadpool, so a login flood makes logging in slow and leaves the shop printing through it.
 
+## Writing the files the credentials are in
+
+Both credential files are changed by reading the whole file, changing it, writing beside it and
+renaming over. That shape is right - a rename is atomic and a write is not - and it has two hazards,
+answered separately because they are not the same hazard.
+
+**A shared scratch path was the dangerous one.** `writeFile` truncates on open and writes from nought
+on a handle of its own, so two writes to one scratch path leave the shorter one's bytes with the
+longer one's tail behind them. What gets renamed into place is then not JSON, over the credentials of
+every caller the shop knows. A shop already running survives it - it keeps the callers it holds and
+says why - but the next restart refuses to start, and the fix is a person with a text editor. Every
+write now names its own scratch, so there is nothing to collide over and nothing left behind for a
+later writer to interpret.
+
+**The lost change is the other, and how far it can be answered depends on who is writing.**
+`printer-keys.json` has one writer, the running shop, so its read-modify-write is serialised in
+process and that is the whole of it. `callers.json` has two: the shop, when somebody changes their
+own password over the API, and the operator's terminal, where `caller add`, `caller password`,
+`caller token` and `callers migrate` write it directly. That is deliberate - a shop cannot be asked to
+give somebody a way in that it does not yet answer, which is also why there is no route for changing
+anybody else's password. Serialising covers the shop's half and cannot reach the other.
+
+**So the remaining race is detected rather than prevented.** A lock those two processes could share
+would have to be a file, and a file outlives the process that took it - the complaint `dataLock.ts`
+makes when it reaches for a listening socket instead, and a socket is the wrong shape for a
+fifty-millisecond turn taken over and over. What actually does the damage is not the lost write but
+the route acting as though it took: `PUT /me/password` ends every other session that caller holds and
+answers 204, which would leave them logged out everywhere holding a password the file does not have.
+So the write is read back and checked, and a change that was overwritten is refused - a 500, because
+the shop failed rather than the caller - and can simply be made again.
+
 ## What is deliberately accepted
 
 **A printer's address is not range-checked.** An admin may point a printer at any http or https

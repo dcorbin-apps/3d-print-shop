@@ -47,14 +47,6 @@ anything going wrong. The shop listens on loopback unless told otherwise and the
 so none of these is urgent - they are the places that read as gaps beside the rules the rest of the
 code keeps.
 
-- [ ] Serialise what writes the credential files. `changeCallers` and `writePrinterKey` in
-  `credentials.ts` each read the whole file, change it, write `<file>.new` and rename over - with no
-  lock and the same scratch name every time. Two password changes at once lose one of them, and the
-  caller who lost was answered 204 and had every other session of theirs ended, so they are holding a
-  password the file does not have. Two writes interleaving in one scratch file is the worse half: the
-  rename publishes something that will not parse, and a shop that is restarted after that refuses to
-  start. `JobStore` serialises exactly this shape with `this.serialised`; this file does not
-
 - [ ] The page is served with no security headers at all - no CSP, no `nosniff`, nothing about who
   may frame it, and express's `x-powered-by` left on. The session cookie is HttpOnly, so a script
   that got into the page cannot read it, but it can act through it, and a CSP is the layer that stops

@@ -1,4 +1,5 @@
 import { callersIn, setPassword, writePrinterKey } from './credentials.js';
+import { isThePassword } from './secrets.js';
 import type { Callers } from './credentials.js';
 import type { Log } from './log.js';
 
@@ -107,15 +108,44 @@ export function keepingTheKey(etc: string, log: Log, tryAgain: (printer: string)
   };
 }
 
+// AIDEV-NOTE: deliberately NOT given a row in `statusFor`, which is the one place an error becomes a
+// status. Unrowed is a 500, and a 500 is what this is: nobody asking got anything wrong, and the
+// shop failed to do what it was asked. It is also what keeps the message out of the answer - it
+// names the credentials directory, and `explainRefusal` sends a 500's sentence to the log alone.
+/** The shop wrote a password down and the file does not have it. Nobody's mistake but the race's. */
+export class PasswordDidNotStick extends Error {}
+
 // AIDEV-NOTE: written to the file and then READ BACK into what this process holds, in that order and
 // for the same reason a printer's key is. Read back rather than patched in memory, so that what is
 // in force is what the FILE says - which is what a re-read or a restart would find, and what
 // `caller list` would show. A person cannot be locked out by an update that way.
+//
+// AIDEV-NOTE: and the read-back is CHECKED, which is the half that was missing. This file has a
+// writer the shop cannot serialise against - `caller password` at a terminal is a process of its
+// own, deliberately, because a shop cannot be asked to give somebody a way in that it does not yet
+// answer - so two changes can still overlap and the later write wins whole. Preventing that would
+// take a lock file, which outlives the process that took it; see the note in credentials.ts.
+//
+// What is NOT survivable is the route acting as though a lost write took: `PUT /me/password` ends
+// every other session this caller holds and answers 204, so without this they are logged out
+// everywhere while holding a password the file does not have. Refused instead, and the change can be
+// made again. Costs one more scrypt on a thing a person does once in a while.
+// AIDEV-NOTE: the writer is handed in for the reason `freeBytes` is handed to a JobStore and a clock
+// to Sessions - the failure this guards against is another PROCESS winning the race, and there is no
+// way to stage that from inside this one. A stand-in that does not write is what a lost write looks
+// like from here, which is the whole of what the check reads.
 /** Keep a password its owner just changed, and answer with the callers the file now names. */
-export function keepingTheirPassword(etc: string) {
+export function keepingTheirPassword(etc: string, write: (etc: string, id: string, password: string) => Promise<void> = setPassword) {
   return async (id: string, password: string): Promise<Callers> => {
-    await setPassword(etc, id, password);
+    await write(etc, id, password);
+    const callers = await callersIn(etc);
 
-    return callersIn(etc);
+    if (!(await isThePassword(password, callers.named(id)?.password ?? ''))) {
+      throw new PasswordDidNotStick(
+        `${id}'s password was written and is not what ${etc} now holds - something else changed the callers at the same moment, so nothing here was kept`
+      );
+    }
+
+    return callers;
   };
 }
