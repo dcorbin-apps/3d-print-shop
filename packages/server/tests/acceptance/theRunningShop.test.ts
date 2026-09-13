@@ -474,6 +474,10 @@ describe('the shop, running as its own process', () => {
     expect(shop.hasSaid(/\[redacted]/)).toBe(true);
   }, 30_000);
 
+  // AIDEV-NOTE: what only a spawned process can say about stopping - that the process ENDS. A shop
+  // that answered and stayed up would look identical to a client, and nothing below a real process
+  // can tell the two apart. What stopping DOES - the order it lets things go in, that a second ask
+  // changes nothing, that it says so once the watchers have settled - is tests/running.test.ts.
   it('stops when the operator asks it to', async () => {
     const shop = await shopIsRunning();
 

@@ -23,6 +23,7 @@ import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { answerSignals, rereadEverything } from './signals.js';
 import { layTheFoundations } from './foundations.js';
+import { keepReachingForWhatIsLost, lookingForWork, stoppingTheShop, tryingAgain } from './running.js';
 import { DATA_ROOT_ENV } from './dataLayout.js';
 
 // AIDEV-NOTE: thin on purpose. Every printer command is a function in printerAdmin.ts answering with
@@ -101,52 +102,12 @@ export function createCLI({ reach, say: told }: CliParts = {}): Command {
       const machines = new OctoPrintMachines(() => printerKeys);
       const foreman = new Foreman(store, machines.reach, log);
 
-      // AIDEV-NOTE: the one thing the shop does on a clock rather than after a change it made. A
-      // machine the shop cannot hear makes no changes, so nothing else would ever ask again - and
-      // what ends one of these happens in a room the shop cannot see.
-      const reachingAgain = setInterval(() => {
-        void foreman
-          .reachForWhatIsLost()
-          .catch((failure: unknown) => log.error('could not reach for the printers', { why: (failure as Error).message }));
-      }, RETRY_TICK_MS);
+      const stopAsking = keepReachingForWhatIsLost(() => foreman.reachForWhatIsLost(), RETRY_TICK_MS, log);
+      const lookForWork = lookingForWork(foreman, log);
+      const tryEverythingAgain = tryingAgain(foreman, log);
 
-      // AIDEV-NOTE: every change the API makes is a moment something might be startable, so the
-      // foreman is told about all of them rather than about a chosen few. Not awaited: a client
-      // waiting on its own submission has no reason to wait for a printer to take a different job.
-      const lookForWork = (): void => {
-        void foreman.considerStarting().catch((failure: unknown) => log.error('could not look for work', { why: (failure as Error).message }));
-      };
-
-      // AIDEV-NOTE: stopping the listener is what makes the process end - nothing else here holds
-      // the event loop open once the printers are let go. Idempotent, because the operator can ask
-      // over the API and the supervisor can signal at the same moment.
-      let stopping = false;
-
-      const stopTheShop = (): void => {
-        if (stopping) return;
-        stopping = true;
-
-        // In this order: take no more requests, start nothing more, then let the machines go -
-        // which is what settles the watchers waiting on them.
-        shopServer.close();
-        clearInterval(reachingAgain);
-        foreman.stop();
-        machines.closeAll();
-        releaseData();
-
-        void foreman.watchersSettled().then(() => {
-          log.info('the shop has stopped');
-          say(['3d-print-shop has stopped']);
-        });
-      };
-
-      // An operator's go, which is more than a change: it says which machine, and that somebody has
-      // been to look at it.
-      const tryEverythingAgain = (name: string): void => {
-        void foreman
-          .startAgain(name)
-          .catch((failure: unknown) => log.error('could not try the printer again', { printer: name, why: (failure as Error).message }));
-      };
+      // Answered before it is wired up, because what it closes includes the listener it is given to.
+      const stopTheShop = (): void => stopEverything();
 
       // AIDEV-NOTE: written to the file the shop reads AND put into what this process is holding, in
       // that order - so a key given while the shop runs needs no signal and no restart. Then the
@@ -187,6 +148,16 @@ export function createCLI({ reach, say: told }: CliParts = {}): Command {
         },
         listenOn
       );
+
+      const stopEverything = stoppingTheShop({
+        server: shopServer,
+        stopAsking,
+        foreman,
+        machines,
+        releaseData,
+        log,
+        say,
+      });
 
       answerSignals(process, {
         stop: stopTheShop,
