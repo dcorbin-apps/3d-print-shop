@@ -28,6 +28,11 @@ export interface Groundwork {
   data?: string;
   etc?: string;
   maxGcode?: number;
+  // AIDEV-NOTE: where the log's lines go. A service writes them to stdout, which is what a
+  // supervisor captures; a test reads them back, which is the only way to ask what a shop did NOT
+  // say - and keeping a key out of a line is a claim about exactly that.
+  /** Where each line of the log goes. Stdout unless something else is asked for. */
+  writing?: (line: string) => void;
 }
 
 // AIDEV-NOTE: everything that has to be true before a single request is answered, in the order it
@@ -41,7 +46,7 @@ export interface Groundwork {
 //
 // Then the data directory, which must be there and must be nobody else's to write, and then the
 // claim on it - two shops over one would both hand out the same job id.
-export async function layTheFoundations({ data, etc: said, maxGcode }: Groundwork): Promise<Foundations> {
+export async function layTheFoundations({ data, etc: said, maxGcode, writing }: Groundwork): Promise<Foundations> {
   const etc = said ?? defaultEtc();
   const callers = await callersIn(etc);
   const printerKeys = await printerKeysIn(etc);
@@ -51,7 +56,7 @@ export async function layTheFoundations({ data, etc: said, maxGcode }: Groundwor
   // on each line, because a key given while the shop runs is one this process did not hold when the
   // log was made, which is why this reads a variable rather than taking the keys.
   let held: ReadonlyMap<string, string> = printerKeys;
-  const log = redacting(toStdout(), () => held.values());
+  const log = redacting(toStdout(undefined, writing), () => held.values());
 
   // AIDEV-NOTE: named a place, everything goes under it; named none, each kind goes where this
   // system keeps that kind. The branch is in dataLayout.ts and this is its first caller rather than

@@ -2,7 +2,9 @@ import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
+import { Readable } from 'node:stream';
 import { layTheFoundations } from '../src/foundations';
+import type { Foundations } from '../src/foundations';
 import { CALLERS_FILE, DataInUse, PRINTER_KEYS_FILE, claimData } from '../src';
 import { digestOf } from '../src/secrets';
 import { layoutUnder } from '../src/dataLayout';
@@ -15,9 +17,10 @@ describe('what a shop must have before it serves anything', () => {
   let data: string;
   let etc: string;
   let letGo: (() => void)[];
+  let said: string[];
 
   const laying = (over: { data?: string; etc?: string } = {}): Promise<unknown> =>
-    layTheFoundations({ data, etc, ...over }).then((laid) => {
+    layTheFoundations({ data, etc, writing: (line) => said.push(line), ...over }).then((laid) => {
       letGo.push(laid.releaseData);
 
       return laid;
@@ -42,6 +45,7 @@ describe('what a shop must have before it serves anything', () => {
     await chmod(etc, 0o700);
     await namingSomebody();
     letGo = [];
+    said = [];
   });
 
   afterEach(async () => {
@@ -129,6 +133,54 @@ describe('what a shop must have before it serves anything', () => {
 
     it('are none at all for a shop nobody has given one', async () => {
       await expect(laying()).resolves.toMatchObject({ printerKeys: new Map() });
+    });
+
+    // AIDEV-NOTE: what a leak actually looks like - not the shop printing a key on purpose, but a
+    // reason, a failure or a header with one quoted inside it. The redactor is the only thing
+    // standing in the way, and `redacting` is unit tested in log.test.ts; what is asked here is that
+    // the log a running shop is GIVEN was built with it, over the keys that shop holds.
+    it('are kept out of a line that quotes one back', async () => {
+      await writeFile(path.join(etc, PRINTER_KEYS_FILE), JSON.stringify({ mk4: 'a-secret-key' }), { mode: 0o600 });
+      const { log } = (await laying()) as Foundations;
+
+      log.info('printer stopped', { printer: 'mk4', reason: 'the key is a-secret-key' });
+
+      expect(said.join('\n')).not.toContain('a-secret-key');
+      expect(said.join('\n')).toContain('printer stopped');
+    });
+
+    // AIDEV-NOTE: a key can arrive while the shop RUNS - from a SIGHUP, or from a printer added over
+    // the API - and the log has to keep it out of every line written afterwards. It reads what it
+    // was last told rather than what it was built with, which is what `holding` is.
+    it('are kept out once a key that arrived later has been declared', async () => {
+      const { log, holding } = (await laying()) as Foundations;
+
+      holding(new Map([['mini', 'a-key-from-a-browser']]));
+      log.info('printer stopped', { printer: 'mini', reason: 'the key is a-key-from-a-browser' });
+
+      expect(said.join('\n')).not.toContain('a-key-from-a-browser');
+    });
+  });
+
+  // Named a place, everything goes under it - so what the store keeps work in is what was asked for.
+  describe('what it was told on the command line', () => {
+    it('keeps its work under the data directory it was pointed at', async () => {
+      const laid = (await laying()) as Foundations;
+
+      expect(laid.where.jobs).toBe(layoutUnder(data).jobs);
+    });
+
+    // The cap belongs to the operator: a slicer that outgrows the default has to be able to say so,
+    // and the shop keeps that much room spare in the data directory for every job it accepts.
+    it('takes gcode up to the size --max-gcode named, and no more', async () => {
+      const laid = await layTheFoundations({ data, etc, maxGcode: 64 });
+      letGo.push(laid.releaseData);
+
+      await laid.store.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://mk4' });
+      const asBigAsItTakes = await laid.store.submit({ filaments: ['PLA'] }, Readable.from(['G'.repeat(64)]), 'dave');
+
+      expect(asBigAsItTakes.gcodeBytes).toBe(64);
+      await expect(laid.store.submit({ filaments: ['PLA'] }, Readable.from(['G'.repeat(65)]), 'dave')).rejects.toThrow('64 bytes');
     });
   });
 });

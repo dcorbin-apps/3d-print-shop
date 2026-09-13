@@ -44,6 +44,11 @@ export interface CliParts {
   reach?: (options: { shopUrl?: string }) => Shop;
   /** Where a command's answer goes. */
   say?: (lines: string[]) => void;
+  // AIDEV-NOTE: a password is asked for rather than taken as an argument, because argv is `ps` and
+  // shell history. Handed in so that what a command DOES with one - and with a refusal to give one -
+  // can be asked without a terminal.
+  /** How a command asks for a password nobody has set yet. */
+  ask?: () => Promise<string>;
 }
 
 // AIDEV-NOTE: the default `reach`, named so that what it makes of `--shop-url` can be asked. Left
@@ -53,13 +58,14 @@ export function reachTheShop(options: { shopUrl?: string }): Shop {
   return new HttpShop(options.shopUrl ?? defaultShopUrl(), defaultToken());
 }
 
-export function createCLI({ reach, say: told }: CliParts = {}): Command {
+export function createCLI({ reach, say: told, ask }: CliParts = {}): Command {
   const program = new Command();
   const shop = reach ?? reachTheShop;
 
   program.name('3d-print-shop').description('Run the shop, and mind the printers it prints on');
 
   const say = told ?? ((lines: string[]): void => lines.forEach((line) => console.log(line)));
+  const askForOne = ask ?? askForANewPassword;
 
   program
     .command('serve')
@@ -209,7 +215,7 @@ export function createCLI({ reach, say: told }: CliParts = {}): Command {
     .argument('[name]', 'what to call them, and the id every job of theirs is owned by', 'admin')
     .option('--etc <path>', `where its credentials are kept (or ${ETC_ENV}; defaults to ${defaultEtc()})`)
     .action(async (name: string, options: { etc?: string }) =>
-      say(await initialiseShop(options.etc ?? defaultEtc(), name, await askForANewPassword()))
+      say(await initialiseShop(options.etc ?? defaultEtc(), name, await askForOne()))
     );
 
   // AIDEV-NOTE: these write the credentials file rather than asking a running shop, and they are the

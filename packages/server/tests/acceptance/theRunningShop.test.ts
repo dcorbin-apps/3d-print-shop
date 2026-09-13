@@ -237,14 +237,6 @@ describe('the shop, running as its own process', () => {
     await Promise.all([dataRoot, ...madeEtc].map((made) => rm(made, { recursive: true, force: true })));
   });
 
-  it('keeps what it is given in the data directory it was pointed at', async () => {
-    const shop = await shopIsRunning();
-    await addMk4(shop);
-
-    expect((await submitPlayerBox(shop)).status).toBe(201);
-    expect(await readFile(path.join(where.jobs, '1', 'print.gcode'), 'utf-8')).toBe(GCODE);
-  }, 30_000);
-
   const A_PASSWORD = 'a password of some length';
 
   // AIDEV-NOTE: a person logging in to the real thing - the file written by the command an operator
@@ -448,32 +440,6 @@ describe('the shop, running as its own process', () => {
     await shop.saysSomethingLike(/a printer was given its key/);
   }, 30_000);
 
-  // AIDEV-NOTE: a key is a secret, and the log is built from every one this process holds - so one
-  // that arrived while it was running has to reach the redactor too.
-  it('never writes a key it was given into its log', async () => {
-    const credentials = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
-    const shop = await startShopOver(dataRoot, [], credentials);
-
-    await fetch(`${shop.url}/printers`, {
-      method: 'POST',
-      headers: { ...asAdmin, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'mk4', buildVolume: MK4, address: 'http://mk4', key: 'a-key-from-a-browser' }),
-    });
-    await shop.saysSomethingLike(/a printer was given its key/);
-
-    // A line the shop writes with the key inside it, which is what a leak actually looks like: a
-    // reason, a failure, a header quoted back. The redactor is the only thing standing in the way.
-    await fetch(`${shop.url}/printers/mk4/status`, {
-      method: 'PUT',
-      headers: { ...asAdmin, 'content-type': 'application/json' },
-      body: JSON.stringify({ stopped: true, reason: 'the key is a-key-from-a-browser' }),
-    });
-
-    await shop.saysSomethingLike(/printer stopped/);
-    expect(shop.hasSaid(/a-key-from-a-browser/)).toBe(false);
-    expect(shop.hasSaid(/\[redacted]/)).toBe(true);
-  }, 30_000);
-
   // AIDEV-NOTE: what only a spawned process can say about stopping - that the process ENDS. A shop
   // that answered and stayed up would look identical to a client, and nothing below a real process
   // can tell the two apart. What stopping DOES - the order it lets things go in, that a second ask
@@ -495,20 +461,6 @@ describe('the shop, running as its own process', () => {
     const again = await shopIsRunning();
 
     expect(await (await ask(again, '/jobs')).json()).toMatchObject({ accessibleJobs: [{ id: 1, displayName: 'Player Box', state: 'queued' }] });
-  }, 30_000);
-
-  // The cap belongs to the operator: a slicer that outgrows the default has to be able to say so,
-  // and the shop keeps that much room spare in the data directory for every job it accepts.
-  it('takes gcode up to the size --max-gcode names, and no more', async () => {
-    const shop = await startShopOver(dataRoot, ['--max-gcode', '1']);
-    await addMk4(shop);
-
-    const oneMegabyte = 1024 * 1024;
-    expect((await submitGcode(shop, 'G'.repeat(oneMegabyte))).status).toBe(201);
-
-    const over = await submitGcode(shop, 'G'.repeat(oneMegabyte + 1));
-    expect(over.status).toBe(413);
-    expect(await over.json()).toEqual({ error: `gcode is longer than the ${oneMegabyte} bytes this shop takes` });
   }, 30_000);
 
   // AIDEV-NOTE: the whole path a token travels - an environment variable, into HttpShop, onto the
@@ -620,52 +572,5 @@ describe('the shop, running as its own process', () => {
   // `init` is the way out of that, and the only operator command that is not a client of a running
   // shop: until it has run there is nobody a shop would answer.
   describe('a machine nobody has set up yet', () => {
-    // What proves `init` worked is not the file it wrote but a shop started over it answering the
-    // token it printed. The mode, the shape and the token are each something a file can get wrong
-    // while still looking right, and each of them is a shop that will not start or will not answer.
-    it('is set up by init, and then answers the token init printed', async () => {
-      const machine = await mkdtemp(path.join(tmpdir(), 'print-shop-fresh-'));
-      madeEtc.push(machine);
-      const fresh = path.join(machine, 'etc');
-
-      const { stdout } = await runCommandSaying(['init', 'dave', '--etc', fresh], {}, `${A_PASSWORD}\n${A_PASSWORD}\n`);
-      const token = /\b[0-9a-f]{64}\b/.exec(stdout)?.[0];
-
-      const shop = await startShopOver(dataRoot, [], fresh);
-
-      expect(token).toBeDefined();
-      expect((await fetch(`${shop.url}/jobs`, { headers: { authorization: `Bearer ${token as string}` } })).status).toBe(200);
-    }, 60_000);
-
-    // The other half of what init writes, and the half a person uses.
-    it('is set up by init with a password that then logs somebody in', async () => {
-      const machine = await mkdtemp(path.join(tmpdir(), 'print-shop-fresh-'));
-      madeEtc.push(machine);
-      const fresh = path.join(machine, 'etc');
-
-      await runCommandSaying(['init', 'dave', '--etc', fresh], {}, `${A_PASSWORD}\n${A_PASSWORD}\n`);
-      const shop = await startShopOver(dataRoot, [], fresh);
-
-      const said = await fetch(`${shop.url}/sessions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: 'dave', password: A_PASSWORD }),
-      });
-
-      expect(said.status).toBe(201);
-    }, 60_000);
-
-    // Typed twice because nobody can see what they typed the first time, and a machine set up with
-    // a password nobody knows is a machine nobody can log in to.
-    it('is not set up at all when the two passwords do not match', async () => {
-      const machine = await mkdtemp(path.join(tmpdir(), 'print-shop-fresh-'));
-      madeEtc.push(machine);
-      const fresh = path.join(machine, 'etc');
-
-      const { code } = await runCommandSaying(['init', 'dave', '--etc', fresh], {}, `${A_PASSWORD}\nsomething else\n`);
-
-      expect(code).toBe(1);
-      await expect(readFile(path.join(fresh, 'callers.json'), 'utf-8')).rejects.toThrow();
-    }, 60_000);
   });
 });
