@@ -6,9 +6,10 @@ import type { PrinterOutcome } from '../src/Job';
 import type { RegisteredPrinter } from '../src/Printer';
 
 // AIDEV-NOTE: the whole of octoPrintMachines' acceptance suite said again with the machine handed
-// over rather than built - written to find out what a unit test of this class CAN say. It is kept
-// beside the acceptance suite rather than in place of it; what each catches and what only one of
-// them catches is recorded in PLAN.md.
+// over rather than built - written to find out what a unit test of this class CAN say. The answer
+// was all of it: seven mutations, and every one the acceptance file caught was caught here or in
+// OctoPrint.test.ts. That file is gone, and this is what is left of it. See PLAN.md, "Ask whether
+// ANY unit test can say it".
 describe('reaching a printer', () => {
   let made: { config: OctoPrintConfig; machine: Machine }[];
   let keys: Map<string, string>;

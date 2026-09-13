@@ -367,7 +367,7 @@ export class OctoPrint implements Printer {
   // The stream is read whole for the upload, because a multipart body built from FormData wants a
   // Blob and a Blob wants its bytes. It arrives as a stream so the shop never holds a gcode it is
   // only storing; holding one it is about to send is a shorter-lived cost, and streaming the upload
-  // would mean writing the multipart body by hand. See PLAN.
+  // would mean writing the multipart body by hand - which is in PLAN.md, with what it would buy.
   async send(remotePath: string, gcode: Readable): Promise<string> {
     await this.ensureConnected();
 
@@ -618,8 +618,8 @@ export class OctoPrint implements Printer {
   }
 
   // AIDEV-NOTE: not on the Printer port - nothing asks a printer to stop mid-print yet. Kept rather
-  // than deleted because an operator will want it and this is proven against a real OctoPrint; see
-  // PLAN. OctoPrint cancels whatever is running, so it takes no argument.
+  // than deleted because an operator will want it and this is proven against a real OctoPrint.
+  // OctoPrint cancels whatever is running, so it takes no argument.
   async cancel(): Promise<void> {
     const response = await this.reach(`${this.config.baseUrl}/api/job`, {
       method: 'POST',
@@ -652,13 +652,20 @@ async function readWhole(stream: Readable): Promise<Uint8Array<ArrayBuffer>> {
 }
 
 // AIDEV-NOTE: read back rather than assumed. OctoPrint answers an upload with what it FILED, and the
-// name it used is not always the one it was given - the docs show `20mm-ümläut-böx.gcode` stored as
-// `20mm-umlaut-box.gcode`. A print's completion event carries that stored path and the watcher
-// matches on the string, so a rename the shop did not follow is a print nobody hears the end of.
+// name it used is not always the one it was given: `&`, `;` and `$` are taken out silently, so
+// `a&b.gcode` is stored as `ab.gcode`. A print's completion event carries that stored path and the
+// watcher matches on the string, so a rename the shop did not follow is a print nobody hears the end
+// of.
 //
-// The asked-for path is the fallback rather than a refusal: the upload has already SUCCEEDED, and
-// turning that into a failed print over a body this cannot read would be worse than the guess the
-// shop made for every print before this. Confirming the rule against a real machine is in PLAN.md.
+// What renames and what does not was MEASURED against OctoPrint 1.11.8, one character at a time -
+// see the notes above `REMOVED_BY_A_PRINTER` in Job.ts, which refuses on the way in what is known to
+// be altered here. That run also settled the docs' own example: a non-ASCII name is NOT
+// transliterated by this version, so `20mm-ümläut-böx.gcode` comes back exactly as given.
+//
+// This stays regardless, because reading back what a machine says it did is not a guess about which
+// characters it alters. The asked-for path is the fallback rather than a refusal: the upload has
+// already SUCCEEDED, and turning that into a failed print over a body this cannot read would be
+// worse than the guess the shop made for every print before this.
 function filedAt(answer: unknown, asked: string): string {
   const filed = (answer as { files?: { local?: { path?: unknown } } } | undefined)?.files?.local?.path;
 

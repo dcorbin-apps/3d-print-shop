@@ -97,11 +97,11 @@ describe('what busboy makes of a submission', () => {
       expect(field).toMatchObject({ value: 'x'.repeat(FIELD_SIZE), truncated: true });
     });
 
-    // AIDEV-NOTE: the edge, and it is off by one. Busboy flags a value as truncated on REACHING
-    // fieldSize rather than passing it, so a description of exactly the limit arrives whole and is
-    // reported cut - and the shop answers "the job part is longer than 1048576 bytes" about one that
-    // is not longer. api.ts says this trait is "exactly that mistake waiting to happen" and avoids it
-    // by having no fileSize; the same trait applies to fieldSize, which it does use. See PLAN.md.
+    // AIDEV-NOTE: the edge, and it is off by one - a value of exactly fieldSize arrives whole and is
+    // reported cut. This is why `submissionLimits` in api.ts tells busboy one byte MORE than the shop
+    // allows: with the headroom, `valueTruncated` means "longer than the shop allows" rather than "as
+    // long as it, or longer". Told the shop's own number, a description of exactly the limit was
+    // refused for being longer than a number it was equal to.
     it('is whole and flagged anyway at exactly it', async () => {
       const [field] = (await reading([description('x'.repeat(FIELD_SIZE))])).fields;
 

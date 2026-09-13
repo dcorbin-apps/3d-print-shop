@@ -19,9 +19,6 @@ than read out of the code. These come before the rest of the list.
   and widening it is a change to the wire contract rather than to the shop. Noticed while the fields
   beside it were being checked `packages/client/src/Job.ts`
 
-- [ ] `see PLAN` in `OctoPrint.ts` at `send`, `cancel` and `filedAt` names nothing that is in this
-  file. Either the work is still wanted and belongs here, or the reference goes
-
 **What an unauthenticated caller can make the shop spend is bounded in the shop, and the reasoning
 was wrong the first time it was written here.** `POST /sessions` is the one route reachable without a
 credential that does real work - scrypt, by design, at 50ms and 32MB a go. That was recorded as the
@@ -147,6 +144,12 @@ tested and the shebang is not. If that is wanted it is a smoke test of its own a
 rather than a suite of behaviour tests carrying it.
 
 ### The service
+
+- [ ] Stream a plate to the printer rather than reading it whole. `send` in `OctoPrint.ts` builds the
+  upload with `FormData`, which wants a Blob, and a Blob wants its bytes - so a gcode the shop was
+  careful never to hold while STORING it is held whole while sending it, up to `maxGcodeBytes` and
+  128MB by default. Streaming it means writing the multipart body by hand. Worth doing when a plate
+  is big enough to notice, and nothing has measured that yet
 
 - [ ] The shop can say when IT is in trouble, rather than only what each printer is doing. A store
   or data-directory fault is nobody's printer's fault and now stops nothing, so a log line is all there is -
