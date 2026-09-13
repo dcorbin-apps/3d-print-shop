@@ -1,5 +1,6 @@
 A service that takes print jobs and gets them onto a printer. See README.md for what it is and
-design/3d-print-shop.md for why it is shaped this way, and design/testing.md for how it is tested.
+design/3d-print-shop.md for why it is shaped this way, design/testing.md for how it is tested, and
+design/security.md for what stops a request that is not really somebody's.
 PLAN.md is what is still to do.
 
 * All packages use ES Modules, not CommonJS

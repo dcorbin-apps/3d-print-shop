@@ -26,6 +26,9 @@ describe('where the guard sits', () => {
   let sessions: Sessions;
   let api: ReturnType<typeof createApi>;
 
+  const HOST = 'shop.local';
+  const HERE = `http://${HOST}`;
+
   const ADMIN = 'dave-token';
   const USER = 'slicer-token';
 
@@ -45,7 +48,7 @@ describe('where the guard sits', () => {
     request.url = url;
     const payload = body === undefined ? undefined : Buffer.from(body);
     request.headers = {
-      host: 'shop.local',
+      host: HOST,
       ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
       ...(payload === undefined ? {} : { 'content-type': 'application/json', 'content-length': String(payload.length) }),
       ...carrying,
@@ -92,7 +95,7 @@ describe('where the guard sits', () => {
   // The other direction, which fails loudly rather than silently: a guard above the login is a shop
   // nobody can ever log in to, because logging in is how a caller stops being unknown.
   it('is below the login, which is the one route reached before the shop knows anybody', async () => {
-    const refused = await answered('POST', '/sessions', undefined, JSON.stringify({ id: 'dave' }));
+    const refused = await answered('POST', '/sessions', undefined, JSON.stringify({ id: 'dave' }), { origin: HERE });
 
     expect(refused.status).toBe(400);
     expect(refused.body).toContain('a login is an id and a password');

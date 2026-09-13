@@ -35,6 +35,10 @@ export interface Asking {
   headers?: Record<string, string>;
 }
 
+/** The host `drive` says a request arrived at, and the origin a page this shop served would name. */
+export const HOST = 'shop.local';
+export const HERE = `http://${HOST}`;
+
 export function drive(api: Express) {
   return function asked(method: string, url: string, asking: Asking = {}): Promise<Answer> {
     const payload = asking.json === undefined ? asking.body : Buffer.from(JSON.stringify(asking.json));
@@ -44,7 +48,7 @@ export function drive(api: Express) {
     request.method = method;
     request.url = url;
     request.headers = {
-      host: 'shop.local',
+      host: HOST,
       ...(asking.token === undefined ? {} : { authorization: `Bearer ${asking.token}` }),
       ...(payload === undefined ? {} : { 'content-length': String(payload.length) }),
       ...(contentType === undefined ? {} : { 'content-type': contentType }),

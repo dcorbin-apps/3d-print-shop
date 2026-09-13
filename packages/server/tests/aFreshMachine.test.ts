@@ -7,7 +7,7 @@ import { CALLERS_FILE, callersIn } from '../src/credentials';
 import { JobStore } from '../src/JobStore';
 import { run } from '../src/cli';
 import { aDataDirectory, parentOf } from './aDataDirectory';
-import { drive } from './inProcess';
+import { HERE, drive } from './inProcess';
 import type { DataLayout } from '../src/dataLayout';
 
 // AIDEV-NOTE: `init` is the one operator command that is NOT a client of a running shop - until it
@@ -72,7 +72,7 @@ describe('setting a fresh machine up', () => {
     await initialising();
     const shop = await shopOverWhatInitWrote();
 
-    const said = await shop('POST', '/sessions', { json: { id: 'dave', password: A_PASSWORD } });
+    const said = await shop('POST', '/sessions', { json: { id: 'dave', password: A_PASSWORD }, headers: { origin: HERE } });
 
     expect(said.status).toBe(201);
   });

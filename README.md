@@ -9,7 +9,8 @@ needs and how much room it takes; the shop schedules on that and nothing else. N
 special standing, including the one it was written for.
 
 See [design/3d-print-shop.md](design/3d-print-shop.md) for why it is shaped this way,
-[design/testing.md](design/testing.md) for how it is tested, and
+[design/testing.md](design/testing.md) for how it is tested,
+[design/security.md](design/security.md) for what stops a request that is not really somebody's, and
 [PLAN.md](PLAN.md) for what is still to do.
 
 ## The packages

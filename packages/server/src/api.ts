@@ -182,18 +182,18 @@ export function cookieIn(header: string | undefined, name: string): string | und
   return undefined;
 }
 
-// AIDEV-NOTE: a browser sends `Origin` on every request that is not a plain navigation, so a write
-// carrying a session and no origin is not a browser doing what browsers do - which is what makes
-// refusing it safe. Compared against the Host the request arrived at rather than anything
-// configured: the shop does not know its own name, and whatever reached it is what a page served by
-// it would say.
+// AIDEV-NOTE: a browser sends `Origin` on every request that is not a plain navigation, so a request
+// that begins or carries a session and names no origin is not a browser doing what browsers do -
+// which is what makes refusing it safe. Compared against the Host the request arrived at rather than
+// anything configured: the shop does not know its own name, and whatever reached it is what a page
+// served by it would say.
 // AIDEV-NOTE: two headers rather than a request, so the rule is a function over values like every
 // other one here. `URL.parse` rather than `new URL`, because an origin that is not a URL is a thing
 // a browser really sends - `Origin: null` from a sandboxed iframe, and from a redirect across
 // origins - and a TypeError thrown in the guard made that a 500. It is refused either way; this
 // refuses it as the 403 it always meant.
 export function requireItCameFromHere(origin: string | undefined, host: string | undefined): void {
-  if (origin === undefined) throw new NotTheirs('a write carrying a session has to say where it came from');
+  if (origin === undefined) throw new NotTheirs('a request that begins or carries a session has to say where it came from');
 
   if (host === undefined || URL.parse(origin)?.host !== host) {
     throw new NotTheirs(`${origin} is not this shop, so a session from it is not one to act on`);
@@ -316,6 +316,18 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
   // miss, and scrypt in the middle whatever happens, so that "how long did it take" says nothing
   // either.
   api.post(SESSIONS_PATH, async (request, response) => {
+    // AIDEV-NOTE: the rule the guard keeps for a write, kept here too, because this is the one route
+    // the guard never sees - and the cookie's SameSite does not cover it. SameSite says when a cookie
+    // is SENT and nothing about whether a Set-Cookie is STORED, so without this another site's page
+    // could post a login of its own choosing, leave this browser holding a session that is not its
+    // owner's, and read back afterwards whatever was submitted through it.
+    //
+    // What it costs is that a password is a BROWSER's credential now: a caller with no page to log in
+    // from presents a token instead, which is already what this shop gives a machine. Asked before the
+    // body is read and before `attempts`, so a request the shop will not act on costs no hashing and
+    // spends nobody's guesses.
+    requireItCameFromHere(request.header('origin'), request.header('host'));
+
     const { id, password } = loginIn(request.body);
 
     const from = request.ip ?? 'nowhere';

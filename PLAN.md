@@ -4,7 +4,8 @@ What is still to do. Finished work is not recorded here - the reasoning behind e
 in `AIDEV-NOTE`s beside the code it explains, and the rest is in git.
 
 See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is working towards,
-[design/testing.md](design/testing.md) for how it is tested and why, and
+[design/testing.md](design/testing.md) for how it is tested and why,
+[design/security.md](design/security.md) for what stops a request that is not really somebody's, and
 [design/octoprint-sim.md](design/octoprint-sim.md) for the stand-in printer the tests run against.
 
 ## Remaining Work
@@ -38,6 +39,51 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   LISTING for the life of a single request: it cannot go stale, because nothing the shop does
   mid-request changes which printers there are. A cache that outlives a request is a second answer to
   that, which is what this store is built not to have. `packages/server/src/JobStore.ts`
+
+### Security
+
+Found by reading the whole of `packages/server/src`, the client and the installer, rather than by
+anything going wrong. The shop listens on loopback unless told otherwise and the auth model holds,
+so none of these is urgent - they are the places that read as gaps beside the rules the rest of the
+code keeps.
+
+- [ ] Decide what a lockout is worth, because right now anybody who can reach the port can hold a
+  caller out. `attempts.ts` counts against the id and nothing else, and `mustWait` is asked before
+  the password is - so four wrong guesses against a name put that caller behind a doubling wait, and
+  one more every quarter of an hour keeps them there indefinitely. Knowing the right password does
+  not help: `wasRight` is never reached. `PUT /me/password` shares the count, so they cannot change
+  their password out from under it either. Counting against the ADDRESS was worse and was removed for
+  the reasons written down there; what replaced it left nothing standing between an attacker and a
+  named caller. On one workshop's network that may be the right trade - but it should be a decision
+  rather than what fell out of fixing the other one
+
+- [ ] Serialise what writes the credential files. `changeCallers` and `writePrinterKey` in
+  `credentials.ts` each read the whole file, change it, write `<file>.new` and rename over - with no
+  lock and the same scratch name every time. Two password changes at once lose one of them, and the
+  caller who lost was answered 204 and had every other session of theirs ended, so they are holding a
+  password the file does not have. Two writes interleaving in one scratch file is the worse half: the
+  rename publishes something that will not parse, and a shop that is restarted after that refuses to
+  start. `JobStore` serialises exactly this shape with `this.serialised`; this file does not
+
+- [ ] The page is served with no security headers at all - no CSP, no `nosniff`, nothing about who
+  may frame it, and express's `x-powered-by` left on. The session cookie is HttpOnly, so a script
+  that got into the page cannot read it, but it can act through it, and a CSP is the layer that stops
+  such a script running in the first place. Nothing here is a live hole; it is the layer under the
+  one that is holding. `servePageFrom` in `packages/server/src/api.ts`
+
+- [ ] `defaultToken()` reads the token file without looking at its mode. The server refuses its OWN
+  credential files at anything looser than 0600 - `readOnlyByItsOwner` in `credentials.ts`, for the
+  reason ssh does it - and the installer tells an operator to `chmod 600` this very file. So the rule
+  is written down twice and enforced in neither of the places that would catch somebody getting it
+  wrong. `packages/client/src/token.ts`
+
+- [ ] One unreadable file in the data directory stops the whole shop, where everywhere else a file
+  that cannot be read leaves things as they were and says why. `readRecord`, `readPrinter` and
+  `readStatus` in `JobStore.ts` catch the `readFile` and not the `JSON.parse` - and everything goes
+  through `printers()`, so a single unparseable `printer.json` or `status.json` takes down the job
+  list, the printer list, submission and the printing loop at once, and a restart does not clear it.
+  Not an attack: these are the shop's own files and they are written atomically. It is the one place
+  the rule the rest of the shop keeps is not kept
 
 ### Installation
 

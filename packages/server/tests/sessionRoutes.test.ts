@@ -7,7 +7,7 @@ import { JobStore } from '../src/JobStore';
 import { digestOf, hashPassword } from '../src/secrets';
 import { SESSION_COOKIE } from '../src/sessions';
 import { aDataDirectory, parentOf } from './aDataDirectory';
-import { drive } from './inProcess';
+import { HERE, drive } from './inProcess';
 import type { DataLayout } from '../src/dataLayout';
 
 // AIDEV-NOTE: the routes a browser reaches - logging in, logging out, and changing the password you
@@ -26,7 +26,6 @@ describe('the sessions, over the shop routes', () => {
   const ADMIN = 'dave-token';
   const USER = 'slicer-token';
   const A_USERS_TOKEN = 'ada-token';
-  const HERE = 'http://shop.local';
 
   const naming = async (...held: { id: string; password?: string; token?: string; role?: 'admin' | 'user' }[]): Promise<Callers> =>
     new Callers(
@@ -54,7 +53,8 @@ describe('the sessions, over the shop routes', () => {
   describe('logging in', () => {
     let asked: ReturnType<typeof drive>;
 
-    const logIn = (id: string, password: string): ReturnType<typeof asked> => asked('POST', '/sessions', { json: { id, password } });
+    const logIn = (id: string, password: string): ReturnType<typeof asked> =>
+      asked('POST', '/sessions', { json: { id, password }, headers: { origin: HERE } });
 
     beforeEach(async () => {
       const known = await naming({ id: 'dave', password: PASSWORD }, { id: 'slicer', token: USER, role: 'user' });
@@ -78,6 +78,41 @@ describe('the sessions, over the shop routes', () => {
       expect(said).toContain('HttpOnly');
       expect(said).toContain('SameSite=Strict');
       expect(said).not.toContain('Secure');
+    }, 15_000);
+
+    // AIDEV-NOTE: the companion to the cookie's SameSite above, and the reason one does not cover the
+    // other. SameSite stops another site SENDING this cookie; it says nothing about a Set-Cookie
+    // being STORED, so without this a page elsewhere could post a login of its own choosing and
+    // leave a browser holding a session belonging to whoever it picked - and then read back what was
+    // submitted through it. The login is the one route the guard never sees, so the rule cannot be
+    // left to the guard.
+    //
+    // `requireItCameFromHere` answers for its own branches in tests/api.test.ts. What is asked here
+    // is the WIRING: that this route asks it, and asks it with the two headers rather than with two
+    // of something else - which is why an origin from elsewhere is asked for as well as none at all.
+    it('refuses a login that will not say where it came from', async () => {
+      const refused = await asked('POST', '/sessions', { json: { id: 'dave', password: PASSWORD } });
+
+      expect(refused.status).toBe(403);
+      expect(refused.header('set-cookie')).toBeUndefined();
+    });
+
+    it('refuses a login another site asked for, however right the password is', async () => {
+      const elsewhere = { json: { id: 'dave', password: PASSWORD }, headers: { origin: 'http://elsewhere.example' } };
+      const refused = await asked('POST', '/sessions', elsewhere);
+
+      expect(refused.status).toBe(403);
+      expect(refused.header('set-cookie')).toBeUndefined();
+    });
+
+    // AIDEV-NOTE: the ORDER, which is the half that would go quietly wrong. Asked after `attempts`,
+    // a refusal like this would count against the caller it named - so anybody could spend somebody
+    // else's guesses from another site and leave them locked out without ever reaching a password.
+    it('spends nobody\'s guesses on a login it will not act on', async () => {
+      const guess = { json: { id: 'dave', password: 'not the password' } };
+      for (let tried = 0; tried <= FREELY + 1; tried += 1) await asked('POST', '/sessions', guess);
+
+      expect((await logIn('dave', PASSWORD)).status).toBe(201);
     }, 15_000);
 
     it('is a session that then names the caller without a token', async () => {
@@ -109,7 +144,7 @@ describe('the sessions, over the shop routes', () => {
     // `loginIn` refuses six shapes in tests/api.test.ts. One here, for the wiring: that this route -
     // the one reached before the shop knows anybody - puts a body through it.
     it('refuses a body that is not a login', async () => {
-      expect((await asked('POST', '/sessions', { json: { id: 'dave' } })).status).toBe(400);
+      expect((await asked('POST', '/sessions', { json: { id: 'dave' }, headers: { origin: HERE } })).status).toBe(400);
     });
 
     // AIDEV-NOTE: what stands between a password and somebody working through a list of them.
@@ -180,7 +215,8 @@ describe('the sessions, over the shop routes', () => {
     const changeTo = (password: string, current: string, headers: Record<string, string> = {}, token = ADMIN): ReturnType<typeof asked> =>
       asked('PUT', '/me/password', { token: headers.cookie === undefined ? token : undefined, headers, json: { current, password } });
 
-    const logInThere = (id: string, password: string): ReturnType<typeof asked> => asked('POST', '/sessions', { json: { id, password } });
+    const logInThere = (id: string, password: string): ReturnType<typeof asked> =>
+      asked('POST', '/sessions', { json: { id, password }, headers: { origin: HERE } });
 
     beforeEach(async () => {
       // A user among them, because this route is one of the few open to every caller - their own

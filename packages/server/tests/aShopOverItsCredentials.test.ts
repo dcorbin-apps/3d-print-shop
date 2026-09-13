@@ -10,7 +10,7 @@ import { rereadEverything } from '../src/signals';
 import { Sessions } from '../src/sessions';
 import { silent, toStdout } from '../src/log';
 import { aDataDirectory, parentOf } from './aDataDirectory';
-import { drive } from './inProcess';
+import { HERE, drive } from './inProcess';
 import type { Callers } from '../src/credentials';
 import type { DataLayout } from '../src/dataLayout';
 
@@ -30,7 +30,8 @@ describe('a shop over the credentials an operator wrote', () => {
   const PASSWORD = 'a password of some length';
   const CHANGED = 'a different password entirely';
 
-  const logIn = (id: string, password: string): ReturnType<typeof asked> => asked('POST', '/sessions', { json: { id, password } });
+  const logIn = (id: string, password: string): ReturnType<typeof asked> =>
+    asked('POST', '/sessions', { json: { id, password }, headers: { origin: HERE } });
 
   beforeEach(async () => {
     etc = await mkdtemp(path.join(tmpdir(), 'print-shop-credentials-'));
