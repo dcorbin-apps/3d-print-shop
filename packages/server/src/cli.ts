@@ -14,10 +14,7 @@ import {
   callersIn,
   defaultEtc,
   printerKeysIn,
-  rereadCallers,
-  rereadPrinterKeys,
   setPassword,
-  whosePasswordChanged,
   writePrinterKey,
 } from './credentials.js';
 import { SESSIONS_FILE, Sessions } from './sessions.js';
@@ -27,6 +24,7 @@ import { redacting, toStdout } from './log.js';
 import { addSomebody, askForANewPassword, changePassword, giveAToken, listCallers, migrateTheCallers } from './callerAdmin.js';
 import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
+import { answerSignals, rereadEverything } from './signals.js';
 import { claimData } from './dataLock.js';
 import { DATA_ROOT_ENV, defaultLayout, layoutUnder } from './dataLayout.js';
 
@@ -193,29 +191,14 @@ export function createCLI(): Command {
         listenOn
       );
 
-      // What a supervised service is stopped with. `launchd` and `systemd` both send it, and one
-      // that ignored it would be killed with prints still being watched.
-      process.on('SIGTERM', stopTheShop);
-      process.on('SIGINT', stopTheShop);
-
-      // AIDEV-NOTE: SIGHUP is how a credential is changed without stopping the shop, and node ENDS a
-      // process that has no handler for it - so a shop under a terminal that closed used to die where
-      // it now re-reads. Everything the shop was given is re-read, each independently: a callers file
-      // somebody has just broken is no reason to leave a corrected key unread.
-      process.on('SIGHUP', () => {
-        void rereadCallers(etc, callers, log).then((known) => {
-          // AIDEV-NOTE: the other half of what a new password is for. `caller password` says every
-          // browser logged in as them is logged out once the shop has re-read this, and this is the
-          // sentence that makes it true - without it a stolen password went on working in whatever
-          // browser already had a session, which is the one place it was certain to be.
-          for (const id of whosePasswordChanged(callers, known)) {
-            sessions.endEveryOneOf(id);
-            log.info('a changed password logged out every browser it was logged in on', { caller: id });
-          }
-
-          callers = known;
-        });
-        void rereadPrinterKeys(etc, printerKeys, log).then((keys) => (printerKeys = keys));
+      answerSignals(process, {
+        stop: stopTheShop,
+        reread: () => {
+          void rereadEverything(etc, { callers, printerKeys }, sessions, log).then((held) => {
+            callers = held.callers;
+            printerKeys = held.printerKeys;
+          });
+        },
       });
 
       // Where it actually IS, not where it was asked to be. Port 0 means "any free one", and

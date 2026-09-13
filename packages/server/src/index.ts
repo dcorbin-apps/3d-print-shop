@@ -79,5 +79,7 @@ export { CouldNotReach, recordOutcome, remotePathFor, startNextPrint } from './p
 export type { FilamentDemand } from './selection.js';
 export { nextToPrint, printableNow, startsWith, waitingOn } from './selection.js';
 export { DataInUse, claimData } from './dataLock.js';
+export { answerSignals, rereadEverything } from './signals.js';
+export type { Answers, Held, Signalled } from './signals.js';
 export { DATA_ROOT_ENV, defaultLayout, layoutUnder, systemLayout } from './dataLayout.js';
 export type { DataLayout } from './dataLayout.js';

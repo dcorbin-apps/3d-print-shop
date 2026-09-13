@@ -208,9 +208,6 @@ describe('the shop, running as its own process', () => {
     await writeFile(path.join(credentials, 'callers.json'), JSON.stringify(held), { mode: 0o600 });
   }
 
-  async function writePrinterKeys(credentials: string, keys: Record<string, string>): Promise<void> {
-    await writeFile(path.join(credentials, 'printer-keys.json'), JSON.stringify(keys), { mode: 0o600 });
-  }
 
   async function submitGcode(shop: RunningShop, gcode: string): Promise<Response> {
     const body = new FormData();
@@ -657,11 +654,18 @@ describe('the shop, running as its own process', () => {
   // AIDEV-NOTE: changing a credential used to mean stopping the shop, which meant losing sight of
   // every print it was watching. SIGHUP is what a long-running service is told to re-read its
   // configuration with, and the whole of the mechanism is the files it already reads, read again.
+  // AIDEV-NOTE: what only a spawned process can say about a signal: that it ARRIVES, and that the
+  // shop is still there afterwards to answer. node ENDS a process that has no handler for SIGHUP, so
+  // a shop that answers a request after one is a shop that registered one and stayed up.
+  //
+  // What each signal DOES - which are registered, that SIGTERM and SIGINT stop where SIGHUP does
+  // not, what a re-read holds afterwards, who a changed password logs out - is tests/signals.test.ts,
+  // where it can be asked directly instead of being read back off a log line.
   describe('told to re-read its credentials', () => {
     const DAVE = { id: 'dave', name: 'dave', role: 'admin', token: ADMIN };
     const SLICER = { id: 'slicer', name: 'slicer', role: 'user', token: USER };
 
-    it('answers a caller added while it was running', async () => {
+    it('is still running afterwards, and answers a caller the file has since named', async () => {
       const credentials = await credentialsNaming([DAVE]);
       const shop = await startShopOver(dataRoot, [], credentials);
       expect((await askCarrying(shop, USER)).status).toBe(401);
@@ -671,46 +675,6 @@ describe('the shop, running as its own process', () => {
       await shop.saysSomethingLike(/callers re-read/);
 
       expect((await askCarrying(shop, USER)).status).toBe(200);
-    }, 30_000);
-
-    it('refuses a caller taken out while it was running', async () => {
-      const credentials = await credentialsNaming([DAVE, SLICER]);
-      const shop = await startShopOver(dataRoot, [], credentials);
-      expect((await askCarrying(shop, USER)).status).toBe(200);
-
-      await writeCallers(credentials, [DAVE]);
-      shop.reload();
-      await shop.saysSomethingLike(/callers re-read/);
-
-      expect((await askCarrying(shop, USER)).status).toBe(401);
-    }, 30_000);
-
-    // Reading a mistyped file as "nobody may call this shop" would revoke every caller at once, the
-    // operator who has to fix it among them - and node ends a process that ignores SIGHUP, so a shop
-    // that answers this at all is a shop that stayed up to answer it.
-    it('keeps the callers it has when what it is told to re-read is unusable', async () => {
-      const credentials = await credentialsNaming([DAVE]);
-      const shop = await startShopOver(dataRoot, [], credentials);
-
-      await writeFile(path.join(credentials, 'callers.json'), '{ not json', { mode: 0o600 });
-      shop.reload();
-      await shop.saysSomethingLike(/could not re-read the callers/);
-
-      expect((await askCarrying(shop, ADMIN)).status).toBe(200);
-    }, 30_000);
-
-    // The other file in the same directory, and the reason a wrong key no longer costs a restart -
-    // which cost the operator twice, because a stop outlives one. Waiting on the line IS the claim:
-    // nothing says it until the signal has landed and the file has been read again.
-    it('re-reads the printer keys as well as the callers', async () => {
-      const credentials = await credentialsNaming([DAVE]);
-      await writePrinterKeys(credentials, { mk4: 'was-wrong' });
-      const shop = await startShopOver(dataRoot, [], credentials);
-
-      await writePrinterKeys(credentials, { mk4: 'is-right' });
-      shop.reload();
-
-      await shop.saysSomethingLike(/printer keys re-read .*printers=1/);
     }, 30_000);
   });
 
