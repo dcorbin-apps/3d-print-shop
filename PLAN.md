@@ -140,18 +140,17 @@ What is left of it is below: the files the corrected rule re-opened, which have 
 
 #### What the acceptance suite is now
 
-It went 243 to 48 across this sweep, and every file left is there for something a unit test cannot
-say - argued one at a time rather than by category, and twice the argument was wrong and the file
-went.
+One test. It went 243 to 1 across this sweep, and the one that is left is there for something a unit
+test cannot say - argued one at a time rather than by category, and every time but this one the
+argument was wrong and the file went.
 
 - `aShopThatActuallyStops` (1) - that the process ENDS when asked, rather than answering and staying
   up, which would look identical to a client. Everything it used to also cover has gone to where it
   can be asked directly: what stopping lets go of and in what order is `running`, what a signal does
   is `signals`, which address is taken is `serve`, what a command does is `operatorCommands`, and what
   node does with a signal or an empty event loop is the assumption suite
-- `httpShop` (15) - what the client puts on the wire, against a stand-in
 
-Five went after that, and how they went is the most useful thing in this section. `drainingARefusedUpload`
+Six went after that, and how they went is the most useful thing in this section. `drainingARefusedUpload`
 kept a socket because a refused upload has to be READ to the end or the request never completes, and
 that was thought to need a real connection. It does not: the mechanism is node's stream backpressure,
 and a request that hands its body over only when asked reproduces it exactly. The harness had been
@@ -205,6 +204,16 @@ MAPPING rather than what is being mapped - and it catches six mutations where th
 caught four, because being open and a reason being passed on are easy to ask of a stand-in and
 awkward to ask of a server. What `ws` hands over is `whatWsEmits` in the assumption suite: a Buffer
 for a text frame, `isBinary` to tell one from the other, and a close that arrives unasked.
+
+`httpShop` was the last, and the same cut again. Fifteen tests drove the client at a stand-in shop
+over a real socket, and every one of them was about what the CLIENT puts on a request or makes of an
+answer - the socket was a way of watching, not anything claimed. They are `whatTheClientSends` now,
+with a `fetch` that builds each request as a real `Request` and reads it back: undici still does the
+serialising, so a multipart body still gets its boundary and its part order from the code that would
+write it to a wire. What undici does - reject when nobody is listening, serialise a form in the order
+its parts were appended - is `whatFetchDoes` in the assumption suite. Converting it found a gap the
+socket version had too: nothing asserted the CONTENT TYPE of a submission, so a form labelled as JSON
+- boundary lost, nothing parseable at the far end - passed both. It is asserted now.
 
 ### The service
 
