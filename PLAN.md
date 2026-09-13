@@ -152,11 +152,10 @@ went.
   the client drive the app in-process, but the request bridge written to do it is exactly where the
   assumption about how a URL becomes a path would be written down
 - `httpShop` (15) - what the client puts on the wire, against a stand-in
-- `dataLock` (6) - what the kernel will and will not allow with a unix socket
 - `reconnectRecovery` (4) - a socket that really dies, and a print that really ends while nobody is
   listening. It found a real bug this way
 
-There was a seventh, and how it went is the most useful thing in this section. `drainingARefusedUpload`
+Two went after that, and how they went is the most useful thing in this section. `drainingARefusedUpload`
 kept a socket because a refused upload has to be READ to the end or the request never completes, and
 that was thought to need a real connection. It does not: the mechanism is node's stream backpressure,
 and a request that hands its body over only when asked reproduces it exactly. The harness had been
@@ -164,6 +163,17 @@ pushing whole bodies in at once, so it had no flow control to observe and a stal
 identical to a finished one - three separate "only a socket can show this" arguments rested on that,
 and all three were wrong. `tests/inProcess.ts` hands over 16KB at a time now, like a socket, and the
 claim is a unit test that says `wasDrained` rather than an acceptance test that said `400`.
+
+`dataLock` went for a reason worth keeping in front of you, because it is the cleanest statement of
+the rule this section is about. Are you testing the kernel, or what we do in response to the kernel?
+The first is not ours and should not be in our tests; the second never needs a socket. `claimData`
+takes a `Claiming` now - listen, answers, clear - and eleven unit tests say what the shop does when
+each answers: refuse and name the directory, clear a leftover and take it, and report a failure that
+is not "somebody has this" as what it actually was. That last branch was in the code untested for as
+long as the file existed, and no acceptance test could reach it: the read-only directory that makes
+`listen` fail makes the tidy-up fail too, so the two never come apart through a real socket. Splitting
+the question is what made it reachable. What the kernel does is `aListeningClaim` in the assumption
+suite, where a red line means the world moved rather than that somebody broke something.
 
 ### The service
 
