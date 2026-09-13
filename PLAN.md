@@ -47,22 +47,6 @@ anything going wrong. The shop listens on loopback unless told otherwise and the
 so none of these is urgent - they are the places that read as gaps beside the rules the rest of the
 code keeps.
 
-- [ ] A Content-Security-Policy for the page, which is the one header worth having that is not a
-  line to add. `nosniff` is set and `x-powered-by` is off; framing is already answered by the cookie
-  being SameSite=Strict, since a framed shop is a shop nobody is logged in to. What a CSP would buy
-  is insurance: the page is React and escapes what it renders, there is no `dangerouslySetInnerHTML`
-  in it, and its one non-text sink - the camera `<img>` - takes a URL `addressIn` has already refused
-  anything but http and https for. So there is no injection point today to stop.
-  What makes it work rather than configuration is that same camera: the page shows one per printer,
-  at whatever address an operator gave that machine, so `img-src` would have to name origins that do
-  not exist until a printer is added. Written loose (`img-src 'self' http: https:`) it gives up the
-  directive that matters most for an image tag; written per request from the registered printers it
-  couples serving a page to the printer store; proxied through the shop it contradicts a camera being
-  a URL the shop hands over and never fetches. And `servePageFrom` is handed a DIRECTORY and told
-  nothing about what is in it, so any policy written there is the server making claims about a page
-  it is built not to know - and a policy that is wrong breaks the page in somebody else's console,
-  where the shop cannot see it. `packages/server/src/api.ts`
-
 - [ ] `defaultToken()` reads the token file without looking at its mode. The server refuses its OWN
   credential files at anything looser than 0600 - `readOnlyByItsOwner` in `credentials.ts`, for the
   reason ssh does it - and the installer tells an operator to `chmod 600` this very file. So the rule

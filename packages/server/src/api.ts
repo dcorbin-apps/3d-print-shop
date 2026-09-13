@@ -71,6 +71,35 @@ function submissionLimits(maxDescriptionBytes: number): busboy.Limits {
   };
 }
 
+// AIDEV-NOTE: every directive is a constant but one, because the page is built without a single
+// inline script or inline style - so there is no nonce here, no hash, and no `unsafe-inline` to
+// weaken the one directive that carries the whole thing. `script-src 'self'` is what stops injected
+// script from running at all; everything below it is what an injection would REACH for afterwards.
+//
+// `img-src` is the loose one, and it is loose for the cameras. The page shows one per printer, at
+// whatever address an operator gave that machine, so the origins cannot be named here - they do not
+// exist until somebody adds a printer. Generating the policy per request from the printers there are
+// was the other way and it is worse: a policy travels with the DOCUMENT, and printers are added while
+// a page is open, so the machine somebody just added would have its camera blocked until they thought
+// to reload. What `http: https:` gives up is a channel for getting data OUT after an injection, which
+// is a thing `script-src` has already prevented; what it still refuses is `data:` and `blob:`.
+//
+// `frame-ancestors`, `base-uri` and `form-action` are named because `default-src` does not cover them.
+//
+// This assumes a page that loads its own files and nothing else, which is what the shop's own is. A
+// different one served through `--page` that wanted an inline style would find it refused - in a
+// browser's console, where this shop cannot see it.
+const POLICY = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' http: https:",
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+].join('; ');
+
 const DESCRIPTION_PART = 'job';
 const SHUTDOWN_PATH = '/shutdown';
 const GCODE_PART = 'gcode';
@@ -268,15 +297,10 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
   //
   // `x-powered-by` is off because there is nothing to be had by volunteering what this is written in.
   //
-  // AIDEV-NOTE: what is deliberately NOT here is a Content-Security-Policy, which is the one worth
-  // having and the one that is not a line. The page shows a camera per printer, at whatever address
-  // an operator gave that machine, so `img-src` would have to name origins that do not exist until a
-  // printer is added - and this layer is handed a DIRECTORY and told nothing about what is in it, so
-  // a policy written here is the server making claims about a page it is built not to know. See
-  // PLAN.md; the page has no injection point today, so what a policy buys is insurance.
   api.disable('x-powered-by');
   api.use((_request, response, next) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Content-Security-Policy', POLICY);
     next();
   });
 

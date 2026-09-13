@@ -89,6 +89,31 @@ describe('serving a page beside the API', () => {
       expect((await get('/printers')).header('x-content-type-options')).toBe('nosniff');
     });
 
+    // AIDEV-NOTE: the directives are asked for one at a time rather than as one string, so that
+    // reordering them is not a failing test and weakening one is. `unsafe-inline` is named because it
+    // is what somebody reaches for when a page will not render, and it would give away the directive
+    // the whole policy rests on.
+    it('lets the page run only the script the shop served it', async () => {
+      const policy = (await get('/')).header('content-security-policy') ?? '';
+
+      expect(policy).toContain("script-src 'self'");
+      expect(policy).not.toContain('unsafe-inline');
+      expect(policy).not.toContain('unsafe-eval');
+    });
+
+    // A camera lives at whatever address an operator gave that printer, so this is the one directive
+    // that cannot name what it allows.
+    it('leaves room for a camera wherever a printer turned out to be', async () => {
+      expect((await get('/')).header('content-security-policy')).toContain("img-src 'self' http: https:");
+    });
+
+    it('allows nothing nobody asked for, and no other site to frame it', async () => {
+      const policy = (await get('/')).header('content-security-policy') ?? '';
+
+      expect(policy).toContain("default-src 'none'");
+      expect(policy).toContain("frame-ancestors 'none'");
+    });
+
     it('does not volunteer what it is written in', async () => {
       expect((await get('/')).header('x-powered-by')).toBeUndefined();
       expect((await get('/printers', ADMIN)).header('x-powered-by')).toBeUndefined();

@@ -130,15 +130,29 @@ marked `Secure` only when the request actually arrived over TLS, because a shop 
 otherwise set a cookie the browser refuses to send back. Behind a TLS-terminating proxy that is worth
 revisiting, along with what the shop then believes about a request's address.
 
-**The page goes out with two headers and not a policy.** `nosniff` is set on everything the shop
-answers, because what a client sent comes back in those bodies and a stated content type is not a
-browser's to second-guess; `x-powered-by` is off. Framing needs nothing of its own - the session
-cookie is SameSite=Strict, so a shop framed by another site is a shop nobody is logged in to. A
-Content-Security-Policy is the one with real value and it is not configuration here, because the page
-shows a camera per printer at whatever address an operator gave that machine - so `img-src` cannot be
-written down ahead of the printers it would have to name, and the layer that would write it is handed
-a directory and told nothing about what is in it. It stays in PLAN.md rather than being added loose
-enough to mean little.
+**One directive of the page's policy is loose, and it is the one that costs least.** Everything the
+shop answers carries `nosniff` - what a client sent comes back in those bodies, and a stated content
+type is not a browser's to second-guess - and a Content-Security-Policy, and `x-powered-by` is off.
+
+Every directive in that policy is a constant but one, because the page is built with no inline script
+and no inline style: nothing needs a nonce, a hash, or `unsafe-inline`, so `script-src 'self'` stands
+undiluted, and that is the directive the whole thing rests on. It is what stops injected script from
+running; the rest is what an injection would reach for afterwards.
+
+`img-src` is the exception, and it is open to `http:` and `https:` for the cameras - the page shows
+one per printer, at whatever address an operator gave that machine, so the origins cannot be written
+down ahead of the printers that have them. Generating the policy per request from the printers there
+are was the alternative, and it is worse: a policy travels with the document, and printers are added
+while a page is open, so a machine somebody just added would have its camera blocked until they
+thought to reload. What the loose directive gives up is a way of getting data OUT after an injection,
+which `script-src` has already prevented; what it still refuses is `data:` and `blob:`.
+
+Framing needs nothing extra - `frame-ancestors 'none'` is in the policy, and the session cookie being
+SameSite=Strict already means a framed shop is one nobody is logged in to.
+
+The policy assumes a page that loads its own files and nothing else, which is what the shop's own is.
+A different page served through `--page` that wanted an inline style would find it refused in a
+browser's console, where the shop cannot see it.
 
 **An admin may judge work that is not theirs, and afterwards nothing says they did.** That is the
 price of never holding a bed for a job nobody is left to judge, and the argument it makes is for the
