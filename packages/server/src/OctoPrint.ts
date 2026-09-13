@@ -250,6 +250,13 @@ export class OctoPrint implements Printer {
   private reconnectAttempt = 0;
   private lostContactAt: number | null = null;
   private reconcileOnNextStatus = false;
+  // AIDEV-NOTE: the status frame an outage's reconnect brought, KEPT until something is waiting for
+  // it. The shop registers its waiter several disk operations after the print was sent - startPrint
+  // writes the holding, then reads the printer and the job back - so the reconnect can finish first,
+  // and under load it does about one run in five. Spending the frame on an empty map left the waiter
+  // that arrived a moment later with nothing to settle it and no further frame coming: the print
+  // hung for ever. See tests/OctoPrint.test.ts, "reconciled before anything got round to awaiting it".
+  private sinceOutage: OctoPrintStatusPayload | null = null;
 
   // Aborted by disconnect(), so a backoff that is already waiting stops waiting rather than holding
   // the process open until it fires. Replaced on connect(), because an abort is permanent.
@@ -269,6 +276,7 @@ export class OctoPrint implements Printer {
     this.reconnectAttempt = 0;
     this.lostContactAt = null;
     this.reconcileOnNextStatus = false;
+    this.sinceOutage = null;
     return this.openSocket();
   }
 
@@ -326,6 +334,7 @@ export class OctoPrint implements Printer {
     this.connected = false;
     this.lostContactAt = null;
     this.reconcileOnNextStatus = false;
+    this.sinceOutage = null;
     this.socket?.close();
     this.socket = null;
 
@@ -362,6 +371,11 @@ export class OctoPrint implements Printer {
       throw new Error(`OctoPrint upload failed: ${response.status} ${response.statusText}`);
     }
 
+    // A new print supersedes any frame an earlier outage left unreconciled. Without this, the next
+    // thing awaited would be settled against a status from before it started - and the file's
+    // history still holds the PREVIOUS copy's outcome, which is the wrong print's answer.
+    this.sinceOutage = null;
+
     return filedAt(await response.json().catch(() => undefined), remotePath);
   }
 
@@ -380,6 +394,8 @@ export class OctoPrint implements Printer {
 
     return new Promise<PrinterOutcome>((resolve, reject) => {
       this.pendingCompletions.set(remotePath, { resolve, reject });
+      // There may already be a frame waiting for somebody to reconcile against: see `sinceOutage`.
+      this.reconcileWhatTheOutageHid();
     });
   }
 
@@ -557,9 +573,19 @@ export class OctoPrint implements Printer {
   private handleStatus(status: OctoPrintStatusPayload): void {
     if (!this.reconcileOnNextStatus) return;
 
-    // Only the first status frame after an outage reconciles. Doing it on every frame would race
-    // the window between submit() and the printer actually starting, where the printer is idle and
-    // the file's history still holds the previous copy's outcome.
+    this.sinceOutage = status;
+    this.reconcileWhatTheOutageHid();
+  }
+
+  // Only the first status frame after an outage reconciles, and only once something is waiting on
+  // it. Doing it on every frame would race the window between send() and the printer actually
+  // starting, where the printer is idle and the file's history still holds the previous copy's
+  // outcome - which is why `send` drops the frame rather than letting a new print meet an old one.
+  private reconcileWhatTheOutageHid(): void {
+    const status = this.sinceOutage;
+    if (status === null || this.pendingCompletions.size === 0) return;
+
+    this.sinceOutage = null;
     this.reconcileOnNextStatus = false;
     void this.reconcilePendingCompletions(status);
   }

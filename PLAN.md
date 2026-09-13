@@ -156,21 +156,6 @@ Not re-opened, and now for a stated reason rather than by category:
   request bridge written to do it is exactly where the assumption about how a URL becomes a path
   would be written down. That bridge is the claim
 
-### A flake, seen twice
-
-- [ ] `reconnectRecovery` › `learns an outcome that was announced while the socket was down` fails
-  about one full run in five, measured over ten on 2026-09-12, and passes every time the file is run
-  on its own.
-
-  The cause and effect are the other way round from how this was first written down. The run is not
-  slow and therefore failing; the test HANGS, burns its whole 60s timeout and fails, and that is what
-  makes the run 63s against the usual 17s. Every failure has that signature and no failure has any
-  other. So it is not contention, and a longer timeout will not answer it: something in the reconnect
-  never settles. The handler drops every connection and completes the print with nobody listening, so
-  the outcome can only be learnt from the history a reconnecting client reads - and once in five that
-  never arrives. Either the client does not reconnect, or it reconnects and the reconciliation does
-  not fire. Worth chasing: it is the path a real print takes when the network blips
-
 ### The service
 
 - [ ] The shop can say when IT is in trouble, rather than only what each printer is doing. A store

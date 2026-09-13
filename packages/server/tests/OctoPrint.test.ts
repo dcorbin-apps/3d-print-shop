@@ -681,6 +681,32 @@ describe('OctoPrint', () => {
       await expect(promise).resolves.toBe('finished');
     });
 
+    // AIDEV-NOTE: the order the SHOP does this in, which is the reverse of every test above. Between
+    // `machine.send()` answering and `recordOutcome` calling awaitOutcome there are four store
+    // operations - `printingAt` writes, `printerNamed` and `find` read - and under load those take
+    // longer than the reconnect. The status frame then arrives with nothing pending, and the one
+    // chance to reconcile is spent on an empty map.
+    it('resolves a print reconciled before anything got round to awaiting it', async () => {
+      respondTo({ [TRAY_FILE_URL]: makeOkResponse({ prints: { last: { success: true } } }) });
+
+      await reconnectReporting(idleStatus());
+
+      await expect(adapter.awaitOutcome(TRAY_PATH)).resolves.toBe('finished');
+    });
+
+    // AIDEV-NOTE: the hazard of keeping that frame, and why `send` drops it. The kept status says the
+    // printer is idle and names the LAST print, whose history holds the previous copy's outcome - so
+    // a new print settled against it would be handed the wrong print's answer the instant it was
+    // awaited. Only its own event, or a frame from after it started, may settle it.
+    it('does not settle a new print against a frame from before it started', async () => {
+      respondTo({ [TRAY_FILE_URL]: makeOkResponse({ prints: { last: { success: true } } }) });
+      await reconnectReporting(idleStatus());
+
+      await adapter.send(TRAY_PATH, Readable.from(['G1 X0\n']));
+
+      await expectPending(adapter.awaitOutcome(TRAY_PATH));
+    });
+
     // OctoPrint's print history records a cancelled run as a failure, so a reconciled outcome
     // cannot report 'cancelled' - only an event delivered live on the socket can.
     it('reports a print that failed while the socket was down as an error', async () => {
