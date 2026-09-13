@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach, beforeEach, jest } from '@jest/globals';
-import { keepReachingForWhatIsLost, lookingForWork, stoppingTheShop, tryingAgain } from '../src/running';
+import { chmod, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+import { keepReachingForWhatIsLost, keepingTheKey, lookingForWork, stoppingTheShop, tryingAgain } from '../src/running';
+import { printerKeysIn } from '../src/credentials';
 import { silent, toStdout } from '../src/log';
 import type { Log } from '../src/log';
 import type { Stopping, TheForeman, TheMachines } from '../src/running';
@@ -102,6 +106,58 @@ describe('a shop that is running', () => {
 
       expect(said).toEqual(['3d-print-shop has stopped']);
       expect(lines.join('\n')).toContain('the shop has stopped');
+    });
+  });
+
+  // AIDEV-NOTE: the one thing the shop writes to /etc, and the reason a printer can be given its key
+  // from a browser at all. Written to the file the shop READS, and the printer tried at once - a
+  // machine that had no key is written down as unreachable and would otherwise serve out a backoff
+  // before anybody found out the key was right.
+  describe('a key a printer arrived with', () => {
+    let etc: string;
+
+    beforeEach(async () => {
+      etc = await mkdtemp(path.join(tmpdir(), 'print-shop-keys-'));
+      await chmod(etc, 0o700);
+    });
+
+    afterEach(async () => {
+      await rm(etc, { recursive: true, force: true });
+    });
+
+    it('is written where the shop reads its keys', async () => {
+      await keepingTheKey(etc, silent, noting('tried again'))('mk4', 'a-key-from-a-browser');
+
+      await expect(printerKeysIn(etc)).resolves.toEqual(new Map([['mk4', 'a-key-from-a-browser']]));
+    });
+
+    it('is answered back as every key the shop now holds', async () => {
+      await keepingTheKey(etc, silent, noting('tried again'))('mk4', 'one-key');
+
+      await expect(keepingTheKey(etc, silent, noting('tried again'))('mini', 'another')).resolves.toEqual(
+        new Map([
+          ['mk4', 'one-key'],
+          ['mini', 'another'],
+        ])
+      );
+    });
+
+    // At once, and without waiting to be signalled: the machine is written down as unreachable until
+    // something tries it, and an operator who has just typed the right key should not wait out a
+    // backoff to find that out.
+    it('has its printer tried again straight away', async () => {
+      const tried: string[] = [];
+
+      await keepingTheKey(etc, silent, (printer) => tried.push(printer))('mk4', 'a-key');
+
+      expect(tried).toEqual(['mk4']);
+    });
+
+    it('is said in the log, naming the printer and where the keys live', async () => {
+      await keepingTheKey(etc, log, noting('tried again'))('mk4', 'a-key');
+
+      expect(lines.join('\n')).toContain('a printer was given its key');
+      expect(lines.join('\n')).toContain(etc);
     });
   });
 

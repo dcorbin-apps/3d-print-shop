@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { digestOf } from '../../src/secrets';
@@ -16,8 +16,6 @@ import type { DataLayout } from '../../src/dataLayout';
 // a signal sent to the runner can leave the shop holding the port.
 describe('the shop, running as its own process', () => {
   const SHOP = 'packages/server/src/main.ts';
-  const MK4 = { x: 250, y: 210, z: 220 };
-  const GCODE = 'G1 X100.000 Y100.000 E1.00000\n';
 
   interface RunningShop {
     url: string;
@@ -152,27 +150,10 @@ describe('the shop, running as its own process', () => {
     return startShop();
   }
 
-  async function addMk4(shop: RunningShop): Promise<void> {
-    await addPrinter(shop, { name: 'mk4', buildVolume: MK4, address: 'http://octopi.local' });
-  }
-
-  async function addPrinter(shop: RunningShop, record: { name: string; buildVolume: typeof MK4; address: string }): Promise<void> {
-    await fetch(`${shop.url}/printers`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...asAdmin },
-      body: JSON.stringify(record),
-    });
-  }
 
 
 
-  async function submitAs(shop: RunningShop, token: string, displayName: string): Promise<Response> {
-    const body = new FormData();
-    body.append('job', JSON.stringify({ filaments: ['PLA-SpaceGray'], displayName }));
-    body.append('gcode', new Blob([GCODE]), 'print.gcode');
 
-    return fetch(`${shop.url}/jobs`, { method: 'POST', body, headers: { authorization: `Bearer ${token}` } });
-  }
 
   // 0600, because the shop refuses to read credentials anybody else could.
   async function credentialsNaming(callers: WrittenCaller[]): Promise<string> {
@@ -226,78 +207,20 @@ describe('the shop, running as its own process', () => {
     await Promise.all([dataRoot, ...madeEtc].map((made) => rm(made, { recursive: true, force: true })));
   });
 
-  const A_PASSWORD = 'a password of some length';
 
   // AIDEV-NOTE: a person logging in to the real thing - the file written by the command an operator
   // actually runs, read by a shop started the way one is started, over a socket. Everything else
   // about passwords is unit-tested; what is proved here is that those pieces are the ones wired up.
   describe('somebody logging in', () => {
-    const PASSWORD = A_PASSWORD;
 
     // The operator's own command, not a file written by this test - so what is being logged in to is
     // what `init` makes, hashing and all. Answered with the directory rather than the shop, because a
     // restart has to be a second shop over the same one.
-    async function aMachineSomebodyCanLogInTo(): Promise<string> {
-      const credentials = await mkdtemp(path.join(tmpdir(), 'print-shop-etc-'));
-      madeEtc.push(credentials);
-
-      await runCommandSaying(['init', 'dave', '--etc', credentials], {}, `${PASSWORD}\n${PASSWORD}\n`);
-
-      return credentials;
-    }
 
 
-    const logIn = (shop: RunningShop, id: string, password: string): Promise<Response> =>
-      fetch(`${shop.url}/sessions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id, password }),
-      });
 
-    const cookieFor = async (shop: RunningShop): Promise<string> =>
-      ((await logIn(shop, 'dave', PASSWORD)).headers.get('set-cookie') ?? '').split(';')[0];
-
-    // AIDEV-NOTE: `caller password` says every browser logged in as them is logged out once the shop
-    // has re-read this. It was not true: the id still existed, so the session went on naming them.
-    it('is logged out by the password being changed, once the shop has re-read it', async () => {
-      const credentials = await aMachineSomebodyCanLogInTo();
-      const shop = await startShopOver(dataRoot, [], credentials);
-
-      const cookie = await cookieFor(shop);
-      expect((await fetch(`${shop.url}/me`, { headers: { cookie } })).status).toBe(200);
-
-      const changed = 'a different password entirely';
-      await runCommandSaying(['caller', 'password', 'dave', '--etc', credentials], {}, `${changed}\n${changed}\n`);
-      shop.reload();
-      await shop.saysSomethingLike(/a changed password logged out every browser/);
-
-      expect((await fetch(`${shop.url}/me`, { headers: { cookie } })).status).toBe(401);
-    }, 60_000);
 
   });
-
-  // AIDEV-NOTE: the shop WRITING its own credentials file, which is the one thing it does to /etc
-  // and the reason a printer can be given its key from a browser. Provable only here: which file the
-  // keys live in, and that the running process is told at the same moment, is main.ts's wiring.
-  it('writes a key it is given with a printer where it keeps them, and does not wait to be signalled', async () => {
-    const credentials = await credentialsNaming([{ id: 'dave', name: 'dave', role: 'admin', token: ADMIN }]);
-    const shop = await startShopOver(dataRoot, [], credentials);
-
-    const added = await fetch(`${shop.url}/printers`, {
-      method: 'POST',
-      headers: { ...asAdmin, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'mk4', buildVolume: MK4, address: 'http://mk4', key: 'a-key-from-a-browser' }),
-    });
-    expect(added.status).toBe(201);
-
-    // On disk, in the file the shop reads its keys from, and only its owner can read it.
-    const kept = path.join(credentials, 'printer-keys.json');
-    expect(JSON.parse(await readFile(kept, 'utf-8'))).toEqual({ mk4: 'a-key-from-a-browser' });
-    expect((await stat(kept)).mode & 0o077).toBe(0);
-
-    // And the process that wrote it acted on it then and there rather than waiting for a SIGHUP.
-    await shop.saysSomethingLike(/a printer was given its key/);
-  }, 30_000);
 
   // AIDEV-NOTE: what only a spawned process can say about stopping - that the process ENDS. A shop
   // that answered and stayed up would look identical to a client, and nothing below a real process
@@ -315,6 +238,14 @@ describe('the shop, running as its own process', () => {
   // wire as a header, and back out as a role the shop enforces. Every other test of this reaches the
   // routes with fetch and a hand-written header, which proves nothing about the client that clients
   // actually use.
+  // AIDEV-NOTE: the whole chain, and the only place it is whole: argv, the environment the token
+  // comes from, the client that puts it on the wire, a real socket, the guard that reads it, the
+  // store, and back out as an exit code. Every link is unit tested on its own - `defaultToken` in
+  // token.test.ts, the commands in operatorCommands.test.ts, the role rule in api.test.ts, the guard
+  // in guard.test.ts - so what these two are for is that they compose.
+  //
+  // Two, not four: one that is let through and one that is refused by role. A third walking the same
+  // chain would be the chain again.
   describe('an operator carrying a token', () => {
     async function guardedShop(): Promise<RunningShop> {
       const bothOfThem = await credentialsNaming([
@@ -332,33 +263,6 @@ describe('the shop, running as its own process', () => {
       const listing = await runCommandSaying(['printer', '--shop-url', shop.url, 'list'], { PRINT_SHOP_TOKEN: ADMIN });
 
       expect(listing.code).toBe(0);
-    }, 30_000);
-
-    // XDG_CONFIG_HOME at a directory with no token in it, so what this proves is the shop refusing
-    // a nameless caller rather than whatever token the machine running the test happens to hold.
-    it('is refused when carrying no token at all', async () => {
-      const shop = await guardedShop();
-
-      const listing = ['printer', '--shop-url', shop.url, 'list'];
-
-      expect((await runCommandSaying(listing, { PRINT_SHOP_TOKEN: '', XDG_CONFIG_HOME: dataRoot })).code).toBe(1);
-    }, 30_000);
-
-    // AIDEV-NOTE: the whole way through, for the half of access control a role cannot express -
-    // argv, the API, the store, and back out as the lines a person reads. A user is shown their own
-    // work and told only how much else the shop is holding.
-    it('is shown its own work, and a count of what is not', async () => {
-      const shop = await guardedShop();
-      await addMk4(shop);
-      await submitAs(shop, USER, 'Player Box');
-      await submitAs(shop, ADMIN, 'Somebody Else');
-
-      const { stdout } = await runCommandSaying(['job', '--shop-url', shop.url, 'list'], { PRINT_SHOP_TOKEN: USER });
-
-      expect(stdout.trim().split('\n')).toEqual([
-        '1  Player Box  PLA-SpaceGray  queued',
-        'and 1 more this shop is holding, which are not yours',
-      ]);
     }, 30_000);
 
     // The role travels with the token: the same command, the same shop, a different caller.

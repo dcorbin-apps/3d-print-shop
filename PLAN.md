@@ -138,23 +138,25 @@ about a password was never said to anybody, and that nobody but an admin could l
 
 What is left of it is below: the files the corrected rule re-opened, which have not been argued yet.
 
-#### Re-opened by the rule above
+#### What the acceptance suite is now
 
-These were off the list because an acceptance test was thought to be for "a route being wired to what
-it claims". That ground went, and each has now been argued rather than assumed. What is left of the
-acceptance suite is six files: a submission refused while it is still arriving, the data lock, a job's
-whole life at 8MB, reconnect recovery, the shop as a spawned process, and the shop against its client.
+It went 243 to 48 across this sweep, and every file left is there for something a unit test cannot
+say - argued one at a time rather than by category, and twice the argument was wrong and the file
+went.
 
-- [ ] `jobLifetime` - no socket and no process: it is `JobStore` over a real temporary directory at
-  8MB, which is what `JobStore.test.ts` already does at a few bytes. The size is the point of it, and
-  the size is not what makes a test an acceptance one. It may simply belong in `tests/`
-Not re-opened, and now for a stated reason rather than by category:
-
-- `dataLock`, `reconnectRecovery` - the fake would be the kernel and a socket that really dies. Each
-  is the claim itself, and the kernel is out of the third suite's scope on purpose
-- `theShopAndItsClient` - a fetch handed in would let the client drive the app in-process, but the
-  request bridge written to do it is exactly where the assumption about how a URL becomes a path
-  would be written down. That bridge is the claim
+- `theRunningShop` (6) - that the process ENDS when asked; that a signal ARRIVES and the shop is
+  still there afterwards; that the address it binds is the one it was told, loopback unless it was
+  told otherwise; and one pair walking the whole chain from argv through the environment, the client,
+  a real socket and the guard, because every link of it is unit tested and only the composing is not
+- `theShopAndItsClient` (16) - both halves of the contract live at once. A fetch handed in would let
+  the client drive the app in-process, but the request bridge written to do it is exactly where the
+  assumption about how a URL becomes a path would be written down
+- `httpShop` (15) - what the client puts on the wire, against a stand-in
+- `dataLock` (6) - what the kernel will and will not allow with a unix socket
+- `reconnectRecovery` (4) - a socket that really dies, and a print that really ends while nobody is
+  listening. It found a real bug this way
+- `aSubmissionInFlight` (1) - a refusal answered while the client is still writing megabytes. In
+  process there is no "still arriving"
 
 ### The service
 

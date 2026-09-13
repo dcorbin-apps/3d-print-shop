@@ -3,10 +3,12 @@ import { chmod, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { createApi } from '../src/api';
-import { CALLERS_FILE, callersIn, writeFirstCaller } from '../src/credentials';
+import { CALLERS_FILE, callersIn, setPassword, writeFirstCaller } from '../src/credentials';
 import { JobStore } from '../src/JobStore';
 import { keepingTheirPassword } from '../src/running';
-import { toStdout } from '../src/log';
+import { rereadEverything } from '../src/signals';
+import { Sessions } from '../src/sessions';
+import { silent, toStdout } from '../src/log';
 import { aDataDirectory, parentOf } from './aDataDirectory';
 import { drive } from './inProcess';
 import type { Callers } from '../src/credentials';
@@ -23,6 +25,7 @@ describe('a shop over the credentials an operator wrote', () => {
   let known: Callers;
   let said: string[];
   let asked: ReturnType<typeof drive>;
+  let sessions: Sessions;
 
   const PASSWORD = 'a password of some length';
   const CHANGED = 'a different password entirely';
@@ -34,6 +37,7 @@ describe('a shop over the credentials an operator wrote', () => {
     await chmod(etc, 0o700);
     where = await aDataDirectory('print-shop-credentials-data-');
     said = [];
+    sessions = new Sessions();
 
     // What `init` writes, by the function it writes it with.
     await writeFirstCaller(etc, 'dave', 'dave', PASSWORD);
@@ -42,6 +46,7 @@ describe('a shop over the credentials an operator wrote', () => {
     asked = drive(
       createApi(new JobStore(where), {
         callers: () => known,
+        sessions,
         passwordChanged: async (id, password) => {
           known = await keepingTheirPassword(etc)(id, password);
         },
@@ -118,6 +123,21 @@ describe('a shop over the credentials an operator wrote', () => {
       await changing();
 
       expect(await readFile(path.join(etc, CALLERS_FILE), 'utf-8')).not.toBe(before);
+    }, 60_000);
+
+    // AIDEV-NOTE: `caller password` says every browser logged in as them is logged out once the shop
+    // has re-read the file, and this is that sentence being true over the routes. Who a re-read logs
+    // out is signals.test.ts; that a session then names nobody is the half only a shop can say.
+    it('logs out the browsers they were logged in on, once the shop has re-read the file', async () => {
+      const cookie = (await logIn('dave', PASSWORD)).cookie();
+      expect((await asked('GET', '/me', { headers: { cookie } })).status).toBe(200);
+
+      await setPassword(etc, 'dave', CHANGED);
+      await rereadEverything(etc, { callers: known, printerKeys: new Map() }, sessions, silent).then((held) => {
+        known = held.callers;
+      });
+
+      expect((await asked('GET', '/me', { headers: { cookie } })).status).toBe(401);
     }, 60_000);
 
     // Read back rather than patched in memory: what is in force has to be what the FILE says, which
