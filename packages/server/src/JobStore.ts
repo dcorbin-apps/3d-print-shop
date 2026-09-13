@@ -124,15 +124,26 @@ export class JobStore {
         throw new InvalidSubmission('a job needs gcode, and the stream delivered none');
       }
 
+      // AIDEV-NOTE: copied field by field rather than spread, because `details` is TYPED as a
+      // client's description and what arrives is whatever JSON one sent. Spreading put `heldBy` and
+      // `lastPrinterOutcome` on disk, where `asJob`'s queued branch handed them straight back out -
+      // so `JobRecord = Omit<Job, 'state' | 'heldBy' | 'lastPrinterOutcome'>` was a claim that held
+      // at compile time and not at runtime. A field this shop decides is named here; `metadata` is
+      // where a client puts its own, and anything else it sends is dropped rather than refused.
       const record: JobRecord = {
-        ...details,
         id,
         // AIDEV-NOTE: said by the shop rather than by the submission - a client cannot claim to be
         // somebody else, because this is the caller the request was already authenticated as. It is
         // written here and nowhere again: the record is written once, so an owner is for the life of
         // the job, which is why what is stored is a caller's ID and never their name.
         owner,
+        filaments: details.filaments,
         displayName: details.displayName ?? generatedDisplayName(id),
+        remotePath: details.remotePath,
+        printer: details.printer,
+        requiredBuildVolume: details.requiredBuildVolume,
+        estimatedPrintSeconds: details.estimatedPrintSeconds,
+        metadata: details.metadata,
         submittedAt: new Date(),
         gcodeBytes,
       };

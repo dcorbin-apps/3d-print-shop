@@ -133,6 +133,19 @@ describe('JobStore', () => {
       expect((await readAll(await shop.gcodeStream(job.id))).toString()).toBe('G1 X0 Y0\n');
     });
 
+    // AIDEV-NOTE: `JobDetails` is a declaration about JSON somebody else wrote, so the fields the
+    // SHOP decides are copied into the record rather than spread over. These two used to land on
+    // disk and come back out again: `asJob` overrides `state` for a queued job and not these.
+    it('takes none of the fields the shop decides from the client that submitted it', async () => {
+      const claimed = { ...details(), heldBy: 'mk4', lastPrinterOutcome: 'finished' } as JobDetails;
+
+      const job = await submit(claimed, gcode());
+      const stored = await shop.find(job.id);
+
+      expect([job.heldBy, job.lastPrinterOutcome]).toEqual([undefined, undefined]);
+      expect([stored?.heldBy, stored?.lastPrinterOutcome]).toEqual([undefined, undefined]);
+    });
+
     it('refuses details it can see are wrong before reading the stream', async () => {
       await expect(submit(details({ filaments: [] }), gcode())).rejects.toThrow(InvalidSubmission);
     });

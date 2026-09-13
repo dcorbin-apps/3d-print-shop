@@ -25,16 +25,49 @@ export class InvalidSubmission extends Error {}
 // first. That a job actually HAS gcode cannot be known here: the stream has not run yet, so
 // emptiness is caught by the store once it has.
 export function validateDetails(details: JobDetails): void {
-  if (details.filaments.length === 0) {
+  validateFilaments(details.filaments);
+
+  if (details.displayName !== undefined) validateDisplayName(details.displayName);
+  if (details.estimatedPrintSeconds !== undefined) validateEstimate(details.estimatedPrintSeconds);
+  if (details.remotePath !== undefined) validateRemotePath(details.remotePath);
+}
+
+// AIDEV-NOTE: `unknown` for the reason `validateEstimate` is - `JobDetails` says what a client
+// SHOULD have sent, and what arrives is whatever JSON.parse made of what it did send. Reading
+// `.length` off that was a TypeError for `{}` and `.some` for `"PLA"`, which is the shop answering
+// 500 and calling a client's mistake its own fault.
+function validateFilaments(filaments: unknown): void {
+  if (!Array.isArray(filaments) || filaments.some((filament) => typeof filament !== 'string')) {
+    throw new InvalidSubmission(`${JSON.stringify(filaments)} is not what a job needs - filaments are a list of names, in the printer's words for them`);
+  }
+
+  if (filaments.length === 0) {
     throw new InvalidSubmission('a job must say which filaments it needs');
   }
 
-  if (details.filaments.some((filament) => filament.trim() === '')) {
+  if (filaments.some((filament: string) => filament.trim() === '')) {
     throw new InvalidSubmission('a job cannot need a filament with no name');
   }
+}
 
-  if (details.estimatedPrintSeconds !== undefined) validateEstimate(details.estimatedPrintSeconds);
-  if (details.remotePath !== undefined) validateRemotePath(details.remotePath);
+// The longest name a job may be given. Not a storage limit - the name goes in the record, which has
+// no such bound - but a limit on what a person is asked to read: a job list is a column, and a name
+// longer than this is not a name any more.
+const MAX_DISPLAY_NAME = 255;
+
+// AIDEV-NOTE: `unknown` for the reason the two below are. Nothing in the shop calls a string method
+// on a display name - it is interpolated into the operator's list, logged, and rendered - so what a
+// non-string breaks is whatever is READING it, which is the one place the shop cannot answer for.
+// Counted in UTF-16 units, as `MAX_REMOTE_PATH` is, so an emoji in a name costs two.
+function validateDisplayName(displayName: unknown): void {
+  if (typeof displayName !== 'string') {
+    throw new InvalidSubmission(`${JSON.stringify(displayName)} is not a name for a job - a name is text`);
+  }
+
+  // The length is said rather than the name, which by here is at least 256 characters of it.
+  if (displayName.length > MAX_DISPLAY_NAME) {
+    throw new InvalidSubmission(`a job's name is at most ${MAX_DISPLAY_NAME} characters, and this one is ${displayName.length}`);
+  }
 }
 
 // AIDEV-NOTE: a number the shop ADDS UP, so what is refused is what arithmetic would not survive -
@@ -88,7 +121,13 @@ function hasControlCharacter(text: string): boolean {
   });
 }
 
-function validateRemotePath(remotePath: string): void {
+function validateRemotePath(remotePath: unknown): void {
+  // Ahead of `refuse`, and thrown rather than routed through it, because everything below reads this
+  // as a string - `.startsWith` on a number was the same 500 the filaments were.
+  if (typeof remotePath !== 'string') {
+    throw new InvalidSubmission(`${JSON.stringify(remotePath)} is not a path this shop will ask a printer for: it is not text`);
+  }
+
   const refuse = (why: string): never => {
     throw new InvalidSubmission(`${JSON.stringify(remotePath)} is not a path this shop will ask a printer for: ${why}`);
   };

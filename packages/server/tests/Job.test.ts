@@ -28,9 +28,39 @@ describe('validateDetails', () => {
     expect(() => validateDetails(details({ filaments: [] }))).toThrow('which filaments it needs');
   });
 
+  // AIDEV-NOTE: `JobDetails` is a declaration about JSON somebody else wrote. Each of these read a
+  // method off what arrived and threw a TypeError, which reaches a client as 500 - the shop taking
+  // the blame for a request it should have refused.
+  it.each([[undefined], ['PLA'], [5], [null], [{}], [[5]], [[null]], [['PLA', 7]]])(
+    'refuses %p, which is not a list of filament names',
+    (filaments) => {
+      expect(() => validateDetails(details({ filaments: filaments as unknown as string[] }))).toThrow(InvalidSubmission);
+    }
+  );
+
   // An empty name would schedule against a material nobody can load.
   it.each([[''], ['   ']])('refuses a filament named %p', (filament) => {
     expect(() => validateDetails(details({ filaments: [filament] }))).toThrow('no name');
+  });
+
+  // AIDEV-NOTE: nothing in the shop calls a string method on this, so what a wrong one breaks is
+  // whatever is reading it - an operator's list, a log line, a page. The shop cannot answer for those
+  // and so does not accept what would break them.
+  describe('the name a client gives a job', () => {
+    const named = (displayName: unknown): (() => void) => (): void => validateDetails(details({ displayName: displayName as string }));
+
+    it.each([[5], [null], [{}], [[]], [true]])('refuses %p, which is not text', (displayName) => {
+      expect(named(displayName)).toThrow('is not a name for a job');
+    });
+
+    // The boundary both ways: one that fits is kept, and the first one that does not is refused.
+    it('takes a name of exactly 255 characters', () => {
+      expect(named('x'.repeat(255))).not.toThrow();
+    });
+
+    it('refuses a name of 256, and says how long it was rather than repeating it', () => {
+      expect(named('x'.repeat(256))).toThrow('at most 255 characters, and this one is 256');
+    });
   });
 
   // AIDEV-NOTE: a number the shop adds up, so what it refuses is what would poison the total. It is
@@ -66,6 +96,12 @@ describe('validateDetails', () => {
   describe('the path a client asks the printer to store it under', () => {
     const accepts = (remotePath: string): void => expect(() => validateDetails(details({ remotePath }))).not.toThrow();
     const refuses = (remotePath: string): void => expect(() => validateDetails(details({ remotePath }))).toThrow(InvalidSubmission);
+
+    // The same mistake as the filaments above, one line below it: everything this checks reads the
+    // path as text, so anything else was a TypeError rather than a refusal.
+    it.each([[5], [null], [[]], [{}]])('refuses %p, which is not text', (remotePath) => {
+      expect(() => validateDetails(details({ remotePath: remotePath as unknown as string }))).toThrow(InvalidSubmission);
+    });
 
     // AIDEV-NOTE: every one of these was uploaded to a real OctoPrint (1.11.8) and read back under
     // the name it was given. They are here rather than in a comment because what a printer does with

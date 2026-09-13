@@ -13,19 +13,11 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 Found by auditing a running shop on 2026-09-12; each was reproduced against a real process rather
 than read out of the code. These come before the rest of the list.
 
-- [ ] A client can write the shop's own fields into its job record. `submit` builds the record as
-  `{ ...details, id, owner, ... }` and nothing validates the shape of `details`, so `heldBy` and
-  `lastPrinterOutcome` land on disk and come back out again - `asJob`'s queued branch overrides
-  `state` and not those two. `JobRecord = Omit<Job, 'state' | 'heldBy' | 'lastPrinterOutcome'>` is a
-  compile-time claim that does not hold at runtime. The state machine is not subvertible, because
-  `state` is always read from the printers; what is wrong is that `JobStore.ts` says "there is
-  nowhere for a second answer to be written" and there is one. Copy the fields a job HAS rather than
-  spreading, and leave `metadata` as the place a client puts its own. `packages/server/src/JobStore.ts`
-
-- [ ] `validateDetails` reads `details.filaments.length` without checking it is an array, so `{}` and
-  `{"filaments":"PLA"}` are 500s where 400 was intended. The two halves of this that an UNNAMED caller
-  could reach - a cookie that will not decode, and `Origin: null` - are fixed; this is the
-  authenticated one, and the last of the three. `packages/server/src/Job.ts`
+- [ ] `metadata` is typed `Record<string, unknown>` and anything JSON can hold is accepted under it -
+  `"hi"` is stored as a string. Nothing is wrong with that behaviour: metadata is carried and never
+  interpreted, so any value is as good as any other. What is wrong is the type claiming otherwise,
+  and widening it is a change to the wire contract rather than to the shop. Noticed while the fields
+  beside it were being checked `packages/client/src/Job.ts`
 
 - [ ] A description of exactly `fieldSize` is refused for being longer than it. Busboy flags a value
   truncated on REACHING the limit rather than passing it, so a 1048576-byte `job` part arrives whole,
