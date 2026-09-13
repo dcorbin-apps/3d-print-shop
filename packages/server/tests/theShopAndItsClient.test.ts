@@ -151,8 +151,8 @@ describe('the shop and its client', () => {
 
       beforeEach(async () => {
         id = (await shop.submit({ filaments: ['PLA-SpaceGray'] }, gcode())).id;
-        await store.startPrinting('mk4', id);
-        await store.finishedPrinting('mk4', 'finished');
+        await store.startPrinting(await store.printerNamed('mk4'), id);
+        await store.finishedPrinting(await store.printerNamed('mk4'), 'finished');
       });
 
       it('sends it back to the queue when a person rejects it', async () => {

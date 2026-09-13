@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { InvalidSubmission } from '../src/Job';
 import type { BuildVolume, Job, JobDetails, PrinterOutcome } from '../src/Job';
+import type { RegisteredPrinter } from '../src/Printer';
 import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, DataUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
 import { aDataDirectory, parentOf } from './aDataDirectory';
 import { layoutUnder } from '../src/dataLayout';
@@ -38,6 +39,10 @@ describe('JobStore', () => {
   async function addPrinter(name: string, buildVolume: BuildVolume): Promise<void> {
     await shop.addPrinter({ name, buildVolume, api: 'octoprint', address: `http://${name}` });
   }
+
+  // The store is handed the printer rather than its name, so these say which one the only way there
+  // is to say it. See `printerNamed`, and `naming a printer` below for what that buys.
+  const the = (name: string): Promise<RegisteredPrinter> => shop.printerNamed(name);
 
   async function held(store: JobStore = shop): Promise<string[]> {
     return (await store.all()).map((job) => `${job.id}:${job.displayName}:${job.state}`).sort();
@@ -190,24 +195,24 @@ describe('JobStore', () => {
     it('leaves the job exactly as submitted, all the way to its verdict', async () => {
       const asSubmitted = await recordOnDisk();
 
-      await shop.startPrinting('mk4', id);
-      await shop.finishedPrinting('mk4', 'failed');
+      await shop.startPrinting(await the('mk4'), id);
+      await shop.finishedPrinting(await the('mk4'), 'failed');
       await shop.reject(id);
 
       expect(await recordOnDisk()).toBe(asSubmitted);
     });
 
     it('is printing because the printer says it is holding it to print', async () => {
-      expect(await shop.startPrinting('mk4', id)).toMatchObject({ state: 'printing', heldBy: 'mk4' });
+      expect(await shop.startPrinting(await the('mk4'), id)).toMatchObject({ state: 'printing', heldBy: 'mk4' });
       expect((await shop.printerNamed('mk4')).holding).toEqual({ job: id, phase: 'printing' });
     });
 
     // AIDEV-NOTE: written after the upload rather than with the holding, because until the machine
     // has answered nobody knows where the file went. What watches the print matches on that string.
     it('records where the printer said it filed the gcode', async () => {
-      await shop.startPrinting('mk4', id);
+      await shop.startPrinting(await the('mk4'), id);
 
-      await shop.printingAt('mk4', 'plates/umlaut.gcode');
+      await shop.printingAt(await the('mk4'), 'plates/umlaut.gcode');
 
       expect((await shop.printerNamed('mk4')).holding).toEqual({ job: id, phase: 'printing', remotePath: 'plates/umlaut.gcode' });
     });
@@ -215,23 +220,23 @@ describe('JobStore', () => {
     // A print is watched to its end from a holding that has by then moved phase, so a path lost on
     // the way would be lost exactly when a restart needed it.
     it('still has that path once the print has ended', async () => {
-      await shop.startPrinting('mk4', id);
-      await shop.printingAt('mk4', 'plates/umlaut.gcode');
+      await shop.startPrinting(await the('mk4'), id);
+      await shop.printingAt(await the('mk4'), 'plates/umlaut.gcode');
 
-      await shop.finishedPrinting('mk4', 'finished');
+      await shop.finishedPrinting(await the('mk4'), 'finished');
 
       expect((await shop.printerNamed('mk4')).holding?.remotePath).toBe('plates/umlaut.gcode');
     });
 
     it('refuses to record one for a printer that is printing nothing', async () => {
-      await expect(shop.printingAt('mk4', 'plates/umlaut.gcode')).rejects.toThrow(WrongState);
+      await expect(shop.printingAt(await the('mk4'), 'plates/umlaut.gcode')).rejects.toThrow(WrongState);
     });
 
     // The printer never took it: nothing was printed, so it lets go and the job is queued again by
     // not being held.
     it('queues a job the printer never started again, by letting go of it', async () => {
-      await shop.startPrinting('mk4', id);
-      await shop.couldNotStart('mk4');
+      await shop.startPrinting(await the('mk4'), id);
+      await shop.couldNotStart(await the('mk4'));
 
       expect(await shop.find(id)).toMatchObject({ state: 'queued' });
       expect((await shop.printerNamed('mk4')).holding).toBeUndefined();
@@ -243,9 +248,9 @@ describe('JobStore', () => {
     it.each<[PrinterOutcome]>([['finished'], ['failed'], ['cancelled']])(
       'waits for a verdict however the printer ended it (%s)',
       async (outcome) => {
-        await shop.startPrinting('mk4', id);
+        await shop.startPrinting(await the('mk4'), id);
 
-        expect(await shop.finishedPrinting('mk4', outcome)).toMatchObject({
+        expect(await shop.finishedPrinting(await the('mk4'), outcome)).toMatchObject({
           state: 'awaiting-approval',
           lastPrinterOutcome: outcome,
         });
@@ -253,16 +258,16 @@ describe('JobStore', () => {
     );
 
     it('sends a rejected print back to the queue, and frees the printer', async () => {
-      await shop.startPrinting('mk4', id);
-      await shop.finishedPrinting('mk4', 'finished');
+      await shop.startPrinting(await the('mk4'), id);
+      await shop.finishedPrinting(await the('mk4'), 'finished');
 
       expect(await shop.reject(id)).toMatchObject({ state: 'queued' });
       expect((await shop.printerNamed('mk4')).holding).toBeUndefined();
     });
 
     it('still has the gcode for a rejected print to be run again from', async () => {
-      await shop.startPrinting('mk4', id);
-      await shop.finishedPrinting('mk4', 'failed');
+      await shop.startPrinting(await the('mk4'), id);
+      await shop.finishedPrinting(await the('mk4'), 'failed');
       await shop.reject(id);
 
       expect((await readAll(await shop.gcodeStream(id))).length).toBeGreaterThan(0);
@@ -270,8 +275,8 @@ describe('JobStore', () => {
 
     // Approved work leaves the shop entirely - it holds what is outstanding, not what was done.
     it('removes an approved job, gcode and record together, and frees the printer', async () => {
-      await shop.startPrinting('mk4', id);
-      await shop.finishedPrinting('mk4', 'finished');
+      await shop.startPrinting(await the('mk4'), id);
+      await shop.finishedPrinting(await the('mk4'), 'finished');
 
       await shop.approve(id);
 
@@ -283,8 +288,8 @@ describe('JobStore', () => {
     // Abandoning is approving in what it does to the shop and the opposite of it in what it means:
     // there is no good print, and no reprint either.
     it('removes an abandoned job the same way, and frees the printer', async () => {
-      await shop.startPrinting('mk4', id);
-      await shop.finishedPrinting('mk4', 'failed');
+      await shop.startPrinting(await the('mk4'), id);
+      await shop.finishedPrinting(await the('mk4'), 'failed');
 
       await shop.abandon(id);
 
@@ -293,8 +298,8 @@ describe('JobStore', () => {
     });
 
     it('does not hand out the id of an approved job again', async () => {
-      await shop.startPrinting('mk4', id);
-      await shop.finishedPrinting('mk4', 'finished');
+      await shop.startPrinting(await the('mk4'), id);
+      await shop.finishedPrinting(await the('mk4'), 'finished');
       await shop.approve(id);
 
       expect((await submit(details(), gcode())).id).toBe(2);
@@ -309,14 +314,14 @@ describe('JobStore', () => {
     });
 
     it('remembers what was loaded, in the order it was given', async () => {
-      await shop.load('mk4', ['PLA-Red', 'PLA-Blue']);
+      await shop.load(await the('mk4'), ['PLA-Red', 'PLA-Blue']);
 
       expect((await shop.printerNamed('mk4')).loaded).toEqual(['PLA-Red', 'PLA-Blue']);
     });
 
     it('takes an empty list for a machine with nothing on it', async () => {
-      await shop.load('mk4', ['PLA-Red']);
-      await shop.load('mk4', []);
+      await shop.load(await the('mk4'), ['PLA-Red']);
+      await shop.load(await the('mk4'), []);
 
       expect((await shop.printerNamed('mk4')).loaded).toEqual([]);
     });
@@ -336,14 +341,14 @@ describe('JobStore', () => {
     // Re-adding a printer is how an operator corrects its address or its bed, and it must not make
     // the shop forget what is on the machine.
     it('still knows what is loaded after the printer is added again', async () => {
-      await shop.load('mk4', ['PLA-Red']);
+      await shop.load(await the('mk4'), ['PLA-Red']);
       await addPrinter('mk4', { x: 250, y: 210, z: 220 });
 
       expect((await shop.printerNamed('mk4')).loaded).toEqual(['PLA-Red']);
     });
 
     it('is still loaded after a restart', async () => {
-      await shop.load('mk4', ['PLA-Red']);
+      await shop.load(await the('mk4'), ['PLA-Red']);
 
       expect((await new JobStore(where).printerNamed('mk4')).loaded).toEqual(['PLA-Red']);
     });
@@ -362,29 +367,46 @@ describe('JobStore', () => {
     });
   });
 
+  // AIDEV-NOTE: the one place a string becomes a printer, and the reason nothing else here takes a
+  // name. It answers for a name the shop REGISTERED rather than for whatever path that name would
+  // build, so a name a client invented cannot reach the data directory however it is spelled.
+  describe('naming a printer', () => {
+    it('refuses a name no printer here has', async () => {
+      await expect(shop.printerNamed('ender')).rejects.toThrow(NoSuchPrinter);
+    });
+
+    // It used to answer 'yes' to whatever the path happened to reach: a printer.json that parses was
+    // a printer, wherever up the tree it was found.
+    it('refuses a name that climbs out of the printers directory, even onto a printer.json that is there', async () => {
+      await fs.writeFile(path.join(where.state, 'printer.json'), JSON.stringify({ name: 'up-the-tree', buildVolume: { x: 1, y: 1, z: 1 } }));
+
+      await expect(shop.printerNamed('..')).rejects.toThrow(NoSuchPrinter);
+    });
+  });
+
   describe('a move the lifecycle does not allow', () => {
     it('refuses a second job on a printer that is already holding one', async () => {
       const { id } = await submit(details(), gcode());
       const other = await submit(details(), gcode());
-      await shop.startPrinting('mk4', id);
+      await shop.startPrinting(await the('mk4'), id);
 
-      await expect(shop.startPrinting('mk4', other.id)).rejects.toThrow(WrongState);
+      await expect(shop.startPrinting(await the('mk4'), other.id)).rejects.toThrow(WrongState);
     });
 
     // Two printers, because one would be satisfied by refusing every second start.
     it('refuses to start a job another printer is already holding', async () => {
       await addPrinter('mini', { x: 180, y: 180, z: 180 });
       const { id } = await submit(details(), gcode());
-      await shop.startPrinting('mk4', id);
+      await shop.startPrinting(await the('mk4'), id);
 
-      await expect(shop.startPrinting('mini', id)).rejects.toThrow(WrongState);
+      await expect(shop.startPrinting(await the('mini'), id)).rejects.toThrow(WrongState);
     });
 
     it('refuses to start anything on a printer that is stopped', async () => {
       const { id } = await submit(details(), gcode());
-      await shop.pause('mk4', 'the door is open');
+      await shop.pause(await the('mk4'), 'the door is open');
 
-      await expect(shop.startPrinting('mk4', id)).rejects.toThrow(WrongState);
+      await expect(shop.startPrinting(await the('mk4'), id)).rejects.toThrow(WrongState);
     });
 
     // The scheduler would never choose this pairing, but the store is what makes it impossible: a
@@ -393,13 +415,13 @@ describe('JobStore', () => {
       await addPrinter('mini', { x: 180, y: 180, z: 180 });
       const { id } = await submit(details({ printer: 'mk4' }), gcode());
 
-      await expect(shop.startPrinting('mini', id)).rejects.toThrow(WrongState);
+      await expect(shop.startPrinting(await the('mini'), id)).rejects.toThrow(WrongState);
     });
 
     it('refuses to finish a print that never started', async () => {
       await submit(details(), gcode());
 
-      await expect(shop.finishedPrinting('mk4', 'finished')).rejects.toThrow(WrongState);
+      await expect(shop.finishedPrinting(await the('mk4'), 'finished')).rejects.toThrow(WrongState);
     });
 
     // Nothing has been printed to judge.
@@ -416,13 +438,13 @@ describe('JobStore', () => {
     // machine while the first is still running it.
     it('refuses to take a printer out of the shop while it is holding work', async () => {
       const { id } = await submit(details(), gcode());
-      await shop.startPrinting('mk4', id);
+      await shop.startPrinting(await the('mk4'), id);
 
-      await expect(shop.removePrinter('mk4')).rejects.toThrow(WrongState);
+      await expect(shop.removePrinter(await the('mk4'))).rejects.toThrow(WrongState);
     });
 
     it('says which job it cannot find', async () => {
-      await expect(shop.startPrinting('mk4', 404)).rejects.toThrow(NoSuchJob);
+      await expect(shop.startPrinting(await the('mk4'), 404)).rejects.toThrow(NoSuchJob);
     });
   });
 
@@ -439,44 +461,44 @@ describe('JobStore', () => {
     });
 
     it('says why it stopped', async () => {
-      await shop.pause('mk4', 'out of filament');
+      await shop.pause(await the('mk4'), 'out of filament');
 
       expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: 'out of filament' });
     });
 
     it('runs again when told to', async () => {
-      await shop.pause('mk4', 'out of filament');
-      await shop.resume('mk4');
+      await shop.pause(await the('mk4'), 'out of filament');
+      await shop.resume(await the('mk4'));
 
       expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
     });
 
     // Two printers, because one would be satisfied by stopping everything.
     it('stops only the printer named', async () => {
-      await shop.pause('mk4', 'the door is open');
+      await shop.pause(await the('mk4'), 'the door is open');
 
       expect((await shop.printerNamed('mk4')).paused).toBeDefined();
       expect((await shop.printerNamed('mini')).paused).toBeUndefined();
     });
 
     it('keeps one printer stopped while another is started again', async () => {
-      await shop.pause('mk4', 'out of filament');
-      await shop.pause('mini', 'the door is open');
-      await shop.resume('mk4');
+      await shop.pause(await the('mk4'), 'out of filament');
+      await shop.pause(await the('mini'), 'the door is open');
+      await shop.resume(await the('mk4'));
 
       expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
       expect((await shop.printerNamed('mini')).paused).toMatchObject({ reason: 'the door is open' });
     });
 
     it('replaces the reason rather than stopping twice', async () => {
-      await shop.pause('mk4', 'out of filament');
-      await shop.pause('mk4', 'the door is open');
+      await shop.pause(await the('mk4'), 'out of filament');
+      await shop.pause(await the('mk4'), 'the door is open');
 
       expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: 'the door is open' });
     });
 
     it('is still stopped after a restart', async () => {
-      await shop.pause('mk4', 'out of filament');
+      await shop.pause(await the('mk4'), 'out of filament');
 
       expect((await new JobStore(where).printerNamed('mk4')).paused).toMatchObject({
         reason: 'out of filament',
@@ -484,21 +506,18 @@ describe('JobStore', () => {
     });
 
     it('records when it stopped', async () => {
-      await shop.pause('mk4', 'out of filament');
+      await shop.pause(await the('mk4'), 'out of filament');
 
       expect((await shop.printerNamed('mk4')).paused?.since).toBeInstanceOf(Date);
     });
 
-    it('will not stop a printer it does not have', async () => {
-      await expect(shop.pause('ender', 'anything')).rejects.toThrow(NoSuchPrinter);
-    });
   });
 
   // AIDEV-NOTE: the shop's own reading of a machine, kept apart from a stop. `paused` is what an
   // operator said and only an operator lifts; this is what the shop found, and the shop lifts it.
   describe('a printer the shop cannot get to', () => {
     it('says what it saw, and when', async () => {
-      await shop.couldNotReach('mk4', 'no API key for mk4');
+      await shop.couldNotReach(await the('mk4'), 'no API key for mk4');
 
       const printer = await shop.printerNamed('mk4');
       expect(printer.unreachable).toMatchObject({ reason: 'no API key for mk4' });
@@ -507,20 +526,20 @@ describe('JobStore', () => {
 
     // A restart is not contact with the machine, so it says nothing about whether this is over.
     it('is still out of reach after a restart', async () => {
-      await shop.couldNotReach('mk4', 'no API key for mk4');
+      await shop.couldNotReach(await the('mk4'), 'no API key for mk4');
 
       expect((await new JobStore(where).printerNamed('mk4')).unreachable).toMatchObject({ reason: 'no API key for mk4' });
     });
 
     it('is not a stop, because nobody is being asked to clear it', async () => {
-      await shop.couldNotReach('mk4', 'no API key for mk4');
+      await shop.couldNotReach(await the('mk4'), 'no API key for mk4');
 
       expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
     });
 
     it('lets go when the machine answers again', async () => {
-      await shop.couldNotReach('mk4', 'no API key for mk4');
-      await shop.reachedAgain('mk4');
+      await shop.couldNotReach(await the('mk4'), 'no API key for mk4');
+      await shop.reachedAgain(await the('mk4'));
 
       expect((await shop.printerNamed('mk4')).unreachable).toBeUndefined();
     });
@@ -528,17 +547,17 @@ describe('JobStore', () => {
     // The machine answering says nothing about the reason a person gave, which no machine can
     // contradict - a printer whose door an operator left open is still stopped when it picks up.
     it("leaves an operator's stop where it is when the machine answers again", async () => {
-      await shop.pause('mk4', 'the door is open');
-      await shop.couldNotReach('mk4', 'no API key for mk4');
-      await shop.reachedAgain('mk4');
+      await shop.pause(await the('mk4'), 'the door is open');
+      await shop.couldNotReach(await the('mk4'), 'no API key for mk4');
+      await shop.reachedAgain(await the('mk4'));
 
       expect((await shop.printerNamed('mk4')).paused).toMatchObject({ reason: 'the door is open' });
     });
 
     // Somebody who has just put a key right should not wait out a backoff to find out whether it took.
     it('is lifted too when an operator says go', async () => {
-      await shop.couldNotReach('mk4', 'no API key for mk4');
-      await shop.resume('mk4');
+      await shop.couldNotReach(await the('mk4'), 'no API key for mk4');
+      await shop.resume(await the('mk4'));
 
       expect((await shop.printerNamed('mk4')).unreachable).toBeUndefined();
     });
@@ -549,12 +568,12 @@ describe('JobStore', () => {
   describe('a print the shop stopped hearing about', () => {
     beforeEach(async () => {
       const job = await submit(details(), gcode());
-      await shop.load('mk4', ['PLA-SpaceGray']);
-      await shop.startPrinting('mk4', job.id);
+      await shop.load(await the('mk4'), ['PLA-SpaceGray']);
+      await shop.startPrinting(await the('mk4'), job.id);
     });
 
     it('says what took the watch, and when', async () => {
-      await shop.lostContact('mk4', 'lost contact for too long');
+      await shop.lostContact(await the('mk4'), 'lost contact for too long');
 
       const printer = await shop.printerNamed('mk4');
       expect(printer.outOfContact).toMatchObject({ reason: 'lost contact for too long' });
@@ -562,28 +581,28 @@ describe('JobStore', () => {
     });
 
     it('is not a stop, because nobody stopped anything', async () => {
-      await shop.lostContact('mk4', 'lost contact for too long');
+      await shop.lostContact(await the('mk4'), 'lost contact for too long');
 
       expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
     });
 
     // Letting go would queue a job that is on a bed.
     it('leaves the printer holding its print', async () => {
-      await shop.lostContact('mk4', 'lost contact for too long');
+      await shop.lostContact(await the('mk4'), 'lost contact for too long');
 
       expect((await shop.printerNamed('mk4')).holding).toMatchObject({ phase: 'printing' });
     });
 
     it('lets go when the machine is being heard again', async () => {
-      await shop.lostContact('mk4', 'lost contact for too long');
-      await shop.inContactAgain('mk4');
+      await shop.lostContact(await the('mk4'), 'lost contact for too long');
+      await shop.inContactAgain(await the('mk4'));
 
       expect((await shop.printerNamed('mk4')).outOfContact).toBeUndefined();
     });
 
     it('is lifted when an operator says go', async () => {
-      await shop.lostContact('mk4', 'lost contact for too long');
-      await shop.resume('mk4');
+      await shop.lostContact(await the('mk4'), 'lost contact for too long');
+      await shop.resume(await the('mk4'));
 
       expect((await shop.printerNamed('mk4')).outOfContact).toBeUndefined();
     });
@@ -593,7 +612,7 @@ describe('JobStore', () => {
   // ANSWERED, so there is nothing to find out by asking again - and asking costs a whole plate.
   describe('a printer that would not take the file', () => {
     it('says what it would not take, and when', async () => {
-      await shop.wouldNotTake('mk4', '3d-print-shop/job-1.gcode - OctoPrint upload failed: 400 Bad Request');
+      await shop.wouldNotTake(await the('mk4'), '3d-print-shop/job-1.gcode - OctoPrint upload failed: 400 Bad Request');
 
       const printer = await shop.printerNamed('mk4');
       expect(printer.refused).toMatchObject({ reason: '3d-print-shop/job-1.gcode - OctoPrint upload failed: 400 Bad Request' });
@@ -601,23 +620,23 @@ describe('JobStore', () => {
     });
 
     it('is not a stop, because nobody stopped anything', async () => {
-      await shop.wouldNotTake('mk4', 'OctoPrint upload failed: 400 Bad Request');
+      await shop.wouldNotTake(await the('mk4'), 'OctoPrint upload failed: 400 Bad Request');
 
       expect((await shop.printerNamed('mk4')).paused).toBeUndefined();
     });
 
     // The machine answering says nothing about the file it already turned down.
     it('is left where it is when the machine answers again', async () => {
-      await shop.wouldNotTake('mk4', 'OctoPrint upload failed: 400 Bad Request');
-      await shop.reachedAgain('mk4');
+      await shop.wouldNotTake(await the('mk4'), 'OctoPrint upload failed: 400 Bad Request');
+      await shop.reachedAgain(await the('mk4'));
 
       expect((await shop.printerNamed('mk4')).refused).toMatchObject({ reason: 'OctoPrint upload failed: 400 Bad Request' });
     });
 
     // Which is the only thing that lifts it: a person has looked, and says so.
     it('is lifted when an operator says go', async () => {
-      await shop.wouldNotTake('mk4', 'OctoPrint upload failed: 400 Bad Request');
-      await shop.resume('mk4');
+      await shop.wouldNotTake(await the('mk4'), 'OctoPrint upload failed: 400 Bad Request');
+      await shop.resume(await the('mk4'));
 
       expect((await shop.printerNamed('mk4')).refused).toBeUndefined();
     });
@@ -662,7 +681,7 @@ describe('JobStore', () => {
     it('finds the jobs a previous run left, in the states it left them', async () => {
       const printing = await submit(details({ displayName: 'Player Box' }), gcode());
       await submit(details(), gcode());
-      await shop.startPrinting('mk4', printing.id);
+      await shop.startPrinting(await the('mk4'), printing.id);
 
       expect(await held(new JobStore(where))).toEqual(['1:Player Box:printing', '2:Job 2:queued']);
     });
@@ -701,7 +720,7 @@ describe('JobStore', () => {
     });
 
     it('keeps a printer to itself, record and status alike', async () => {
-      await shop.load('mk4', ['PLA']);
+      await shop.load(await the('mk4'), ['PLA']);
 
       expect(await modeOf(where.state, 'printers', 'mk4')).toBe('700');
       expect(await modeOf(where.state, 'printers', 'mk4', 'printer.json')).toBe('600');

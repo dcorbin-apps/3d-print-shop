@@ -57,35 +57,22 @@ describe('the one printer a request may name in its query', () => {
     });
   });
 
-  // AIDEV-NOTE: a name becomes a DIRECTORY under the state root, so one that climbs out of it read a
-  // printer.json from anywhere the service user could - and the answer said which case it was: a
-  // file that parsed was 200, one that was not there 404, one that was not JSON 500.
-  describe('naming something a directory cannot be called', () => {
-    it.each([['../../etc'], ['../..'], ['..'], ['.'], ['a/b'], ['back\\slash'], ['/etc/passwd'], ['nested/printer']])(
-      'refuses %j, which would not stay in the directory it names',
-      (asked) => {
-        expect(naming(asked)).toThrow(UnusableRequest);
-        expect(naming(asked)).toThrow('is not a name a printer can have');
-      },
-    );
-
-    it.each([['a\u0000b'], ['a\u001Fb'], ['a\u007Fb']])('refuses %j, which carries what a path cannot hold', (asked) => {
-      expect(naming(asked)).toThrow('is not a name a printer can have');
-    });
-  });
-
-  // A name with a space, a dot or a '#' in it is legal and reaches the shop encoded. Refusing those
-  // would be the guard overreaching on a machine somebody named reasonably.
+  // AIDEV-NOTE: the SHAPE of a name is deliberately not asked about here. What comes out of this is
+  // handed to `printerNamed`, which answers only for a name the shop has registered, so a name that
+  // would climb out of the state root is a name no printer has - and 404 is the whole answer to it.
+  // It used to read a printer.json from wherever the path landed and say which case it was: a file
+  // that parsed 200, one that was not there 404, one that was not JSON 500.
   describe('naming a machine', () => {
-    it.each([['mk4'], ['Prusa MK4'], ['mk4#two'], ['mini-2'], ['a.b'], ['...'], ['.hidden']])('takes %j', (asked) => {
+    it.each([['mk4'], ['Prusa MK4'], ['mk4#two'], ['mini-2'], ['a.b'], ['...'], ['.hidden'], ['../../etc']])('takes %j', (asked) => {
       expect(onePrinterName(asked)).toBe(asked);
     });
   });
 });
 
-// AIDEV-NOTE: the name in a PATH, checked at the `/printers/:name` mount, and in a BODY, checked by
-// `printerIn`. The rule is one function over a string; about thirty acceptance cases used to stand up
-// a server to ask it, which reports a status code where this reports which rule refused.
+// AIDEV-NOTE: the name a printer is BEING GIVEN, checked by `printerIn` and nowhere else - every
+// other name a request carries is looked up among the printers there are. The rule is one function
+// over a string; about thirty acceptance cases used to stand up a server to ask it, which reports a
+// status code where this reports which rule refused.
 describe('what a printer may be called', () => {
   const calling =
     (name: string): (() => void) =>

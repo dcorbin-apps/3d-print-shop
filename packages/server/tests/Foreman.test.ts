@@ -44,7 +44,7 @@ describe('the foreman', () => {
 
   async function addPrinter(name: string): Promise<void> {
     await shop.addPrinter({ name, buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: `http://${name}` });
-    await shop.load(name, ['PLA-Red']);
+    await shop.load(await shop.printerNamed(name), ['PLA-Red']);
   }
 
   // Every submission carries a caller: the shop answers nobody it cannot name, so there is no such
@@ -186,7 +186,7 @@ describe('the foreman', () => {
       await submit();
       // Put it in the printer's hands directly: a print the foreman started would have a watcher
       // reaching for the same machine, which is not what this is about.
-      await shop.startPrinting('mk4', id);
+      await shop.startPrinting(await shop.printerNamed('mk4'), id);
 
       await foreman.considerStarting();
 
@@ -195,7 +195,7 @@ describe('the foreman', () => {
 
     it('starts nothing on a printer that is stopped', async () => {
       await submit();
-      await shop.pause('mk4', 'the door is open');
+      await shop.pause(await shop.printerNamed('mk4'), 'the door is open');
 
       await foreman.considerStarting();
 
@@ -254,7 +254,7 @@ describe('the foreman', () => {
     // outcome would try to write it down again and stop the printer for being in the wrong state.
     it('takes on a print nobody is watching', async () => {
       const id = await submit();
-      await shop.startPrinting('mk4', id);
+      await shop.startPrinting(await shop.printerNamed('mk4'), id);
 
       expect(await foreman.resumeWatching()).toEqual(['mk4']);
     });
@@ -269,8 +269,8 @@ describe('the foreman', () => {
     // A print waiting for a verdict has already ended. There is nothing left to hear about it.
     it('picks up nothing for a printer holding a print that is already judged', async () => {
       const id = await submit();
-      await shop.startPrinting('mk4', id);
-      await shop.finishedPrinting('mk4', 'finished');
+      await shop.startPrinting(await shop.printerNamed('mk4'), id);
+      await shop.finishedPrinting(await shop.printerNamed('mk4'), 'finished');
 
       expect(await foreman.resumeWatching()).toEqual([]);
     });
@@ -636,7 +636,7 @@ describe('the foreman', () => {
       await foreman.considerStarting();
       await until(outOfContact('mk4'));
       await foreman.watchersSettled();
-      await shop.resume('mk4');
+      await shop.resume(await shop.printerNamed('mk4'));
 
       await foreman.startAgain('mk4');
       await foreman.watchersSettled();
@@ -661,7 +661,7 @@ describe('the foreman', () => {
       mockReach.mockRejectedValue(new Error('no API key for mk4'));
       await patient.considerStarting();
 
-      await shop.resume('mk4');
+      await shop.resume(await shop.printerNamed('mk4'));
       await patient.startAgain('mk4');
       mockReach.mockClear();
 
@@ -766,7 +766,7 @@ describe('the foreman', () => {
 
     // Reaching the machine says nothing about the reason a person gave.
     it("does not lift an operator's stop", async () => {
-      await shop.pause('mk4', 'the door is open');
+      await shop.pause(await shop.printerNamed('mk4'), 'the door is open');
       laterBy(30_000);
 
       await patient.reachForWhatIsLost();

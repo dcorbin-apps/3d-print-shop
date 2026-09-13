@@ -203,18 +203,20 @@ export class JobStore {
   // AIDEV-NOTE: ONE write, to the printer. A job is printing because a printer says it is holding it
   // to print - there is no second record of that to disagree with this one, and no instant at which
   // the two could be found saying different things.
-  async startPrinting(printerName: string, id: number): Promise<Job> {
+  async startPrinting(onto: RegisteredPrinter, id: number): Promise<Job> {
     const job = await this.require(id);
-    const printer = await this.printerNamed(printerName);
+    // Read again rather than judged from what the caller is holding: a snapshot says what was true
+    // when it was taken, and both the holding and the stop can have changed since.
+    const printer = await this.printerNamed(onto.name);
 
-    if (printer.paused) throw new WrongState(`${printerName} is stopped: ${printer.paused.reason}`);
-    if (printer.holding) throw new WrongState(`${printerName} is already holding job ${printer.holding.job}`);
+    if (printer.paused) throw new WrongState(`${onto.name} is stopped: ${printer.paused.reason}`);
+    if (printer.holding) throw new WrongState(`${onto.name} is already holding job ${printer.holding.job}`);
     if (job.state !== 'queued') throw new WrongState(`job ${id} is ${job.state}, so it cannot be started`);
-    if (!canTake(printer, job)) throw new WrongState(`${printerName} cannot take job ${id}`);
+    if (!canTake(printer, job)) throw new WrongState(`${onto.name} cannot take job ${id}`);
 
-    await this.changeStatus(printerName, (status) => ({ ...status, holding: { job: id, phase: 'printing' } }));
+    await this.changeStatus(printer, (status) => ({ ...status, holding: { job: id, phase: 'printing' } }));
 
-    return { ...job, state: 'printing', heldBy: printerName };
+    return { ...job, state: 'printing', heldBy: onto.name };
   }
 
   /**
@@ -224,30 +226,30 @@ export class JobStore {
    * upload nobody knows the answer - and the printer has to be claimed BEFORE the upload, or two
    * passes over the queue would both send it the same job.
    */
-  async printingAt(printerName: string, remotePath: string): Promise<void> {
-    const holding = await this.requireHolding(printerName, 'printing');
+  async printingAt(printer: RegisteredPrinter, remotePath: string): Promise<void> {
+    const { printer: holder, holding } = await this.requireHolding(printer.name, 'printing');
 
-    await this.changeStatus(printerName, (status) => ({ ...status, holding: { ...holding, remotePath } }));
+    await this.changeStatus(holder, (status) => ({ ...status, holding: { ...holding, remotePath } }));
   }
 
   /**
    * The printer never took it - the upload failed, the connection was down. Nothing was printed, so
    * the printer simply lets go and the job is queued again by not being held.
    */
-  async couldNotStart(printerName: string): Promise<void> {
-    await this.letGo(printerName, 'printing');
+  async couldNotStart(printer: RegisteredPrinter): Promise<void> {
+    await this.letGo(printer.name, 'printing');
   }
 
   /**
    * The printer stopped. `finished` is not approval: it says the machine reached the end, not that
    * what came off the bed is usable - so it keeps holding the job, and the bed, until a person says.
    */
-  async finishedPrinting(printerName: string, outcome: PrinterOutcome): Promise<Job> {
-    const holding = await this.requireHolding(printerName, 'printing');
+  async finishedPrinting(printer: RegisteredPrinter, outcome: PrinterOutcome): Promise<Job> {
+    const { printer: holder, holding } = await this.requireHolding(printer.name, 'printing');
 
-    await this.changeStatus(printerName, (status) => ({ ...status, holding: { ...holding, phase: 'awaiting-approval', outcome } }));
+    await this.changeStatus(holder, (status) => ({ ...status, holding: { ...holding, phase: 'awaiting-approval', outcome } }));
 
-    return { ...(await this.require(holding.job)), state: 'awaiting-approval', heldBy: printerName, lastPrinterOutcome: outcome };
+    return { ...(await this.require(holding.job)), state: 'awaiting-approval', heldBy: printer.name, lastPrinterOutcome: outcome };
   }
 
   /** The operator says the print is good. The job leaves the shop, gcode and record together. */
@@ -271,6 +273,9 @@ export class JobStore {
     return { ...(await this.require(id)), state: 'queued' };
   }
 
+  // AIDEV-NOTE: the ONE place a name that is not already a directory becomes one, and so the one
+  // place the shape of a name matters. Every other method here is handed the printer rather than a
+  // name, and the only thing that turns a name into a printer is `printerNamed` - see the note there.
   /** Adds a printer, or changes what the shop knows about one already here. */
   async addPrinter(record: PrinterRecord): Promise<void> {
     await this.requireDataRoot();
@@ -284,33 +289,41 @@ export class JobStore {
     }
   }
 
-  async removePrinter(name: string): Promise<void> {
-    const printer = await this.printerNamed(name);
-    if (printer.holding) {
-      throw new WrongState(`${name} is holding job ${printer.holding.job} - it cannot be taken out of the shop while it has work`);
+  async removePrinter(printer: RegisteredPrinter): Promise<void> {
+    const current = await this.printerNamed(printer.name);
+    if (current.holding) {
+      throw new WrongState(`${printer.name} is holding job ${current.holding.job} - it cannot be taken out of the shop while it has work`);
     }
 
-    await rm(this.printerDir(name), { recursive: true, force: true });
+    await rm(this.printerDir(printer.name), { recursive: true, force: true });
   }
 
   async printers(): Promise<RegisteredPrinter[]> {
     await this.requireDataRoot();
 
-    // Sorted, because readdir's order is the filesystem's and an operator reading a list twice
-    // should not find it rearranged.
-    const names = (await readdir(path.join(this.where.state, PRINTERS_DIR)).catch(() => [] as string[])).sort();
-    const printers = await Promise.all(names.map((name) => this.readPrinter(name)));
+    const printers = await Promise.all((await this.registered()).map((name) => this.readPrinter(name)));
 
     return printers.filter((printer): printer is RegisteredPrinter => printer !== undefined);
   }
 
+  // AIDEV-NOTE: the ONE place a string becomes a printer, and it resolves by MATCHING a name the
+  // directory already holds rather than by building a path out of one. Everything else here is
+  // handed the printer itself, so a name a caller invented has nowhere to go: `../../somewhere` is
+  // not among the entries, and neither is `PRINTER-1` on a filesystem that would have opened
+  // `printer-1` for it. The shape of a name is `addPrinter`'s business and nothing else's.
   async printerNamed(name: string): Promise<RegisteredPrinter> {
     await this.requireDataRoot();
 
-    const printer = await this.readPrinter(name);
+    const printer = (await this.registered()).includes(name) ? await this.readPrinter(name) : undefined;
     if (!printer) throw new NoSuchPrinter(`no printer called ${name} - the operator adds one before it can print`);
 
     return printer;
+  }
+
+  // Sorted, because readdir's order is the filesystem's and an operator reading a list twice should
+  // not find it rearranged.
+  private async registered(): Promise<string[]> {
+    return (await readdir(path.join(this.where.state, PRINTERS_DIR)).catch(() => [] as string[])).sort();
   }
 
   // AIDEV-NOTE: stopping is a property of the PRINTER, not of the shop. A machine that cannot be
@@ -319,8 +332,10 @@ export class JobStore {
   //
   // Remembered across a restart. Restarting is not evidence the fault is gone, and coming back up
   // working would hide the reason somebody needs to see.
-  async pause(name: string, reason: string): Promise<void> {
-    await this.changeStatus(name, (status) => ({ ...status, paused: { reason, since: new Date() } }));
+  async pause(printer: RegisteredPrinter, reason: string): Promise<RegisteredPrinter> {
+    await this.changeStatus(printer, (status) => ({ ...status, paused: { reason, since: new Date() } }));
+
+    return this.printerNamed(printer.name);
   }
 
   /**
@@ -328,55 +343,57 @@ export class JobStore {
    * what the shop decided by itself: somebody who has just put a key right should not be made to
    * wait out a backoff to find out whether they got it right.
    */
-  async resume(name: string): Promise<void> {
+  async resume(printer: RegisteredPrinter): Promise<RegisteredPrinter> {
     await this.changeStatus(
-      name,
+      printer,
       ({ paused: _paused, unreachable: _unreachable, refused: _refused, outOfContact: _outOfContact, ...status }) => status
     );
+
+    return this.printerNamed(printer.name);
   }
 
   // AIDEV-NOTE: not a stop, and deliberately not `paused`. It is the shop's own reading of a
   // machine rather than anybody's instruction - nothing about the room changed, nobody is asked to
   // clear it, and the shop lifts it itself the moment it can reach the machine again.
   /** The shop could not get to the machine at all - nothing listening, no key, a login refused. */
-  async couldNotReach(name: string, reason: string): Promise<void> {
-    await this.changeStatus(name, (status) => ({ ...status, unreachable: { reason, since: new Date() } }));
+  async couldNotReach(printer: RegisteredPrinter, reason: string): Promise<void> {
+    await this.changeStatus(printer, (status) => ({ ...status, unreachable: { reason, since: new Date() } }));
   }
 
   /** It answered again. Nobody is told, because nobody was asked to do anything about it. */
-  async reachedAgain(name: string): Promise<void> {
-    await this.changeStatus(name, ({ unreachable: _unreachable, ...status }) => status);
+  async reachedAgain(printer: RegisteredPrinter): Promise<void> {
+    await this.changeStatus(printer, ({ unreachable: _unreachable, ...status }) => status);
   }
 
   // AIDEV-NOTE: not retried, unlike everything else the shop writes about a machine. The printer
   // ANSWERED - a bad path, a full disk, a name it will not store - and asking again re-sends a whole
   // plate to get the same no. It waits for a person, and `printer start` is how a person says so.
   /** The machine would not take the file. */
-  async wouldNotTake(name: string, reason: string): Promise<void> {
-    await this.changeStatus(name, (status) => ({ ...status, refused: { reason, since: new Date() } }));
+  async wouldNotTake(printer: RegisteredPrinter, reason: string): Promise<void> {
+    await this.changeStatus(printer, (status) => ({ ...status, refused: { reason, since: new Date() } }));
   }
 
   // AIDEV-NOTE: the printer keeps its job. Nothing here says the print stopped - the machine goes on
   // printing whoever is listening - so letting go of what it holds would queue a job that is on a
   // bed. What is written down is that nobody is hearing about it any more.
   /** The shop lost hold of a print it was watching. */
-  async lostContact(name: string, reason: string): Promise<void> {
-    await this.changeStatus(name, (status) => ({ ...status, outOfContact: { reason, since: new Date() } }));
+  async lostContact(printer: RegisteredPrinter, reason: string): Promise<void> {
+    await this.changeStatus(printer, (status) => ({ ...status, outOfContact: { reason, since: new Date() } }));
   }
 
   /** It is being heard again. Nobody is told, because nobody was asked to do anything about it. */
-  async inContactAgain(name: string): Promise<void> {
-    await this.changeStatus(name, ({ outOfContact: _outOfContact, ...status }) => status);
+  async inContactAgain(printer: RegisteredPrinter): Promise<void> {
+    await this.changeStatus(printer, ({ outOfContact: _outOfContact, ...status }) => status);
   }
 
   /**
    * What is on the machine now. Nothing else knows it: the printers here do not report their own
    * filament, so the shop asks the operator and believes the answer.
    */
-  async load(name: string, filaments: string[]): Promise<RegisteredPrinter> {
-    await this.changeStatus(name, (status) => ({ ...status, loaded: filaments }));
+  async load(printer: RegisteredPrinter, filaments: string[]): Promise<RegisteredPrinter> {
+    await this.changeStatus(printer, (status) => ({ ...status, loaded: filaments }));
 
-    return this.printerNamed(name);
+    return this.printerNamed(printer.name);
   }
 
   private async leaveTheShop(id: number): Promise<void> {
@@ -390,18 +407,20 @@ export class JobStore {
   }
 
   private async letGo(printerName: string, phase: Holding['phase']): Promise<void> {
-    await this.requireHolding(printerName, phase);
-    await this.changeStatus(printerName, ({ holding: _holding, ...status }) => status);
+    const { printer } = await this.requireHolding(printerName, phase);
+    await this.changeStatus(printer, ({ holding: _holding, ...status }) => status);
   }
 
-  private async requireHolding(printerName: string, phase: Holding['phase']): Promise<Holding> {
+  // Answers with the printer it read as well as what it is holding, because every caller writes to
+  // that printer next and this is where it was looked up.
+  private async requireHolding(printerName: string, phase: Holding['phase']): Promise<{ printer: RegisteredPrinter; holding: Holding }> {
     const printer = await this.printerNamed(printerName);
     if (!printer.holding) throw new WrongState(`${printerName} is not holding anything`);
     if (printer.holding.phase !== phase) {
       throw new WrongState(`${printerName} is holding job ${printer.holding.job} ${printer.holding.phase}, not ${phase}`);
     }
 
-    return printer.holding;
+    return { printer, holding: printer.holding };
   }
 
   private async requireAwaitingApproval(id: number): Promise<string> {
@@ -413,12 +432,17 @@ export class JobStore {
     return job.heldBy;
   }
 
-  private async changeStatus(name: string, change: (status: PrinterStatus) => PrinterStatus): Promise<void> {
-    await this.printerNamed(name);
-
+  // AIDEV-NOTE: the printer is HANDED here, never looked up. Whoever is calling has one, because
+  // `printerNamed` is the only way to get one - so the existence check that used to open this method
+  // was the same lookup done twice, and it never closed the race it looked like it was closing: a
+  // printer removed between the check and the write was removed between them either way.
+  //
+  // The STATUS is read again all the same, and inside the lock, because what is written depends on
+  // what is there - two changes that both read before either wrote would lose one of them.
+  private async changeStatus(printer: RegisteredPrinter, change: (status: PrinterStatus) => PrinterStatus): Promise<void> {
     await this.serialised(async () => {
-      const status = (await this.readStatus(name)) ?? { loaded: [] };
-      await this.writeStatus(name, change(status));
+      const status = (await this.readStatus(printer.name)) ?? { loaded: [] };
+      await this.writeStatus(printer.name, change(status));
     });
   }
 
@@ -539,6 +563,10 @@ export class JobStore {
     return path.join(this.where.jobs, String(id));
   }
 
+  // AIDEV-NOTE: every name that reaches here is one the directory already gave back, or one
+  // `addPrinter` is creating - the public methods take a printer rather than a name, and
+  // `printerNamed` is the only thing that turns one into the other. Keep it that way and there is
+  // nothing to check here; break it and this is where a caller's string becomes a path.
   private printerDir(name: string): string {
     return path.join(this.where.state, PRINTERS_DIR, name);
   }

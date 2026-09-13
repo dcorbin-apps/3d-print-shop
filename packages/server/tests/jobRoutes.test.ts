@@ -171,9 +171,9 @@ describe('the jobs, over the shop routes', () => {
   describe('a verdict', () => {
     async function awaitingApproval(): Promise<Job> {
       const job = await submitted(playerBox);
-      await shop.startPrinting('mk4', job.id);
+      await shop.startPrinting(await shop.printerNamed('mk4'), job.id);
 
-      return shop.finishedPrinting('mk4', 'finished');
+      return shop.finishedPrinting(await shop.printerNamed('mk4'), 'finished');
     }
 
     it('approves a print, and the job leaves the shop', async () => {
@@ -363,8 +363,8 @@ describe('the jobs, over the shop routes', () => {
 
     async function printedFor(token: string): Promise<number> {
       const { id } = await submittedBy(token);
-      await shop.startPrinting('mk4', id);
-      await shop.finishedPrinting('mk4', 'finished');
+      await shop.startPrinting(await shop.printerNamed('mk4'), id);
+      await shop.finishedPrinting(await shop.printerNamed('mk4'), 'finished');
 
       return id;
     }

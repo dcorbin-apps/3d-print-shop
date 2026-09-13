@@ -77,8 +77,8 @@ describe('the life of a job', () => {
       expect(digest.endsWith(`:${job.gcodeBytes}`)).toBe(true);
 
       // A print that ran to the end, and a person who says it is not usable anyway.
-      await shop.startPrinting('mk4', job.id);
-      await shop.finishedPrinting('mk4', 'finished');
+      await shop.startPrinting(await shop.printerNamed('mk4'), job.id);
+      await shop.finishedPrinting(await shop.printerNamed('mk4'), 'finished');
       expect(await shop.reject(job.id)).toMatchObject({ state: 'queued' });
 
       // The service restarts while the reprint is still owed.
@@ -89,8 +89,8 @@ describe('the life of a job', () => {
       // what discards them.
       expect(await digestOf(await afterRestart.gcodeStream(job.id))).toBe(digest);
 
-      await afterRestart.startPrinting('mk4', job.id);
-      await afterRestart.finishedPrinting('mk4', 'finished');
+      await afterRestart.startPrinting(await afterRestart.printerNamed('mk4'), job.id);
+      await afterRestart.finishedPrinting(await afterRestart.printerNamed('mk4'), 'finished');
       await afterRestart.approve(job.id);
 
       // The shop holds outstanding work, so a job that succeeded leaves no trace in it.

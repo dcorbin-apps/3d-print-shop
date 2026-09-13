@@ -519,21 +519,6 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
     response.status(204).end();
   });
 
-  // Once, where a name ARRIVES, rather than at each route that takes one - the same reasoning as the
-  // `changed` hook above. A per-route list is a list somebody forgets to add to, and what would be
-  // forgotten here is a recursive delete outside the data directory. Mounted on the path, so `POST /printers`
-  // (which names a printer in its body, and is checked there) is not caught by it.
-  //
-  // AIDEV-NOTE: a name arrives three ways, and this mount is only one of them - a path segment here,
-  // a body on `POST /printers` (`printerIn`), and a query string on `GET /filaments`
-  // (`onePrinterName`). The query string was the one this list forgot; all three are checked now.
-  // A fourth arrival is the thing to watch for, and the store building the path is where it would
-  // stop being possible to forget - see PLAN.md.
-  api.use('/printers/:name', (request, _response, next) => {
-    requireUsablePrinterName(request.params.name);
-    next();
-  });
-
   // AIDEV-NOTE: a top-level resource rather than anything under /jobs, which would collide with
   // GET /jobs/{id} and be resolved by whichever route express happened to see first - a trap that
   // moves the moment somebody reorders these. It is what the QUEUE is waiting for, seen by filament.
@@ -577,8 +562,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   });
 
   api.delete('/printers/:name', async (request, response) => {
-    await shop.printerNamed(request.params.name);
-    await shop.removePrinter(request.params.name);
+    await shop.removePrinter(await shop.printerNamed(request.params.name));
 
     response.status(204).end();
   });
@@ -586,25 +570,26 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   // AIDEV-NOTE: the operator's word for what is on the machine, because no printer here reports its
   // own filament. It is also a wake-up: what a shop can print changes the instant this does.
   api.put('/printers/:name/filament', async (request, response) => {
-    const printer = await shop.load(request.params.name, loadedIn(request.body));
-    log.info('filament loaded', { printer: printer.name, loaded: printer.loaded });
+    const loaded = await shop.load(await shop.printerNamed(request.params.name), loadedIn(request.body));
+    log.info('filament loaded', { printer: loaded.name, loaded: loaded.loaded });
 
-    response.json(printer);
+    response.json(loaded);
   });
 
   api.put('/printers/:name/status', async (request, response) => {
     const asked = stoppedIn(request.body);
+    const printer = await shop.printerNamed(request.params.name);
 
     if (asked.stopped) {
-      await shop.pause(request.params.name, asked.reason);
-      log.info('printer stopped', { printer: request.params.name, why: asked.reason, by: request.caller.name });
-    } else {
-      await shop.resume(request.params.name);
-      log.info('printer started', { printer: request.params.name, by: request.caller.name });
-      started(request.params.name);
+      response.json(await shop.pause(printer, asked.reason));
+      log.info('printer stopped', { printer: printer.name, why: asked.reason, by: request.caller.name });
+
+      return;
     }
 
-    response.json(await shop.printerNamed(request.params.name));
+    response.json(await shop.resume(printer));
+    log.info('printer started', { printer: printer.name, by: request.caller.name });
+    started(printer.name);
   });
 
   api.use((error: unknown, request: Request, response: Response, next: NextFunction) => explainRefusal(log, error, request, response, next));
@@ -716,14 +701,14 @@ function jobId(raw: string): number {
   return id;
 }
 
-// AIDEV-NOTE: a printer's name becomes a DIRECTORY under the data root, and removePrinter() deletes that
-// directory recursively - so a name from a request is a path fragment a client chose. Express hands
-// over what the URL decoded to, and `..%2F..%2Fetc` arrives as `../../etc` (measured, not assumed),
-// as does a name carrying a NUL.
+// AIDEV-NOTE: adding is the one thing this is for, and `printerIn` is its one caller. A name that
+// is BEING CREATED is the only one the shop has nothing to check it against - every other name a
+// request carries is answered by looking it up among the printers there are, which no name a client
+// invented can be. So this is about the name an operator chose, and becomes a directory under the
+// data root: `..%2F..%2Fetc` arrives from express decoded to `../../etc` (measured, not assumed), as
+// does a name carrying a NUL.
 //
-// Refused rather than mangled: the operator chose the name and can choose another. Until this, only
-// `add` checked, and the routes taking `:name` were safe only because no printer.json happened to
-// exist up the path they built - a property of the filesystem rather than of this code.
+// Refused rather than mangled: the operator chose the name and can choose another.
 export function requireUsablePrinterName(name: string): void {
   const unusable =
     name.trim() === '' ||
@@ -915,19 +900,17 @@ function explainRefusal(log: Log, error: unknown, _request: Request, response: R
 // object, so what arrives here is not a string because a caller wrote one. Answering for the shop
 // when a caller asked about a machine would be the wrong answer said confidently, so it is refused.
 //
-// AIDEV-NOTE: and then checked as a NAME, because this is the second way one arrives. The mount on
-// `/printers/:name` catches every name that comes in a path and cannot catch this one, which comes
-// in a query string - so `?printer=../../../somewhere` reached `printerNamed` and read a
-// printer.json outside the data directory. What it gave back was an oracle: a file that parses
-// answered 200, one that is not there 404, one that is not JSON 500.
+// AIDEV-NOTE: what it is NOT is a check that such a printer exists. Whatever comes out of here is
+// handed to `printerNamed`, which answers only for a name the shop has registered - so the shape of
+// a name is nothing this has to know, and `?printer=../../../somewhere` is a 404 like any other name
+// no printer has. It used to read a printer.json outside the data directory and answer an oracle: a
+// file that parses 200, one that is not there 404, one that is not JSON 500.
 export function onePrinterName(asked: unknown): string | undefined {
   if (asked === undefined) return undefined;
 
   if (typeof asked !== 'string' || asked.trim() === '') {
     throw new UnusableRequest('printer names one machine to answer for, and the whole shop answers when it is left out');
   }
-
-  requireUsablePrinterName(asked);
 
   return asked;
 }

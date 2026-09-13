@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, jest } from '@jest/globals';
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
+import * as path from 'node:path';
 import { createApi } from '../src/api';
 import { Callers } from '../src/credentials';
 import { JobStore } from '../src/JobStore';
@@ -126,7 +127,7 @@ describe('the printers, over the shop routes', () => {
     });
 
     it('is started again, with the trouble gone', async () => {
-      await shop.pause('mk4', 'door is open');
+      await shop.pause(await shop.printerNamed('mk4'), 'door is open');
 
       expect((await send('PUT', '/printers/mk4/status', { stopped: false })).body).toEqual(asRegistered);
     });
@@ -211,29 +212,26 @@ describe('the printers, over the shop routes', () => {
   // left is whether each arrival reaches the rule - a path, a body and a query - and every bug this
   // block has ever caught was one of those not doing so.
   describe('what a client may call a printer', () => {
-    it('checks a name that arrives in a path', async () => {
-      const answer = await send('DELETE', '/printers/..%2F..%2Fetc');
-
-      expect(answer.status).toBe(400);
-      expect(answer.body).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
-    });
-
-    // `.` and `..` cannot arrive in a URL - express normalises them away before routing - but they
-    // arrive in a BODY perfectly well, and `printers/..` is the printers directory itself.
-    it('checks a name that arrives in a body, which is the only way `..` can reach the shop', async () => {
+    // Creating is the one thing with no printer to look the name up among, so the shape of it is
+    // checked - and a BODY is the only way `..` reaches the shop at all.
+    it('refuses a name a directory cannot be given, which only a body can ask for', async () => {
       const answer = await send('POST', '/printers', { name: '..', buildVolume: MK4, address: 'http://x' });
 
       expect(answer.status).toBe(400);
       expect(answer.body).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
     });
 
-    // The `/printers/:name` mount catches a name in a path and cannot catch one in a query, which is
-    // how `?printer=../../../somewhere` came to read a printer.json outside the data directory.
-    it('checks a name that arrives in a query string, not only one in a path', async () => {
-      const answer = await ask('/filaments?printer=../../../outside');
+    // AIDEV-NOTE: the arrival that had the hole, and the one place here worth standing a printer.json
+    // up outside the printers directory to prove it is shut. `..` is a real climb out of it - and a
+    // query string is the only way one reaches a route, because express normalises a path's away.
+    // What the shop used to answer was the file: one that parsed 200, one absent 404, one not JSON 500.
+    it('answers for no printer when a query string climbs out onto a printer.json that is there', async () => {
+      await writeFile(path.join(where.state, 'printer.json'), JSON.stringify({ name: 'up-the-tree', buildVolume: MK4 }));
 
-      expect(answer.status).toBe(400);
-      expect(answer.body).toMatchObject({ error: expect.stringContaining('is not a name a printer can have') as unknown });
+      const answer = await ask('/filaments?printer=..');
+
+      expect(answer.status).toBe(404);
+      expect(answer.body).toMatchObject({ error: expect.stringContaining('no printer called') as unknown });
     });
 
     it('still takes an ordinary name', async () => {

@@ -27,7 +27,7 @@ describe('printing the next job', () => {
 
   // What a printer can print is what is loaded ON it now, so saying so is part of setting one up.
   async function printOn(name: string, loaded: string[]): Promise<PrintAttempt> {
-    await shop.load(name, loaded);
+    await shop.load(await shop.printerNamed(name), loaded);
 
     return startNextPrint(shop, async () => machine, name);
   }
@@ -216,7 +216,7 @@ describe('printing the next job', () => {
     // one leaves: a holding with no path at all. The shop's own guess is what is left to watch.
     it('falls back to the path it asked for when nothing recorded one', async () => {
       const job = await submit(['PLA-Red'], { remotePath: 'plates/cards.gcode' });
-      await shop.startPrinting('mk4', job.id);
+      await shop.startPrinting(await shop.printerNamed('mk4'), job.id);
 
       await recordOutcome(shop, machine, 'mk4');
 
@@ -245,7 +245,7 @@ describe('printing the next job', () => {
     // looks right whenever only unnamed printers are stopped, which is why both directions are here.
     it('will not print on a machine that was stopped', async () => {
       await submit(['PLA-Red'], { printer: 'mk4' });
-      await shop.pause('mk4', 'the door is open');
+      await shop.pause(await shop.printerNamed('mk4'), 'the door is open');
 
       expect(await printOn('mk4', ['PLA-Red'])).toEqual({ did: 'nothing', because: 'paused' });
     });
@@ -254,7 +254,7 @@ describe('printing the next job', () => {
     // found it cannot get to.
     it('will not print on a machine the shop cannot get to', async () => {
       await submit(['PLA-Red'], { printer: 'mk4' });
-      await shop.couldNotReach('mk4', 'no API key for mk4');
+      await shop.couldNotReach(await shop.printerNamed('mk4'), 'no API key for mk4');
 
       expect(await printOn('mk4', ['PLA-Red'])).toEqual({ did: 'nothing', because: 'unreachable' });
     });
@@ -262,14 +262,14 @@ describe('printing the next job', () => {
     // The machine already said no to a plate, and finding out that it still means it costs another.
     it('will not print on a machine that would not take the last file', async () => {
       await submit(['PLA-Red'], { printer: 'mk4' });
-      await shop.wouldNotTake('mk4', 'OctoPrint upload failed: 400 Bad Request');
+      await shop.wouldNotTake(await shop.printerNamed('mk4'), 'OctoPrint upload failed: 400 Bad Request');
 
       expect(await printOn('mk4', ['PLA-Red'])).toEqual({ did: 'nothing', because: 'refused' });
     });
 
     it('prints on a named machine while the unnamed one is stopped', async () => {
       await submit(['PLA-Red'], { printer: 'mk4' });
-      await shop.pause('mini', 'nothing to do with mk4');
+      await shop.pause(await shop.printerNamed('mini'), 'nothing to do with mk4');
 
       expect(await printOn('mk4', ['PLA-Red'])).toMatchObject({ did: 'started' });
     });

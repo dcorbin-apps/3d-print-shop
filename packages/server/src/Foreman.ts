@@ -164,7 +164,7 @@ export class Foreman {
     // upload that follows - a client is kept once it has connected, so the answer costs nothing to
     // give - and forgetting the wait on that would put the shop back to re-sending a whole plate
     // every thirty seconds. It is forgotten when a print actually starts.
-    await this.shop.reachedAgain(printer.name);
+    await this.shop.reachedAgain(printer);
     this.log.info('reached the printer again', { printer: printer.name, after: printer.unreachable?.reason });
 
     return true;
@@ -210,7 +210,7 @@ export class Foreman {
         // The machine went away part way through rather than answering. That is the same fact as a
         // login that could not be made, and it earns the same retry: one login, not another plate.
         if (attempt.failure instanceof CouldNotReach) {
-          await this.cannotGetTo(printer.name, attempt.failure.message);
+          await this.cannotGetTo(printer, attempt.failure.message);
 
           return;
         }
@@ -225,7 +225,7 @@ export class Foreman {
         // gets the same answer for another upload's cost. A fault worth one message would otherwise
         // produce one per job held. Only this one: another printer that is working has no reason to
         // stand idle.
-        await this.shop.wouldNotTake(printer.name, `${attempt.remotePath} - ${attempt.failure.message}`);
+        await this.shop.wouldNotTake(printer, `${attempt.remotePath} - ${attempt.failure.message}`);
       }
     } catch (failure) {
       // AIDEV-NOTE: on the way out this is expected and must not stop anything - the same rule
@@ -248,13 +248,14 @@ export class Foreman {
       // would otherwise be tried again on every single change, one failure per change. Written down
       // so the next look leaves it alone, and NOT as a stop: nothing about the room changed, and an
       // operator asked to clear it would be confirming something they cannot see.
-      await this.cannotGetTo(printer.name, failure.message);
+      await this.cannotGetTo(printer, failure.message);
     }
   }
 
-  private async cannotGetTo(name: string, why: string): Promise<void> {
+  private async cannotGetTo(printer: RegisteredPrinter, why: string): Promise<void> {
+    const name = printer.name;
     this.log.error('could not reach the printer', { printer: name, why });
-    await this.shop.couldNotReach(name, why);
+    await this.shop.couldNotReach(printer, why);
 
     // AIDEV-NOTE: it goes on from where this printer left off rather than starting at thirty
     // seconds. A machine can answer a login and still fail the upload that follows - the client is
@@ -302,7 +303,7 @@ export class Foreman {
       // starting the waiting over cannot run away, and the adapter's own ten minutes bounds it.
       if (printer.outOfContact) {
         this.waiting.delete(name);
-        await this.shop.inContactAgain(name);
+        await this.shop.inContactAgain(printer);
         this.log.info('hearing the printer again', { printer: name, after: printer.outOfContact.reason });
       }
 
@@ -322,7 +323,12 @@ export class Foreman {
       const why = (failure as Error).message;
       this.log.error('lost track of the print', { printer: name, why });
       this.waitBeforeTrying(name, (this.waiting.get(name)?.attempt ?? 0) + 1);
-      await this.shop.lostContact(name, why).catch(() => undefined);
+      // Resolved again rather than kept from above, because what failed may be the lookup itself -
+      // and a printer that has since been taken out of the shop has nothing left to write this on.
+      await this.shop
+        .printerNamed(name)
+        .then((printer) => this.shop.lostContact(printer, why))
+        .catch(() => undefined);
     }
   }
 }

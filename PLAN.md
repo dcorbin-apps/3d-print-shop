@@ -13,16 +13,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 Found by auditing a running shop on 2026-09-12; each was reproduced against a real process rather
 than read out of the code. These come before the rest of the list.
 
-- [ ] A printer's name is checked in three places, because it arrives three ways: a path segment
-  (the `/printers/:name` mount), a body (`printerIn`) and a query string (`onePrinterName`). The
-  query string is the one that list forgot, and it read a `printer.json` outside the data directory
-  until it did not. Three checks is two more than the note above the mount claims, and a fourth way
-  in is a fourth thing to remember - so the check belongs where a name BECOMES a path, which is
-  `printerDir()` in `JobStore.ts`, and every method that touches a printer's directory goes through
-  it. What stops that being a one-line move is the error: the store's vocabulary is `NoSuchPrinter`,
-  `WrongState` and `DataUnavailable`, none of which this is, and a new one needs a case in
-  `statusFor` or it is a 500. Worth doing, not worth doing carelessly
-
 - [ ] A client can write the shop's own fields into its job record. `submit` builds the record as
   `{ ...details, id, owner, ... }` and nothing validates the shape of `details`, so `heldBy` and
   `lastPrinterOutcome` land on disk and come back out again - `asJob`'s queued branch overrides
@@ -185,6 +175,18 @@ rather than a suite of behaviour tests carrying it.
   only a job's FIRST filament today, which is right for one extruder and wrong for several: the
   index is the extruder the slicer assigned, so `[red, blue]` and `[blue, red]` are different
   requirements. `startsWith()` in `packages/server/src/selection.ts` is the one place to revisit
+
+- [ ] Revisit caching what the printers directory holds, but only if something measures slow - the
+  case for it is thin and was thinner than it first looked. Nothing is cached: `printerNamed` is a
+  readdir and two file reads, `printers()` a readdir and two per printer. This was written up when a
+  request looked up a printer three times over; counting them found two of those three were the same
+  lookup repeated, and removing them is done. What is left, measured, is two per request on the
+  printer routes - the name resolved once, and the printer read back after the write - and the second
+  is the point of the write, so no cache may answer it. The genuine new cost is the readdir every
+  lookup now pays to resolve by matching rather than by joining. If it ever matters, memoise the
+  LISTING for the life of a single request: it cannot go stale, because nothing the shop does
+  mid-request changes which printers there are. A cache that outlives a request is a second answer to
+  that, which is what this store is built not to have. `packages/server/src/JobStore.ts`
 
 ### Installation
 

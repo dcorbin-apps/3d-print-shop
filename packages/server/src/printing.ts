@@ -79,7 +79,7 @@ export async function startNextPrint(shop: JobStore, reach: () => Promise<Printe
   const machine = await reach();
 
   const asked = remotePathFor(job);
-  const started = await shop.startPrinting(printerName, job.id);
+  const started = await shop.startPrinting(onto, job.id);
 
   let storedAt: string;
   try {
@@ -89,7 +89,7 @@ export async function startNextPrint(shop: JobStore, reach: () => Promise<Printe
     // not being held. Whether the printer then STOPS is the caller's to decide: a send that fails
     // because the shop is closing the machines is not the printer's fault, and only the owner of
     // the loop knows that is what happened.
-    await shop.couldNotStart(printerName);
+    await shop.couldNotStart(onto);
 
     return { did: 'could-not-start', job, remotePath: asked, failure: failure as Error };
   }
@@ -98,7 +98,7 @@ export async function startNextPrint(shop: JobStore, reach: () => Promise<Printe
   // that never started - the machine is printing - so answering it by letting the printer go would
   // queue a job that is on a bed. The cost of that is a holding with no path, which is the case the
   // fallback in `recordOutcome` already covers.
-  await shop.printingAt(printerName, storedAt);
+  await shop.printingAt(onto, storedAt);
 
   return { did: 'started', job: started };
 }
@@ -125,7 +125,7 @@ export async function recordOutcome(shop: JobStore, machine: Printer, printerNam
 
   // Whatever the printer says, the job now waits for a person: `finished` means it ran to the end,
   // not that what came off the bed is usable. The printer keeps holding it, and the bed, until then.
-  await shop.finishedPrinting(printerName, outcome);
+  await shop.finishedPrinting(printer, outcome);
 
   return outcome;
 }
