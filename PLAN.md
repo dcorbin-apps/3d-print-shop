@@ -138,82 +138,34 @@ about a password was never said to anybody, and that nobody but an admin could l
 
 What is left of it is below: the files the corrected rule re-opened, which have not been argued yet.
 
-#### What the acceptance suite is now
+#### There is no acceptance suite
 
-One test. It went 243 to 1 across this sweep, and the one that is left is there for something a unit
-test cannot say - argued one at a time rather than by category, and every time but this one the
-argument was wrong and the file went.
+It went 243 to 0. Every file was argued one at a time rather than by category, and every single time
+the argument for keeping it was wrong - including the last one, and including three I had just
+written down as measured fact.
 
-- `aShopThatActuallyStops` (1) - that the process ENDS when asked, rather than answering and staying
-  up, which would look identical to a client. Everything it used to also cover has gone to where it
-  can be asked directly: what stopping lets go of and in what order is `running`, what a signal does
-  is `signals`, which address is taken is `serve`, what a command does is `operatorCommands`, and what
-  node does with a signal or an empty event loop is the assumption suite
+The question that settled all of them is not "could a unit test do this" but **"are we testing
+somebody else's code, or ours in response to it?"** The first is not ours to test and belongs in the
+assumption suite if it belongs anywhere. The second never needs a process, a socket or a kernel: it
+needs a seam, and where there was no seam the answer was to make one.
 
-Six went after that, and how they went is the most useful thing in this section. `drainingARefusedUpload`
-kept a socket because a refused upload has to be READ to the end or the request never completes, and
-that was thought to need a real connection. It does not: the mechanism is node's stream backpressure,
-and a request that hands its body over only when asked reproduces it exactly. The harness had been
-pushing whole bodies in at once, so it had no flow control to observe and a stalled reader looked
-identical to a finished one - three separate "only a socket can show this" arguments rested on that,
-and all three were wrong. `tests/inProcess.ts` hands over 16KB at a time now, like a socket, and the
-claim is a unit test that says `wasDrained` rather than an acceptance test that said `400`.
+The last to go was a spawned shop asked to stop, kept because only a process can be asked whether it
+ended. That was true and beside the point. That node ends a process once nothing holds its event loop
+open is node's, and is an assumption; what is OURS is that the shop lets go of everything it holds,
+and `process.getActiveResourcesInfo()` answers that in the same process - a shop that is serving has
+gained a listener and a clock, and a shop that has stopped has gained nothing. It catches every
+mutation the spawned one did and says WHICH handle was left behind, where an exit code said only that
+something, somewhere, did not work.
 
-`dataLock` went for a reason worth keeping in front of you, because it is the cleanest statement of
-the rule this section is about. Are you testing the kernel, or what we do in response to the kernel?
-The first is not ours and should not be in our tests; the second never needs a socket. `claimData`
-takes a `Claiming` now - listen, answers, clear - and eleven unit tests say what the shop does when
-each answers: refuse and name the directory, clear a leftover and take it, and report a failure that
-is not "somebody has this" as what it actually was. That last branch was in the code untested for as
-long as the file existed, and no acceptance test could reach it: the read-only directory that makes
-`listen` fail makes the tidy-up fail too, so the two never come apart through a real socket. Splitting
-the question is what made it reachable. What the kernel does is `aListeningClaim` in the assumption
-suite, where a red line means the world moved rather than that somebody broke something.
+`yarn at` is gone with it. A script pointed at a directory that no longer exists is exactly the
+silently-green failure `scripts/test.sh` warns about. If an acceptance test is ever justified again it
+comes back with the script - and what would justify one is a claim about a running thing that is OURS
+and that no seam can reach. None of the forty-odd examined here turned out to be that.
 
-`theShopAndItsClient` went for the same reason, one question later. It was kept because both halves
-of the contract have to be live at once - which is true - and defended on the grounds that a bridge
-between them would be where the URL-to-path assumption got written down. That was the wrong half to
-look at: the transport is node and undici, and testing it is not ours. `HttpShop` takes a `fetch` now
-and the shop's suite hands it one that reaches a real `createApi`. Undici serialises the request, so
-a multipart body still gets its boundary from the code that would write it to a wire; express routes
-and answers it; only the wire is skipped, and what node's parser makes of one is already pinned. The
-contract still catches a 201 that stops being sent, a status that stops being read, a time that stops
-becoming a Date, and a camera that stops being answered.
-
-`theRunningShop` went from 39 to 1 over the sweep, and the last five went on the same question. Where
-a shop listens is its own decision and node's binding - the decision is `serve.test.ts`, and the
-binding is node's. A signal arriving is node's; which ones are answered and what each does is ours
-and needs no process. A token travelling from an environment through the client to a guard is ours
-all the way, and once `reachTheShop` and `HttpShop` would each take a way to reach, it composes
-in-process - carrying the token is ours, carrying the bytes is node's. What is left is the sum:
-everything the shop holds is let go, so node ends it. Each part of that is tested; only the sum is
-not, and only a process can be asked whether it ended.
-
-`reconnectRecovery` was the last, and the measurement is worth keeping. Against the same mutations it
-caught strictly LESS of the reconnect logic than `OctoPrint.test.ts` does through an injected socket -
-it missed the frame spent on an empty map, which is the lost-outcome race found and fixed the same
-day. The frame shapes it appeared to pin are pinned by the sim's own tests on one side and
-`OctoPrint.test.ts` on the other. What it alone caught was `pushSocket`: a text frame arrives from
-`ws` as a Buffer where the DOM gives a string, and handing it on undecoded makes every frame the
-printer sends unreadable, which no injected socket would notice.
-
-That went the same way one question later. What `ws` emits and what the shop turns it into are two
-claims, and only the second is the shop's. `adapting` is a function over a socket-shaped thing now,
-asked with a stand-in and no socket at all - the stand-in is not the claim, because the claim is the
-MAPPING rather than what is being mapped - and it catches six mutations where the real-socket version
-caught four, because being open and a reason being passed on are easy to ask of a stand-in and
-awkward to ask of a server. What `ws` hands over is `whatWsEmits` in the assumption suite: a Buffer
-for a text frame, `isBinary` to tell one from the other, and a close that arrives unasked.
-
-`httpShop` was the last, and the same cut again. Fifteen tests drove the client at a stand-in shop
-over a real socket, and every one of them was about what the CLIENT puts on a request or makes of an
-answer - the socket was a way of watching, not anything claimed. They are `whatTheClientSends` now,
-with a `fetch` that builds each request as a real `Request` and reads it back: undici still does the
-serialising, so a multipart body still gets its boundary and its part order from the code that would
-write it to a wire. What undici does - reject when nobody is listening, serialise a form in the order
-its parts were appended - is `whatFetchDoes` in the assumption suite. Converting it found a gap the
-socket version had too: nothing asserted the CONTENT TYPE of a submission, so a form labelled as JSON
-- boundary lost, nothing parseable at the far end - passed both. It is asserted now.
+One residue, named rather than left: `main.ts` is four lines - a shebang and
+`process.exitCode = await run(process.argv)` - and nothing now runs it as a binary. `run` is unit
+tested and the shebang is not. If that is wanted it is a smoke test of its own and should say so,
+rather than a suite of behaviour tests carrying it.
 
 ### The service
 
