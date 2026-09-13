@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { DataInUse, claimData } from '../../src/dataLock';
@@ -74,6 +74,29 @@ describe('holding a data directory', () => {
     await writeFile(socket(), 'left behind');
 
     await expect(claim()).resolves.toBeDefined();
+  });
+
+  // AIDEV-NOTE: a failure that is NOT "somebody has this" must not be reported as if it were. Told
+  // that another shop is already serving the directory, an operator goes looking for a process that
+  // does not exist - and the thing actually wrong, a directory nothing may be created in, is not
+  // mentioned. Reporting every listen failure as DataInUse is caught here and nowhere else.
+  //
+  // The guard's OTHER half - not falling through to `rm` on a failure it never read - could not be
+  // pinned: the read-only directory that makes `listen` fail also makes the `rm` fail, so the path
+  // survives either way, and no combination was found where the two come apart. It is a guard
+  // against relying on the retry to fail a second time, and it is defensive rather than observable.
+  it('says what was actually wrong rather than blaming a shop that is not there', async () => {
+    await mkdir(where.run, { recursive: true });
+    await writeFile(socket(), 'not a socket, and not ours to remove');
+    // Nothing may be created in here now, so `listen` fails with EACCES rather than EADDRINUSE.
+    await chmod(where.run, 0o500);
+
+    try {
+      await expect(claimData(where.run)).rejects.not.toThrow(DataInUse);
+      await expect(readFile(socket(), 'utf-8')).resolves.toBe('not a socket, and not ours to remove');
+    } finally {
+      await chmod(where.run, 0o700);
+    }
   });
 
   it('leaves nothing behind that the next shop has to reason about', async () => {
