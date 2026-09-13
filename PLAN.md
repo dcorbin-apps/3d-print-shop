@@ -138,11 +138,11 @@ about a password was never said to anybody, and that nobody but an admin could l
 
 What is left of it is below: the files the corrected rule re-opened, which have not been argued yet.
 
-#### There is no acceptance suite
+#### The acceptance suite is one test, and it is the right one
 
-It went 243 to 0. Every file was argued one at a time rather than by category, and every single time
-the argument for keeping it was wrong - including the last one, and including three I had just
-written down as measured fact.
+It went 243 to 0 and then to 1. Every one of the 243 was argued one at a time rather than by
+category, and every single argument for keeping one was wrong - including the last, and including
+three that had just been written down as measured fact.
 
 The question that settled all of them is not "could a unit test do this" but **"are we testing
 somebody else's code, or ours in response to it?"** The first is not ours to test and belongs in the
@@ -157,10 +157,17 @@ gained a listener and a clock, and a shop that has stopped has gained nothing. I
 mutation the spawned one did and says WHICH handle was left behind, where an exit code said only that
 something, somewhere, did not work.
 
-`yarn at` is gone with it. A script pointed at a directory that no longer exists is exactly the
-silently-green failure `scripts/test.sh` warns about. If an acceptance test is ever justified again it
-comes back with the script - and what would justify one is a claim about a running thing that is OURS
-and that no seam can reach. None of the forty-odd examined here turned out to be that.
+What would justify one was written down as none of the 243 turned out to be it: a claim about a
+running thing that is OURS and that no seam can reach. `theHappyPath` is that claim, and it is the
+only one. A machine is set up by `init`, a shop is started as its own process, a client from the
+published package reaches it over a socket, a printer answers on another, and work goes round the
+loop - printed, rejected, printed again, approved, and the next one started, then a shutdown the
+process actually obeys.
+
+Everything it touches is tested apart and precisely, and none of that is asked again in it. What it
+asks is the one thing none of those can: that the pieces, wired the way an installed machine wires
+them, carry a job from a submission to a verdict. It is one test on purpose - a second would be the
+same wiring again - and it runs in under two seconds, because it polls the shop rather than sleeping.
 
 One residue, named rather than left: `main.ts` is four lines - a shebang and
 `process.exitCode = await run(process.argv)` - and nothing now runs it as a binary. `run` is unit
