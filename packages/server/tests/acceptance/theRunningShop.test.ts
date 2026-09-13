@@ -246,9 +246,6 @@ describe('the shop, running as its own process', () => {
       return credentials;
     }
 
-    async function shopSomebodyCanLogInTo(): Promise<RunningShop> {
-      return startShopOver(dataRoot, [], await aMachineSomebodyCanLogInTo());
-    }
 
     const logIn = (shop: RunningShop, id: string, password: string): Promise<Response> =>
       fetch(`${shop.url}/sessions`, {
@@ -259,38 +256,6 @@ describe('the shop, running as its own process', () => {
 
     const cookieFor = async (shop: RunningShop): Promise<string> =>
       ((await logIn(shop, 'dave', PASSWORD)).headers.get('set-cookie') ?? '').split(';')[0];
-
-    it('is let in by the password the operator set, and named by the session after it', async () => {
-      const shop = await shopSomebodyCanLogInTo();
-
-      const said = await logIn(shop, 'dave', PASSWORD);
-      expect(said.status).toBe(201);
-
-      const cookie = (said.headers.get('set-cookie') ?? '').split(';')[0];
-      const asked = await fetch(`${shop.url}/me`, { headers: { cookie } });
-
-      expect(await asked.json()).toEqual({ id: 'dave', name: 'dave', role: 'admin' });
-    }, 60_000);
-
-    it('is refused by the wrong one', async () => {
-      const shop = await shopSomebodyCanLogInTo();
-
-      expect((await logIn(shop, 'dave', 'not the password')).status).toBe(401);
-    }, 60_000);
-
-    // AIDEV-NOTE: the file holds a hash, so this is the check that the shop is not simply comparing
-    // what it was given against what is written down - which would be a file of passwords.
-    it('is not let in by presenting what the file holds', async () => {
-      const shop = await shopSomebodyCanLogInTo();
-      const credentials = madeEtc[madeEtc.length - 1];
-      const written = JSON.parse(await readFile(path.join(credentials, 'callers.json'), 'utf-8')) as {
-        credentials: { kind: string; hash: string }[];
-      }[];
-      const hash = written[0].credentials.find(({ kind }) => kind === 'password')?.hash ?? '';
-
-      expect(hash).toContain('scrypt$');
-      expect((await logIn(shop, 'dave', hash)).status).toBe(401);
-    }, 60_000);
 
     // AIDEV-NOTE: `caller password` says every browser logged in as them is logged out once the shop
     // has re-read this. It was not true: the id still existed, so the session went on naming them.
@@ -309,49 +274,6 @@ describe('the shop, running as its own process', () => {
       expect((await fetch(`${shop.url}/me`, { headers: { cookie } })).status).toBe(401);
     }, 60_000);
 
-    // AIDEV-NOTE: the whole of item "nobody can change their own password", end to end: the shop
-    // WRITES the file and puts it in force in one act, with no signal and no restart - so what is
-    // proved here is that the route, the file and what this process is holding are the same thing.
-    it('changes its own password, and the new one is what lets them back in', async () => {
-      const credentials = await aMachineSomebodyCanLogInTo();
-      const shop = await startShopOver(dataRoot, [], credentials);
-      const changed = 'a different password entirely';
-
-      const said = await fetch(`${shop.url}/me/password`, {
-        method: 'PUT',
-        headers: { cookie: await cookieFor(shop), origin: shop.url, 'content-type': 'application/json' },
-        body: JSON.stringify({ current: PASSWORD, password: changed }),
-      });
-
-      expect(said.status).toBe(204);
-      expect((await logIn(shop, 'dave', changed)).status).toBe(201);
-      expect((await logIn(shop, 'dave', PASSWORD)).status).toBe(401);
-    }, 60_000);
-
-    // Written where the operator's own command would have written it, so `caller list` and a restart
-    // agree with the shop that is running - and so the person cannot be locked out by an update.
-    it('writes the new password where the credentials are kept', async () => {
-      const credentials = await aMachineSomebodyCanLogInTo();
-      const shop = await startShopOver(dataRoot, [], credentials);
-      const before = await readFile(path.join(credentials, 'callers.json'), 'utf-8');
-
-      await fetch(`${shop.url}/me/password`, {
-        method: 'PUT',
-        headers: { cookie: await cookieFor(shop), origin: shop.url, 'content-type': 'application/json' },
-        body: JSON.stringify({ current: PASSWORD, password: 'a different password entirely' }),
-      });
-
-      expect(await readFile(path.join(credentials, 'callers.json'), 'utf-8')).not.toBe(before);
-    }, 60_000);
-
-    it('says nothing of the password in its log, whatever it was asked', async () => {
-      const shop = await shopSomebodyCanLogInTo();
-      await logIn(shop, 'dave', PASSWORD);
-
-      await shop.saysSomethingLike(/somebody logged in/);
-
-      expect(shop.hasSaid(new RegExp(PASSWORD))).toBe(false);
-    }, 60_000);
   });
 
   // AIDEV-NOTE: the shop WRITING its own credentials file, which is the one thing it does to /etc

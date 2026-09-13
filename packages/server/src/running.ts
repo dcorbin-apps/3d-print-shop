@@ -1,3 +1,5 @@
+import { callersIn, setPassword, writePrinterKey } from './credentials.js';
+import type { Callers } from './credentials.js';
 import type { Log } from './log.js';
 
 /** As much of a foreman as stopping and waking need. */
@@ -85,4 +87,35 @@ export function keepReachingForWhatIsLost(reach: () => Promise<unknown>, everyMs
   }, everyMs);
 
   return () => clearInterval(asking);
+}
+
+// AIDEV-NOTE: written to the file the shop reads AND put into what this process is holding, in that
+// order - so a key given while the shop runs needs no signal and no restart. Then the printer is
+// tried at once, because a machine that had no key is written down as unreachable and would
+// otherwise serve out a backoff before anybody found out the key was right.
+//
+// The one thing the shop writes to /etc, and the reason a printer can be given its key from a
+// browser at all.
+/** Keep a key a printer arrived with, and answer with every key the shop now holds. */
+export function keepingTheKey(etc: string, log: Log, tryAgain: (printer: string) => void) {
+  return async (printer: string, key: string): Promise<ReadonlyMap<string, string>> => {
+    const keys = await writePrinterKey(etc, printer, key);
+    log.info('a printer was given its key', { printer, etc });
+    tryAgain(printer);
+
+    return keys;
+  };
+}
+
+// AIDEV-NOTE: written to the file and then READ BACK into what this process holds, in that order and
+// for the same reason a printer's key is. Read back rather than patched in memory, so that what is
+// in force is what the FILE says - which is what a re-read or a restart would find, and what
+// `caller list` would show. A person cannot be locked out by an update that way.
+/** Keep a password its owner just changed, and answer with the callers the file now names. */
+export function keepingTheirPassword(etc: string) {
+  return async (id: string, password: string): Promise<Callers> => {
+    await setPassword(etc, id, password);
+
+    return callersIn(etc);
+  };
 }

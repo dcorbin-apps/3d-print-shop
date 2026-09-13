@@ -81,7 +81,7 @@ export { nextToPrint, printableNow, startsWith, waitingOn } from './selection.js
 export { DataInUse, claimData } from './dataLock.js';
 export { answerSignals, rereadEverything } from './signals.js';
 export { layTheFoundations, sessionsKeptIn } from './foundations.js';
-export { keepReachingForWhatIsLost, lookingForWork, stoppingTheShop, tryingAgain } from './running.js';
+export { keepReachingForWhatIsLost, keepingTheKey, keepingTheirPassword, lookingForWork, stoppingTheShop, tryingAgain } from './running.js';
 export type { Stopping, TheForeman, TheMachines } from './running.js';
 export type { Foundations, Groundwork } from './foundations.js';
 export type { CliParts } from './cli.js';

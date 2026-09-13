@@ -10,10 +10,7 @@ import type { PrinterApi } from './Printer.js';
 import { MAX_GCODE_ENV } from './JobStore.js';
 import {
   ETC_ENV,
-  callersIn,
   defaultEtc,
-  setPassword,
-  writePrinterKey,
 } from './credentials.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 import { addSomebody, askForANewPassword, changePassword, giveAToken, listCallers, migrateTheCallers } from './callerAdmin.js';
@@ -21,7 +18,7 @@ import { initialiseShop } from './shopAdmin.js';
 import { addPrinter, listPrinters, loadFilament, pausePrinter, removePrinter, resumePrinter, shutDownShop } from './printerAdmin.js';
 import { answerSignals, rereadEverything } from './signals.js';
 import { layTheFoundations, sessionsKeptIn } from './foundations.js';
-import { keepReachingForWhatIsLost, lookingForWork, stoppingTheShop, tryingAgain } from './running.js';
+import { keepReachingForWhatIsLost, keepingTheKey, keepingTheirPassword, lookingForWork, stoppingTheShop, tryingAgain } from './running.js';
 import { DATA_ROOT_ENV } from './dataLayout.js';
 
 // AIDEV-NOTE: thin on purpose. Every printer command is a function in printerAdmin.ts answering with
@@ -112,20 +109,15 @@ export function createCLI({ reach, say: told, ask }: CliParts = {}): Command {
       //
       // The log's redactor reads `printerKeys` afresh on every line, so a key that arrives this way
       // cannot reach a log written after it.
+      const keepKey = keepingTheKey(etc, log, tryEverythingAgain);
       const keepTheKey = async (printer: string, key: string): Promise<void> => {
-        printerKeys = await writePrinterKey(etc, printer, key);
+        printerKeys = await keepKey(printer, key);
         holding(printerKeys);
-        log.info('a printer was given its key', { printer, etc });
-        tryEverythingAgain(printer);
       };
 
-      // AIDEV-NOTE: written to the file and then read back into what this process holds, in that
-      // order and for the same reason a printer's key is - a password changed while the shop runs
-      // needs no signal and no restart. Read back rather than patched in memory so that what is in
-      // force is what the FILE says, which is what a re-read or a restart would find.
+      const keepPassword = keepingTheirPassword(etc);
       const keepTheirNewPassword = async (id: string, password: string): Promise<void> => {
-        await setPassword(etc, id, password);
-        callers = await callersIn(etc);
+        callers = await keepPassword(id, password);
       };
 
       const shopServer = await serve(
