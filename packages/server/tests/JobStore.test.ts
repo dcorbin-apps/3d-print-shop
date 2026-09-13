@@ -17,7 +17,7 @@ async function readAll(stream: Readable): Promise<Buffer> {
 }
 
 // AIDEV-NOTE: a real directory, not a mocked fs. Keeping jobs on disk IS what this unit does, so a
-// mock would test the mock - the same distinction design/testing.md draws for the golden store.
+// mock would test the mock - it is our behaviour under test, not node's fs. See design/testing.md.
 describe('JobStore', () => {
   let where: DataLayout;
   let shop: JobStore;

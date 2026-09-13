@@ -8,7 +8,8 @@ It knows nothing about what it is printing. A client hands it a gcode file and s
 needs and how much room it takes; the shop schedules on that and nothing else. No client has
 special standing, including the one it was written for.
 
-See [design/3d-print-shop.md](design/3d-print-shop.md) for why it is shaped this way, and
+See [design/3d-print-shop.md](design/3d-print-shop.md) for why it is shaped this way,
+[design/testing.md](design/testing.md) for how it is tested, and
 [PLAN.md](PLAN.md) for what is still to do.
 
 ## The packages

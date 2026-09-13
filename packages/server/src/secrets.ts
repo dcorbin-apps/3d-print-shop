@@ -21,6 +21,13 @@ const onAThread = promisify(scrypt) as (
 // same flood, which on a workshop machine is the OOM killer rather than a slow login.
 const THREADPOOL = Number(process.env.UV_THREADPOOL_SIZE) || 4;
 
+// AIDEV-NOTE: `POST /sessions` is the one route reachable WITHOUT a credential that does real work,
+// which is why the bound is here and not left to a proxy - no proxy can know the right number for it,
+// because the right number is the threadpool's size and nothing outside the process can see that
+// coupling. What this does NOT answer, and cannot: a login flood still makes LOGGING IN slow, since
+// there is no way to check a password without hashing one. The shop keeps printing through it, which
+// is the whole of what it can do about it. A flood of connections is the deployment's too. Loopback
+// is the default for both reasons.
 /** How many passwords this process will hash at once. The rest wait, in the order they arrived. */
 export const HASHES_AT_ONCE = Math.max(1, Math.floor(THREADPOOL / 2));
 

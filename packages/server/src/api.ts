@@ -765,10 +765,12 @@ export function requireUsablePrinterName(name: string): void {
 // URL it can actually build requests from, over a protocol it speaks, carrying nothing that has no
 // business in a base URL.
 //
-// What is NOT checked is where the address points. A printer reached over a VPN is legitimate, a
-// hostname resolves at connect time rather than here so an add-time range check is defeated by
-// rebinding, and only an admin may add a printer at all - which is close to what admin means. The
-// residual risk is written down in PLAN.md rather than half-answered here.
+// What is NOT checked is where the address points, and that is a DECISION rather than an omission.
+// An admin may point a printer at any http or https address, and the shop will POST a plate's gcode
+// there with that printer's `X-Api-Key` on it. A range check when the printer is added does not hold,
+// because a hostname resolves at connect time rather than here; a printer reached over a VPN is
+// legitimate; and only an admin may add one at all, which is close to what admin means. Accepted, in
+// full knowledge of what it allows.
 //
 // Credentials and a query are refused rather than dropped: silently ignoring half of what an
 // operator typed is how a shop ends up talking to something other than what they meant.
