@@ -80,6 +80,8 @@ export type { FilamentDemand } from './selection.js';
 export { nextToPrint, printableNow, startsWith, waitingOn } from './selection.js';
 export { DataInUse, claimData } from './dataLock.js';
 export { answerSignals, rereadEverything } from './signals.js';
+export type { CliParts } from './cli.js';
+export { reachTheShop } from './cli.js';
 export type { Answers, Held, Signalled } from './signals.js';
 export { DATA_ROOT_ENV, defaultLayout, layoutUnder, systemLayout } from './dataLayout.js';
 export type { DataLayout } from './dataLayout.js';

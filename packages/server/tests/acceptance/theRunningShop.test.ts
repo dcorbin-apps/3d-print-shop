@@ -169,13 +169,6 @@ describe('the shop, running as its own process', () => {
     return submitGcode(shop, GCODE);
   }
 
-  async function submitClaimedBy(shop: RunningShop, printer: string): Promise<Response> {
-    const body = new FormData();
-    body.append('job', JSON.stringify({ filaments: ['PLA-SpaceGray'], displayName: 'Player Box', printer }));
-    body.append('gcode', new Blob([GCODE]), 'print.gcode');
-
-    return fetch(`${shop.url}/jobs`, { method: 'POST', body, headers: asAdmin });
-  }
 
   async function submitAs(shop: RunningShop, token: string, displayName: string): Promise<Response> {
     const body = new FormData();
@@ -250,19 +243,6 @@ describe('the shop, running as its own process', () => {
 
     expect((await submitPlayerBox(shop)).status).toBe(201);
     expect(await readFile(path.join(where.jobs, '1', 'print.gcode'), 'utf-8')).toBe(GCODE);
-  }, 30_000);
-
-  // The operator's commands are a CLIENT of the running shop rather than a second writer over its
-  // files - so this goes the whole way through: argv, the API, the store, and back out of a GET.
-  it('takes a printer the operator adds through the running shop', async () => {
-    const shop = await shopIsRunning();
-    expect(await (await ask(shop, '/printers')).json()).toEqual([]);
-
-    expect(await runCommand(['printer', '--shop-url', shop.url, 'add', 'mk4', '250x210x220', 'http://mk4'])).toBe(0);
-
-    expect(await (await ask(shop, '/printers')).json()).toEqual([
-      { name: 'mk4', buildVolume: MK4, api: 'octoprint', address: 'http://mk4', camera: 'http://mk4/webcam/?action=stream', loaded: [] },
-    ]);
   }, 30_000);
 
   const A_PASSWORD = 'a password of some length';
@@ -508,45 +488,6 @@ describe('the shop, running as its own process', () => {
     await chmod(where.jobs, 0o777);
 
     await expect(startShop()).rejects.toThrow('may not be writable');
-  }, 30_000);
-
-  // AIDEV-NOTE: the verdict is what frees a printer's bed, so without a way to give one a shop
-  // prints a single thing per machine and stops. This proves the operator has one - argv, the API,
-  // the store, and back out as a line a person can read.
-  it('shows the operator what it is holding', async () => {
-    const shop = await shopIsRunning();
-    await addMk4(shop);
-    await submitPlayerBox(shop);
-
-    const { stdout } = await runCommandSaying(['job', '--shop-url', shop.url, 'list']);
-
-    expect(stdout.trim()).toBe('1  Player Box  PLA-SpaceGray  queued');
-  }, 30_000);
-
-  // The other half of `job list`, and the one an operator asks standing at the machine.
-  it('tells the operator what to load next', async () => {
-    const shop = await shopIsRunning();
-    await addMk4(shop);
-    await submitPlayerBox(shop);
-
-    const { stdout } = await runCommandSaying(['job', '--shop-url', shop.url, 'waiting']);
-
-    expect(stdout.trim()).toBe('PLA-SpaceGray  1 job waiting');
-  }, 30_000);
-
-  // Naming a machine has to survive argv, the client and the query string; the shop's own suite
-  // proves what the answer should be, and this proves the name gets there at all - which is why the
-  // only job here is one the named machine could not take. An answer for the whole shop would count
-  // it.
-  it('tells the operator what to load at the machine they name', async () => {
-    const shop = await shopIsRunning();
-    await addMk4(shop);
-    await addPrinter(shop, { name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, address: 'http://mini.local' });
-    await submitClaimedBy(shop, 'mk4');
-
-    const { stdout } = await runCommandSaying(['job', '--shop-url', shop.url, 'waiting', 'mini']);
-
-    expect(stdout.trim()).toBe('nothing queued that mini could take');
   }, 30_000);
 
   // AIDEV-NOTE: two shops over one data directory would both read `next-id` as 7 and both hand out 7, the

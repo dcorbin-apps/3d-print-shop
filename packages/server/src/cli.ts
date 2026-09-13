@@ -3,7 +3,7 @@ import { Command, InvalidArgumentError } from 'commander';
 import type { AddressInfo } from 'node:net';
 import * as path from 'node:path';
 import { HttpShop, SHOP_URL_ENV, defaultShopUrl, defaultToken } from '@3d-print-shop/client';
-import type { Role } from '@3d-print-shop/client';
+import type { Role, Shop } from '@3d-print-shop/client';
 import { DEFAULT_PORT, LOOPBACK, serve } from './api.js';
 import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
@@ -38,13 +38,30 @@ import { DATA_ROOT_ENV, defaultLayout, layoutUnder } from './dataLayout.js';
 // a shop that is running somewhere else, which reaching into a directory could never do.
 //
 // Only `serve` names a data directory, because only `serve` is the thing that holds it.
-export function createCLI(): Command {
+// AIDEV-NOTE: both handed in, because both were the reason this could NOT be tested without a
+// process despite the note above saying it could. Reaching the shop and saying a line are the two
+// edges of every command here; with them injected, argv in and lines out is a plain function call.
+export interface CliParts {
+  /** How a command reaches the shop. The real one is over HTTP, like every other client. */
+  reach?: (options: { shopUrl?: string }) => Shop;
+  /** Where a command's answer goes. */
+  say?: (lines: string[]) => void;
+}
+
+// AIDEV-NOTE: the default `reach`, named so that what it makes of `--shop-url` can be asked. Left
+// inline it was the one line of the wiring no test could reach: a test hands its own `reach` in, so
+// dropping `options.shopUrl` here changed nothing anybody was looking at.
+export function reachTheShop(options: { shopUrl?: string }): Shop {
+  return new HttpShop(options.shopUrl ?? defaultShopUrl(), defaultToken());
+}
+
+export function createCLI({ reach, say: told }: CliParts = {}): Command {
   const program = new Command();
-  const shop = (options: { shopUrl?: string }): HttpShop => new HttpShop(options.shopUrl ?? defaultShopUrl(), defaultToken());
+  const shop = reach ?? reachTheShop;
 
   program.name('3d-print-shop').description('Run the shop, and mind the printers it prints on');
 
-  const say = (lines: string[]): void => lines.forEach((line) => console.log(line));
+  const say = told ?? ((lines: string[]): void => lines.forEach((line) => console.log(line)));
 
   program
     .command('serve')
@@ -385,8 +402,13 @@ export function createCLI(): Command {
 // body that does this on import can only be proved by spawning a process. main.ts is now the one
 // line that calls this.
 /** Run a command line, answering the exit code it earned. */
-export async function run(argv: string[], complain: (message: string) => void = console.error): Promise<number> {
-  const cli = createCLI();
+function overrideExits(command: Command): void {
+  command.exitOverride();
+  command.commands.forEach(overrideExits);
+}
+
+export async function run(argv: string[], complain: (message: string) => void = console.error, parts: CliParts = {}): Promise<number> {
+  const cli = createCLI(parts);
 
   const unknown = unknownCommandIn(cli, argv.slice(2));
   if (unknown !== undefined) {
@@ -396,6 +418,15 @@ export async function run(argv: string[], complain: (message: string) => void = 
     return 1;
   }
 
+  // AIDEV-NOTE: commander ENDS the process itself for anything it decides - a bad argument, a help
+  // it has printed - which makes the exit code its business rather than this function's, and means
+  // nothing can ask what a command line does without spawning something to do it in. Overridden, it
+  // throws instead, carrying the code it would have exited with.
+  //
+  // Every command, not just the root: a subcommand raises its own argument errors, and the ones here
+  // were built before this call, so nothing was inherited.
+  overrideExits(cli);
+
   try {
     // AIDEV-NOTE: parseAsync, not parse - commander only awaits an action's returned promise in the
     // async variant, so with plain parse() every command would be a floating promise and a failure
@@ -404,6 +435,11 @@ export async function run(argv: string[], complain: (message: string) => void = 
 
     return 0;
   } catch (error) {
+    // Commander has already said whatever it had to say - the help it printed, or its own complaint
+    // about an argument - so the code it meant to exit with is the whole of the answer.
+    const decided = (error as { exitCode?: unknown }).exitCode;
+    if (typeof decided === 'number') return decided;
+
     // Only the message. An operator adding a printer wants "cannot read 250x210 as a build volume",
     // not a stack through commander.
     complain((error as Error).message);
