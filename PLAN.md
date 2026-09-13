@@ -148,14 +148,11 @@ went.
   still there afterwards; that the address it binds is the one it was told, loopback unless it was
   told otherwise; and one pair walking the whole chain from argv through the environment, the client,
   a real socket and the guard, because every link of it is unit tested and only the composing is not
-- `theShopAndItsClient` (16) - both halves of the contract live at once. A fetch handed in would let
-  the client drive the app in-process, but the request bridge written to do it is exactly where the
-  assumption about how a URL becomes a path would be written down
 - `httpShop` (15) - what the client puts on the wire, against a stand-in
 - `reconnectRecovery` (4) - a socket that really dies, and a print that really ends while nobody is
   listening. It found a real bug this way
 
-Two went after that, and how they went is the most useful thing in this section. `drainingARefusedUpload`
+Three went after that, and how they went is the most useful thing in this section. `drainingARefusedUpload`
 kept a socket because a refused upload has to be READ to the end or the request never completes, and
 that was thought to need a real connection. It does not: the mechanism is node's stream backpressure,
 and a request that hands its body over only when asked reproduces it exactly. The harness had been
@@ -174,6 +171,16 @@ long as the file existed, and no acceptance test could reach it: the read-only d
 `listen` fail makes the tidy-up fail too, so the two never come apart through a real socket. Splitting
 the question is what made it reachable. What the kernel does is `aListeningClaim` in the assumption
 suite, where a red line means the world moved rather than that somebody broke something.
+
+`theShopAndItsClient` went for the same reason, one question later. It was kept because both halves
+of the contract have to be live at once - which is true - and defended on the grounds that a bridge
+between them would be where the URL-to-path assumption got written down. That was the wrong half to
+look at: the transport is node and undici, and testing it is not ours. `HttpShop` takes a `fetch` now
+and the shop's suite hands it one that reaches a real `createApi`. Undici serialises the request, so
+a multipart body still gets its boundary from the code that would write it to a wire; express routes
+and answers it; only the wire is skipped, and what node's parser makes of one is already pinned. The
+contract still catches a 201 that stops being sent, a status that stops being read, a time that stops
+becoming a Date, and a camera that stops being answered.
 
 ### The service
 

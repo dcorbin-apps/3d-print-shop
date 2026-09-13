@@ -128,3 +128,63 @@ export const MULTIPART = 'multipart/form-data; boundary=aboundary';
 
 /** As much as a request hands over before it is asked again - node's own default for a socket. */
 const HANDED_OVER_AT_A_TIME = 16 * 1024;
+
+// AIDEV-NOTE: a `fetch` that reaches an express app instead of a socket, so a client and the shop it
+// talks to can meet in one process. Undici serialises the request for real - a multipart body gets
+// its boundary from the same code that would write it to a wire - and express routes and answers it
+// for real. What is skipped is the wire itself, and what node's parser makes of one is pinned in
+// tests/assumptions/theRequestLine.test.ts.
+//
+// The response carries express's own status and headers rather than invented ones, because a client
+// reads them: 201 against 200 is the whole difference between adding a printer and changing one.
+export function throughTheApp(api: Express): typeof fetch {
+  return (async (asked: string | URL | Request, sent?: RequestInit): Promise<Response> => {
+    const sending = new Request(asked as string, sent);
+    const payload = Buffer.from(await sending.arrayBuffer());
+
+    const request = new IncomingMessage(new Socket());
+    request.method = sending.method;
+    const where = new URL(sending.url);
+    request.url = `${where.pathname}${where.search}`;
+    request.headers = Object.fromEntries([...sending.headers.entries()]);
+    if (payload.length > 0) request.headers['content-length'] = String(payload.length);
+
+    let handedOver = 0;
+    request._read = function (): void {
+      if (handedOver >= payload.length) {
+        this.push(null);
+        return;
+      }
+
+      const next = payload.subarray(handedOver, handedOver + HANDED_OVER_AT_A_TIME);
+      handedOver += next.length;
+      this.push(next);
+    };
+
+    const response = new ServerResponse(request);
+    const wire = new PassThrough();
+    const written: Buffer[] = [];
+    wire.on('data', (chunk: Buffer) => written.push(chunk));
+    response.assignSocket(wire as unknown as Socket);
+
+    return new Promise<Response>((answered) => {
+      response.on('finish', () => {
+        const said = Buffer.concat(written).toString();
+        const body = said.slice(said.indexOf('\r\n\r\n') + 4);
+        // 204 and 304 may carry no body at all, and undici refuses to build one that does.
+        const carries = response.statusCode !== 204 && response.statusCode !== 304 && body !== '';
+
+        answered(
+          new Response(carries ? body : null, {
+            status: response.statusCode,
+            headers: Object.entries(response.getHeaders()).flatMap(([name, value]) =>
+              value === undefined ? [] : [[name, Array.isArray(value) ? value.join(', ') : String(value)] as [string, string]]
+            ),
+          })
+        );
+      });
+
+      api(request, response);
+    });
+  }) as typeof fetch;
+}

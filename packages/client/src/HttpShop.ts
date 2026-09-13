@@ -23,9 +23,15 @@ export class HttpShop implements Shop {
   // also what a browser talks to the shop with, where none of that exists and importing `node:fs`
   // to reach the default would sink the whole bundle. `defaultToken()` is still what a command line
   // passes; see index.ts.
+  // AIDEV-NOTE: how it reaches the shop, handed in for the same reason the token is - so that what
+  // this client SENDS and what it makes of the answer can be asked without a socket between them.
+  // The shop's own suite drives a real `createApi` through one of these, which is the only place
+  // both halves of the contract are live at once. Nothing else ever passes it: over the wire is what
+  // a client of this shop does, and a second way to reach one would be a second way to be wrong.
   constructor(
     private readonly url: string,
-    private readonly token?: string
+    private readonly token?: string,
+    private readonly howToReach: typeof fetch = (asked, sent) => fetch(asked, sent)
   ) {}
 
   async whoAmI(): Promise<Caller> {
@@ -143,7 +149,7 @@ export class HttpShop implements Shop {
     const sent = sending(body);
 
     try {
-      return await fetch(`${this.url}${path}`, {
+      return await this.howToReach(`${this.url}${path}`, {
         method,
         ...sent,
         // AIDEV-NOTE: so that a browser sends the session cookie the shop set. In node there is no

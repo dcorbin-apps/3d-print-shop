@@ -2,23 +2,29 @@ import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { HttpShop } from '@3d-print-shop/client';
 import type { PrinterRecord } from '@3d-print-shop/client';
 import { rm } from 'node:fs/promises';
-import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { serve } from '../../src/api';
-import { JobStore } from '../../src/JobStore';
-import { Callers } from '../../src/credentials';
-import { digestOf } from '../../src/secrets';
-import { aDataDirectory, parentOf } from '../aDataDirectory';
-import type { DataLayout } from '../../src/dataLayout';
+import { createApi } from '../src/api';
+import { JobStore } from '../src/JobStore';
+import { Callers } from '../src/credentials';
+import { digestOf } from '../src/secrets';
+import { aDataDirectory, parentOf } from './aDataDirectory';
+import { throughTheApp } from './inProcess';
+import type { DataLayout } from '../src/dataLayout';
 
 // AIDEV-NOTE: the two halves of the contract against each other - the client from
-// @3d-print-shop/client, the real routes over a real socket. Neither side's own suite can catch the
-// two disagreeing: the client's is against a stand-in, and the shop's is against fetch by hand.
+// @3d-print-shop/client, and the shop's real routes. Neither side's own suite can catch the two
+// disagreeing: the client's is against a stand-in, and the shop's is against requests built by hand.
 // This is the only place both are true at once, which is what keeps a published client honest.
+//
+// They meet in one process. The client is handed a `fetch` that reaches the app instead of a socket,
+// and both halves are the real thing on either side of it: undici serialises the request - a
+// multipart body gets its boundary from the code that would write it to a wire - and express routes
+// and answers it. What is skipped is the wire, which is node's and is pinned in the assumption suite.
+//
+// This was an acceptance test until the question was put properly: it is not the transport being
+// tested, it is our two halves agreeing, and the transport is somebody else's code.
 describe('the shop and its client', () => {
   let where: DataLayout;
   let store: JobStore;
-  let server: Server;
   let shop: HttpShop;
 
   // Where the shop says a machine can be watched, which is the adapter's answer rather than
@@ -44,12 +50,10 @@ describe('the shop and its client', () => {
     store = new JobStore(where);
 
     const dave = { caller: { id: 'dave', name: 'dave', role: 'admin' as const }, credentials: [{ kind: 'token' as const, hash: digestOf(TOKEN) }] };
-    server = await serve(store, 0, { callers: () => new Callers([dave]) });
-    shop = new HttpShop(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, TOKEN);
+    shop = new HttpShop('http://shop.local', TOKEN, throughTheApp(createApi(store, { callers: () => new Callers([dave]) })));
   });
 
   afterEach(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(parentOf(where), { recursive: true, force: true });
   });
 
