@@ -270,21 +270,38 @@ describe('the jobs, over the shop routes', () => {
   describe('a submission bigger than the shop will take', () => {
     // Small enough that the test sends bytes rather than megabytes; the rule under test is the same.
     const CAP = 64;
+    const DESCRIPTION_CAP = 256;
     let small: ReturnType<typeof drive>;
+
+    // A description of exactly the size asked for. Padded with ASCII, so the bytes busboy counts and
+    // the characters JSON.stringify produced are the same number.
+    const describedIn = (bytes: number): unknown => {
+      const empty = JSON.stringify({ ...playerBox, metadata: { padding: '' } }).length;
+
+      return { ...playerBox, metadata: { padding: 'x'.repeat(bytes - empty) } };
+    };
 
     beforeEach(async () => {
       const store = new JobStore(where, { maxGcodeBytes: CAP });
       await store.addPrinter({ name: 'mk4', buildVolume: MK4, api: 'octoprint', address: MK4_ADDRESS });
-      small = drive(createApi(store, { callers: () => callers }));
+      small = drive(createApi(store, { callers: () => callers }, { maxDescriptionBytes: DESCRIPTION_CAP }));
     });
 
     // The description arrives before the gcode by contract, so refusing an outsized one is refusing
     // before anything has been written - which is why this one may refuse where a part count cannot.
     it('refuses a description longer than it will read', async () => {
-      const answer = await submitting(submission({ ...playerBox, metadata: { padding: 'x'.repeat(1024 * 1024) } }, 'G1\n'), ADMIN, small);
+      const answer = await submitting(submission(describedIn(DESCRIPTION_CAP + 1), 'G1\n'), ADMIN, small);
 
       expect(answer.status).toBe(413);
-      expect(answer.body).toEqual({ error: `the job part is longer than ${1024 * 1024} bytes` });
+      expect(answer.body).toEqual({ error: `the job part is longer than ${DESCRIPTION_CAP} bytes` });
+    });
+
+    // AIDEV-NOTE: busboy flags a value truncated on REACHING fieldSize rather than passing it, so
+    // told the shop's own number it called this one cut when nothing had been cut - a description
+    // that parsed perfectly was refused for being longer than a number it was equal to. It is told
+    // one byte more than the shop allows, which is what makes this the boundary it looks like.
+    it('takes a description of exactly the size it will read', async () => {
+      expect((await submitting(submission(describedIn(DESCRIPTION_CAP), 'G1\n'), ADMIN, small)).status).toBe(201);
     });
 
     it('takes one exactly as big as the cap', async () => {

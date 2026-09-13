@@ -19,16 +19,6 @@ than read out of the code. These come before the rest of the list.
   and widening it is a change to the wire contract rather than to the shop. Noticed while the fields
   beside it were being checked `packages/client/src/Job.ts`
 
-- [ ] A description of exactly `fieldSize` is refused for being longer than it. Busboy flags a value
-  truncated on REACHING the limit rather than passing it, so a 1048576-byte `job` part arrives whole,
-  with nothing cut and JSON that would have parsed, and `PUT /jobs` answers `the job part is longer
-  than 1048576 bytes`. api.ts:36 names this exact trait - "busboy raises 'limit' on REACHING fileSize
-  rather than passing it - exactly that mistake waiting to happen" - as the reason there is no
-  fileSize, and then uses fieldSize, where it happens. One byte on a megabyte, so small; recorded
-  because the codebase reasoned about it and still met it. Pinned by
-  `tests/assumptions/multipartParts.test.ts`, which records what busboy does rather than what is
-  wanted. `packages/server/src/api.ts`
-
 - [ ] `see PLAN` in `OctoPrint.ts` at `send`, `cancel` and `filedAt` names nothing that is in this
   file. Either the work is still wanted and belongs here, or the reference goes
 

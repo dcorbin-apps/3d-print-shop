@@ -29,25 +29,47 @@ export class UnusableRequest extends Error {}
 // with `serve --listen`.
 export const LOOPBACK = '127.0.0.1';
 
+/** The longest description this shop will read off a submission. */
+const DEFAULT_MAX_DESCRIPTION_BYTES = 1024 * 1024;
+
+/**
+ * What the API will take in a REQUEST, as against what the store will hold.
+ *
+ * Apart from `DataLimits` because the store never sees a description as text - it is handed one
+ * parsed - so this is a fact about an HTTP part and belongs where the parts are read. Overridden by
+ * tests, which have neither the patience nor the megabyte.
+ */
+export interface RequestLimits {
+  maxDescriptionBytes?: number;
+}
+
 // AIDEV-NOTE: NOTHING here stops a large upload - there is no fileSize among these deliberately.
 // The store caps the gcode itself, at the byte it is already counting, and what that protects is the
 // data directory: it IS the recovery model, so filling it loses every job the shop holds and not only
 // that overflowed. A second cap here would be a second place to get an off-by-one wrong, and busboy
-// raises 'limit' on REACHING fileSize rather than passing it - exactly that mistake waiting to
-// happen. The one size in this list is fieldSize, which bounds the description and nothing else.
+// raises 'limit' on REACHING fileSize rather than passing it - exactly that mistake waiting to happen.
+//
+// AIDEV-NOTE: and it is the same trait for fieldSize, which this DOES use - so busboy is told one
+// byte more than the shop allows, and `valueTruncated` then means exactly "longer than the shop
+// allows" rather than "as long as it, or longer". Told the shop's own number, a description of
+// exactly the limit arrived whole, with nothing cut and JSON that would have parsed, and was refused
+// for being longer than a number it was equal to. Pinned in tests/assumptions/multipartParts.test.ts,
+// which records what busboy does rather than what is wanted.
 //
 // What these bound is how many PARTS a submission may cost, and busboy discards what is past them
 // rather than raising - which is what is wanted. A part beyond the count is ignored the same way a
 // part with an unknown name already is. What is deliberately NOT done is refusing the request when
 // one of them is hit: a count is reached after the gcode part has been read, and by then the job may
 // be committed, so a refusal would answer 413 with the job it denies sitting in the data directory.
-const SUBMISSION_LIMITS = {
-  files: 1,
-  fields: 4,
-  parts: 8,
-  fieldSize: 1024 * 1024,
-  fieldNameSize: 100,
-};
+function submissionLimits(maxDescriptionBytes: number): busboy.Limits {
+  return {
+    files: 1,
+    fields: 4,
+    parts: 8,
+    fieldSize: maxDescriptionBytes + 1,
+    fieldNameSize: 100,
+  };
+}
 
 const DESCRIPTION_PART = 'job';
 const SHUTDOWN_PATH = '/shutdown';
@@ -234,9 +256,11 @@ declare module 'express-serve-static-core' {
   }
 }
 
-export function createApi(shop: JobStore, hooks: ShopHooks): Express {
+export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimits = {}): Express {
   const api = express();
   api.use(express.json());
+
+  const maxDescriptionBytes = limits.maxDescriptionBytes ?? DEFAULT_MAX_DESCRIPTION_BYTES;
 
   const changed = hooks.changed ?? ((): void => undefined);
   const started = hooks.started ?? ((): void => undefined);
@@ -400,7 +424,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks): Express {
   });
 
   api.post('/jobs', async (request, response) => {
-    const job = await submission(shop, request, request.caller.id);
+    const job = await submission(shop, request, request.caller.id, maxDescriptionBytes);
 
     log.info('job submitted', {
       job: job.id,
@@ -636,9 +660,9 @@ export function serve(shop: JobStore, port: number, hooks: ShopHooks, address: s
 //
 // busboy rather than multer: multer lands the file in memory or a temp file first, where this hands
 // the part to the store as the stream the store exists to take.
-function submission(shop: JobStore, request: Request, owner: string): Promise<Job> {
+function submission(shop: JobStore, request: Request, owner: string, maxDescriptionBytes: number): Promise<Job> {
   return new Promise<Job>((resolve, reject) => {
-    const parts = busboy({ headers: request.headers, limits: SUBMISSION_LIMITS });
+    const parts = busboy({ headers: request.headers, limits: submissionLimits(maxDescriptionBytes) });
     let details: JobDetails | undefined;
     let taken = false;
 
@@ -648,7 +672,8 @@ function submission(shop: JobStore, request: Request, owner: string): Promise<Jo
       // Truncated JSON would fail to parse anyway, and be reported as a client that sent something
       // malformed rather than something too long.
       if (info.valueTruncated) {
-        reject(new TooMuchToTake(`the ${DESCRIPTION_PART} part is longer than ${SUBMISSION_LIMITS.fieldSize} bytes`));
+        // The SHOP's number, not the one busboy was told, which is one more than it.
+        reject(new TooMuchToTake(`the ${DESCRIPTION_PART} part is longer than ${maxDescriptionBytes} bytes`));
         return;
       }
 
