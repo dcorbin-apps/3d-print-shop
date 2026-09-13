@@ -155,8 +155,15 @@ went.
 - `dataLock` (6) - what the kernel will and will not allow with a unix socket
 - `reconnectRecovery` (4) - a socket that really dies, and a print that really ends while nobody is
   listening. It found a real bug this way
-- `aSubmissionInFlight` (1) - a refusal answered while the client is still writing megabytes. In
-  process there is no "still arriving"
+
+There was a seventh, and how it went is the most useful thing in this section. `drainingARefusedUpload`
+kept a socket because a refused upload has to be READ to the end or the request never completes, and
+that was thought to need a real connection. It does not: the mechanism is node's stream backpressure,
+and a request that hands its body over only when asked reproduces it exactly. The harness had been
+pushing whole bodies in at once, so it had no flow control to observe and a stalled reader looked
+identical to a finished one - three separate "only a socket can show this" arguments rested on that,
+and all three were wrong. `tests/inProcess.ts` hands over 16KB at a time now, like a socket, and the
+claim is a unit test that says `wasDrained` rather than an acceptance test that said `400`.
 
 ### The service
 

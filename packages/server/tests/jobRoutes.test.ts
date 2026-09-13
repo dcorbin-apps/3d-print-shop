@@ -113,6 +113,29 @@ describe('the jobs, over the shop routes', () => {
       expect(answer.body).toEqual({ error: 'a submission needs a gcode part' });
     });
 
+    // AIDEV-NOTE: the shop decides against this job before reading a byte of it, which leaves the
+    // rest of the upload unread - and an unread file part backpressures the parser, which
+    // backpressures the request. A request that stops being read is an HTTP message that never
+    // completes, so the socket stays open and a shop asked to stop waits for it for ever.
+    //
+    // At SIZE, and the threshold is real: the body has to be bigger than what the buffers between
+    // here and the parser will swallow. With the drain taken out this hands over 147,456 bytes of
+    // 8,400,228 and stalls; at a few thousand lines it completes either way and proves nothing.
+    //
+    // This was an acceptance test for most of its life, on the grounds that only a real socket could
+    // show it. That was wrong, and wrong in a way worth remembering: the first harness pushed the
+    // whole body in at once, so it had no flow control to observe and a stalled reader looked exactly
+    // like a finished one. The mechanism is node's streams, not TCP.
+    it('is drained even when it is refused, so the request can finish', async () => {
+      const tooTall = { ...playerBox, requiredBuildVolume: { x: 100, y: 100, z: 400 } };
+
+      const answer = await submit(tooTall, 'G1 X100.000 Y100.000\n'.repeat(400_000));
+
+      expect(answer.status).toBe(400);
+      expect(answer.wasDrained()).toBe(true);
+      expect(answer.handedOver()).toBeGreaterThan(8_000_000);
+    }, 30_000);
+
     it('refuses a job no printer here has room for, saying what the shop has', async () => {
       const answer = await submit({ ...playerBox, requiredBuildVolume: { x: 100, y: 100, z: 400 } });
 

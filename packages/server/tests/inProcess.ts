@@ -19,6 +19,10 @@ export interface Answer {
   header(name: string): string | undefined;
   /** The cookie a Set-Cookie set, without its attributes - what a browser would send back. */
   cookie(): string;
+  /** Whether the shop read the whole request, which is what lets the message complete. */
+  wasDrained(): boolean;
+  /** How much of the body the shop actually asked for. */
+  handedOver(): number;
 }
 
 export interface Asking {
@@ -46,8 +50,21 @@ export function drive(api: Express) {
       ...(contentType === undefined ? {} : { 'content-type': contentType }),
       ...asking.headers,
     };
-    if (payload !== undefined) request.push(payload);
-    request.push(null);
+    // AIDEV-NOTE: handed over only when it is ASKED for, which is what a socket does. Pushing the
+    // whole body at once builds a request with no flow control, and a reader that stops reading then
+    // looks exactly like one that read everything - which is how a missing drain went invisible here
+    // while a real socket caught it. See "is drained even when it is refused" in jobRoutes.
+    let handedOver = 0;
+    request._read = function (): void {
+      if (payload === undefined || handedOver >= payload.length) {
+        this.push(null);
+        return;
+      }
+
+      const next = payload.subarray(handedOver, handedOver + HANDED_OVER_AT_A_TIME);
+      handedOver += next.length;
+      this.push(next);
+    };
     // AIDEV-NOTE: what node's own parser sets when a message has arrived whole. Without it multer and
     // busboy see the stream end, find the message incomplete, and answer "Request aborted" - so this
     // is not a convenience, it is the difference between a request and a truncated one.
@@ -69,6 +86,8 @@ export function drive(api: Express) {
           status: response.statusCode,
           text,
           body: parsed(text),
+          wasDrained: () => request.readableEnded,
+          handedOver: () => handedOver,
           header: (name) => {
             const value = response.getHeader(name);
             return value === undefined ? undefined : String(value);
@@ -106,3 +125,6 @@ export function multipart(parts: { name: string; value: string | Buffer; filenam
 }
 
 export const MULTIPART = 'multipart/form-data; boundary=aboundary';
+
+/** As much as a request hands over before it is asked again - node's own default for a socket. */
+const HANDED_OVER_AT_A_TIME = 16 * 1024;
