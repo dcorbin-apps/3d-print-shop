@@ -76,4 +76,16 @@ export interface RegisteredPrinter extends PrinterRecord, PrinterStatus {
    * protocol says nothing about one.
    */
   camera?: string;
+  /**
+   * The shop cannot read what this printer is DOING - its status file is there and is not JSON.
+   *
+   * Derived when the printer is read rather than recorded, the way `camera` is, and for a reason
+   * the others do not have: it is a fact about a file the shop was unable to read, so there is
+   * nowhere to write it that it could be read back from. Nothing schedules onto a printer carrying
+   * one, and what it is holding is not known - so what it says is that a person has to look.
+   *
+   * No `since`: the other four are written down at the moment they happen, and this one is found
+   * when the file is read. The shop knows the file is bad now and not when it went bad.
+   */
+  unreadable?: { reason: string };
 }

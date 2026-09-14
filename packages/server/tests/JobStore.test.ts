@@ -7,6 +7,7 @@ import type { BuildVolume, Job, JobDetails, PrinterOutcome } from '../src/Job';
 import type { RegisteredPrinter } from '../src/Printer';
 import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, DataUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
 import { aDataDirectory, parentOf } from './aDataDirectory';
+import { toStdout } from '../src/log';
 import { layoutUnder } from '../src/dataLayout';
 import type { DataLayout } from '../src/dataLayout';
 
@@ -797,6 +798,130 @@ describe('JobStore', () => {
       await expect(shop.ready()).resolves.toBeUndefined();
     });
   });
+
+  // AIDEV-NOTE: a file the shop cannot read used to take the WHOLE shop with it - `readPrinter`,
+  // `readStatus` and `readRecord` each caught the read and not the parse, and everything goes through
+  // `printers()`, so one bad file answered the job list, the printer list, a submission and the
+  // printing loop alike with a 500, and a restart did not clear it.
+  //
+  // The two printer files are answered differently because they leave the shop knowing different
+  // amounts, and each is answered the way an ABSENT file of that kind already was.
+  describe('a file it cannot read', () => {
+    const lines: string[] = [];
+
+    const storeThatSays = (): JobStore =>
+      new JobStore(where, {}, toStdout(() => new Date(), (line) => lines.push(line)));
+
+    const corrupt = async (file: string): Promise<void> => {
+      await fs.writeFile(path.join(where.state, 'printers', file), '{ not json');
+    };
+
+    beforeEach(async () => {
+      lines.length = 0;
+      await addPrinter('mk4', { x: 250, y: 210, z: 220 });
+      await addPrinter('mini', { x: 180, y: 180, z: 180 });
+    });
+
+    describe('a status nobody can read', () => {
+      beforeEach(async () => {
+        await corrupt(path.join('mk4', 'status.json'));
+      });
+
+      it('leaves the printer listed, and says a person has to look', async () => {
+        const mk4 = (await shop.printers()).find((printer) => printer.name === 'mk4');
+
+        expect(mk4?.unreadable?.reason).toContain('not JSON');
+        expect(mk4?.buildVolume).toEqual({ x: 250, y: 210, z: 220 });
+      });
+
+      // The whole of what was asked for: one bad file is one bad printer.
+      it('leaves every other printer exactly as it was', async () => {
+        const mini = (await shop.printers()).find((printer) => printer.name === 'mini');
+
+        expect(mini?.unreadable).toBeUndefined();
+        expect(mini?.buildVolume).toEqual({ x: 180, y: 180, z: 180 });
+      });
+
+      it('is not a printer anything will be started on', async () => {
+        const job = await submit(details(), gcode());
+        await shop.load(await the('mk4'), ['PLA-SpaceGray']);
+        // Loading wrote a status back, which is the recovery below - so this is broken again to ask
+        // the question this test is about rather than the one that answer settled.
+        await corrupt(path.join('mk4', 'status.json'));
+
+        await expect(shop.startPrinting(await the('mk4'), job.id)).rejects.toThrow(WrongState);
+      });
+
+      // AIDEV-NOTE: the way out, and it falls out of how a status is changed rather than being a
+      // repair anybody wrote. Changing one reads it first, and a status nobody can read is one there
+      // is nothing to keep from - so an operator doing the ordinary thing to a machine they have
+      // been to leaves a status the shop can read again. What it cannot bring back is what the
+      // machine was holding, which was in the file nobody could read.
+      it('is put right by an operator doing anything to the machine', async () => {
+        await shop.load(await the('mk4'), ['PLA-SpaceGray']);
+
+        expect((await the('mk4')).unreadable).toBeUndefined();
+        expect((await the('mk4')).loaded).toEqual(['PLA-SpaceGray']);
+      });
+
+      // Read as an empty status it would say the bed is clear, and a job that is ON that bed would be
+      // queued for another machine to print as well.
+      it('is not read as a printer holding nothing', async () => {
+        expect((await the('mk4')).holding).toBeUndefined();
+        expect((await the('mk4')).unreadable).toBeDefined();
+      });
+    });
+
+    describe('a record nobody can read', () => {
+      beforeEach(async () => {
+        await corrupt(path.join('mk4', 'printer.json'));
+      });
+
+      // There is no bed to measure a job against and no address to reach, which is what an absent
+      // record has always meant here.
+      it('is not a printer the shop has', async () => {
+        expect((await shop.printers()).map((printer) => printer.name)).toEqual(['mini']);
+      });
+
+      it('leaves the shop answering for the rest of them', async () => {
+        await expect(the('mini')).resolves.toMatchObject({ name: 'mini' });
+      });
+    });
+
+    describe('a job nobody can read', () => {
+      it('is left out of what the shop answers, and the rest are not', async () => {
+        const kept = await submit(details(), gcode());
+        const broken = await submit(details(), gcode());
+        await fs.writeFile(path.join(where.jobs, String(broken.id), 'job.json'), '{ not json');
+
+        expect((await shop.all()).map((job) => job.id)).toEqual([kept.id]);
+      });
+    });
+
+    describe('what it says about one', () => {
+      it('names the file and what would put it right', async () => {
+        await corrupt(path.join('mk4', 'status.json'));
+
+        await storeThatSays().printers();
+
+        expect(lines.join('\n')).toContain('mk4');
+        expect(lines.join('\n')).toContain('status.json');
+      });
+
+      // AIDEV-NOTE: `printers()` is asked on every request that touches anything, so a line per read
+      // is a line per request - which is a log nobody can read, and this log exists to be read.
+      it('says it once however often the shop is asked', async () => {
+        await corrupt(path.join('mk4', 'status.json'));
+        const store = storeThatSays();
+
+        await store.printers();
+        await store.printers();
+        await store.printers();
+
+        expect(lines.filter((line) => line.includes('status.json'))).toHaveLength(1);
+      });
+    });
+  });
 });
 
 describe('the largest gcode a shop takes', () => {
@@ -822,4 +947,5 @@ describe('the largest gcode a shop takes', () => {
     process.env[MAX_GCODE_ENV] = said;
     expect(defaultMaxGcodeBytes()).toBe(128 * 1024 * 1024);
   });
+
 });

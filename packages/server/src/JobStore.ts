@@ -8,6 +8,8 @@ import type { BuildVolume, Job, JobDetails, JobRecord, PrinterOutcome } from './
 import { canTake, whereToWatch } from './Printer.js';
 import type { Holding, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
 import { defaultLayout } from './dataLayout.js';
+import { silent } from './log.js';
+import type { Log } from './log.js';
 import type { DataLayout } from './dataLayout.js';
 
 // AIDEV-NOTE: the largest gcode this shop will take, and so also the room it insists on having
@@ -95,9 +97,15 @@ export class JobStore {
   // thing belongs is a question about the SYSTEM - a Linux keeps work, state and a runtime claim in
   // three different places and a Mac keeps them in one - and a store that worked it out would be a
   // store with a platform in it. See dataLayout.ts; this end just uses what it was given.
+  // AIDEV-NOTE: said ONCE per file while this shop runs. `printers()` and `all()` are asked on every
+  // request, so a file that will not parse is a file re-read every time somebody looks at anything -
+  // and a line per request is a log nobody can read, which is the one thing this log is for.
+  private readonly said = new Set<string>();
+
   constructor(
     private readonly where: DataLayout = defaultLayout(),
-    limits: DataLimits = {}
+    limits: DataLimits = {},
+    private readonly log: Log = silent
   ) {
     this.maxGcodeBytes = limits.maxGcodeBytes ?? defaultMaxGcodeBytes();
     this.freeBytes = limits.freeBytes ?? spaceFreeOn;
@@ -223,6 +231,7 @@ export class JobStore {
     // when it was taken, and both the holding and the stop can have changed since.
     const printer = await this.printerNamed(onto.name);
 
+    if (printer.unreadable) throw new WrongState(`${onto.name}: ${printer.unreadable.reason}`);
     if (printer.paused) throw new WrongState(`${onto.name} is stopped: ${printer.paused.reason}`);
     if (printer.holding) throw new WrongState(`${onto.name} is already holding job ${printer.holding.job}`);
     if (job.state !== 'queued') throw new WrongState(`job ${id} is ${job.state}, so it cannot be started`);
@@ -460,26 +469,90 @@ export class JobStore {
     });
   }
 
+  // AIDEV-NOTE: a record that will not parse is a printer the shop does not know what IS - no bed to
+  // measure a job against, no address to reach - and that is already what an ABSENT record means
+  // here, so it is answered the same way rather than by a new rule. What it costs is that the
+  // machine leaves the list, which is why it is said out loud: `printer add` writes a fresh record
+  // and keeps the status file, so the machine comes back holding whatever it was holding.
   private async readPrinter(name: string): Promise<RegisteredPrinter | undefined> {
     const contents = await readFile(this.printerFile(name), 'utf-8').catch(() => undefined);
     if (contents === undefined) return undefined;
 
-    const record = JSON.parse(contents) as PrinterRecord;
-    return { ...record, camera: whereToWatch(record), ...((await this.readStatus(name)) ?? { loaded: [] }) };
+    let record: PrinterRecord;
+    try {
+      record = JSON.parse(contents) as PrinterRecord;
+    } catch {
+      this.sayOnce(this.printerFile(name), 'a printer says nothing this shop can read, so it is not one this shop has', {
+        printer: name,
+        file: this.printerFile(name),
+        toFix: 'add the printer again - it writes a fresh record and keeps what the machine is holding',
+      });
+
+      return undefined;
+    }
+
+    const { status, unreadable } = await this.statusOf(name);
+
+    // AIDEV-NOTE: `loaded: []` stands in for a status nobody could read, and it is inert rather than
+    // a guess: a printer carrying `unreadable` is never looked at for work, so nothing asks what is
+    // on it. What it does NOT stand in for is `holding` - see the note on `statusOf`.
+    return {
+      ...record,
+      camera: whereToWatch(record),
+      ...(status ?? { loaded: [] }),
+      ...(unreadable === undefined ? {} : { unreadable: { reason: unreadable } }),
+    };
   }
 
-  private async readStatus(name: string): Promise<PrinterStatus | undefined> {
+  // AIDEV-NOTE: a status that will not parse is NOT read as an empty one, which is the trap. What is
+  // in that file is `holding` - the one record that a job is on a bed - so reading it as nothing
+  // would queue a job that is printing and let another machine print it too. It is answered as a
+  // printer in trouble instead: shown, and never started on.
+  //
+  // What this cannot do is know what the machine was holding, so a job it HAD is queued all the same
+  // and another printer may take it. Stopping that means stopping the whole shop over one bad file,
+  // which is a larger thing than the fault - so the shop says a person has to look, and this is what
+  // it says it with.
+  private async statusOf(name: string): Promise<{ status?: PrinterStatus; unreadable?: string }> {
     const contents = await readFile(this.statusFile(name), 'utf-8').catch(() => undefined);
-    if (contents === undefined) return undefined;
+    if (contents === undefined) return {};
 
-    const stored = JSON.parse(contents) as StoredStatus;
+    let stored: StoredStatus;
+    try {
+      stored = JSON.parse(contents) as StoredStatus;
+    } catch {
+      const file = this.statusFile(name);
+      this.sayOnce(file, 'a printer says nothing this shop can read about what it is doing', {
+        printer: name,
+        file,
+        toFix: 'look at the machine, then start it - starting writes a status this shop can read',
+      });
+
+      return { unreadable: `${file} is not JSON, so what this machine is doing is not known` };
+    }
+
     return {
-      ...stored,
-      paused: since(stored.paused),
-      unreachable: since(stored.unreachable),
-      refused: since(stored.refused),
-      outOfContact: since(stored.outOfContact),
+      status: {
+        ...stored,
+        paused: since(stored.paused),
+        unreachable: since(stored.unreachable),
+        refused: since(stored.refused),
+        outOfContact: since(stored.outOfContact),
+      },
     };
+  }
+
+  // Changing a status reads it first, and a status nobody can read is one there is nothing to keep
+  // from - so it is the same as none, and what is written over it is one the shop can read again.
+  private async readStatus(name: string): Promise<PrinterStatus | undefined> {
+    return (await this.statusOf(name)).status;
+  }
+
+  private sayOnce(file: string, message: string, about: Record<string, unknown>): void {
+    if (this.said.has(file)) return;
+
+    this.said.add(file);
+    this.log.error(message, about);
   }
 
   private async writeStatus(name: string, status: PrinterStatus): Promise<void> {
@@ -561,12 +634,23 @@ export class JobStore {
     return done;
   }
 
+  // A record that will not parse is answered the way one that is not there is - the job is not in
+  // the list - because there is nothing in a job record the shop could act on half of. Said once, so
+  // that a job quietly missing from every answer is not the shop's secret.
   private async readRecord(id: number): Promise<JobRecord | undefined> {
-    const contents = await readFile(path.join(this.jobDir(id), RECORD_FILE), 'utf-8').catch(() => undefined);
+    const file = path.join(this.jobDir(id), RECORD_FILE);
+    const contents = await readFile(file, 'utf-8').catch(() => undefined);
     if (contents === undefined) return undefined;
 
-    const stored = JSON.parse(contents) as StoredJob;
-    return { ...stored, submittedAt: new Date(stored.submittedAt) };
+    try {
+      const stored = JSON.parse(contents) as StoredJob;
+
+      return { ...stored, submittedAt: new Date(stored.submittedAt) };
+    } catch {
+      this.sayOnce(file, 'a job says nothing this shop can read, so it is not in anything it answers', { job: id, file });
+
+      return undefined;
+    }
   }
 
   private async writeRecord(record: JobRecord): Promise<void> {

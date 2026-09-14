@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { JobStore } from '../src/JobStore';
 import { recordOutcome, remotePathFor, startNextPrint } from '../src/printing';
@@ -257,6 +258,21 @@ describe('printing the next job', () => {
       await shop.couldNotReach(await shop.printerNamed('mk4'), 'no API key for mk4');
 
       expect(await printOn('mk4', ['PLA-Red'])).toEqual({ did: 'nothing', because: 'unreachable' });
+    });
+
+    // AIDEV-NOTE: first of the lot, and answered as nothing to do rather than left to `startPrinting`
+    // to refuse - by then a client has been built and a socket opened to the machine, and the
+    // refusal reaches the foreman as a fault to write down about a machine it already knew about.
+    //
+    // `loaded` reads empty for a status nobody can read, so nothing would have been printable here
+    // anyway. That is what makes this worth asking directly: the answer says the shop knows WHY it
+    // is passing the machine over, rather than that it happened to find nothing to send.
+    it('will not print on a machine whose own files it cannot read', async () => {
+      await submit(['PLA-Red'], { printer: 'mk4' });
+      await shop.load(await shop.printerNamed('mk4'), ['PLA-Red']);
+      await fs.writeFile(path.join(where.state, 'printers', 'mk4', 'status.json'), '{ not json');
+
+      expect(await startNextPrint(shop, async () => machine, 'mk4')).toEqual({ did: 'nothing', because: 'unreadable' });
     });
 
     // The machine already said no to a plate, and finding out that it still means it costs another.

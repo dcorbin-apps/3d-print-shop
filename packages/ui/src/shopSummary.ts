@@ -6,7 +6,15 @@ import type { Job, RegisteredPrinter } from '@3d-print-shop/client/browser';
 // When the shop can say how IT is, this is where that belongs. See PLAN.md.
 
 /** What a machine is doing, in one word an operator can read across a room. */
-export type PrinterCondition = 'printing' | 'awaiting-approval' | 'stopped' | 'unreachable' | 'refused' | 'out-of-contact' | 'idle';
+export type PrinterCondition =
+  | 'printing'
+  | 'awaiting-approval'
+  | 'stopped'
+  | 'unreachable'
+  | 'refused'
+  | 'out-of-contact'
+  | 'unreadable'
+  | 'idle';
 
 /** What is wrong, when something is - the reason a person was given or the shop found. */
 export interface PrinterState {
@@ -19,6 +27,9 @@ export interface PrinterState {
 // about the room, and no machine can contradict that - where a bed waiting to be cleared beats a
 // machine nobody can reach, because clearing it is the thing a person can actually do.
 export function stateOf(printer: RegisteredPrinter): PrinterState {
+  // First of all of them: a machine whose own files the shop cannot read is one where nothing else it
+  // says about that machine is worth reading either.
+  if (printer.unreadable) return { condition: 'unreadable', why: printer.unreadable.reason };
   if (printer.paused) return { condition: 'stopped', why: printer.paused.reason };
   if (printer.refused) return { condition: 'refused', why: printer.refused.reason };
   if (printer.holding?.phase === 'awaiting-approval') return { condition: 'awaiting-approval' };

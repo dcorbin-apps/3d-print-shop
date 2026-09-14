@@ -27,7 +27,7 @@ export interface Printer {
 export class CouldNotReach extends Error {}
 
 export type PrintAttempt =
-  | { did: 'nothing'; because: 'paused' | 'unreachable' | 'refused' | 'busy' | 'nothing-printable' }
+  | { did: 'nothing'; because: 'unreadable' | 'paused' | 'unreachable' | 'refused' | 'busy' | 'nothing-printable' }
   | { did: 'started'; job: Job }
   | { did: 'could-not-start'; job: Job; remotePath: string; failure: Error };
 
@@ -55,6 +55,12 @@ export async function startNextPrint(shop: JobStore, reach: () => Promise<Printe
   // AIDEV-NOTE: looked up rather than passed in. A RegisteredPrinter is a snapshot, and both what a
   // printer holds and whether it is stopped change while the shop runs.
   const onto = await shop.printerNamed(printerName);
+
+  // Read again here like the rest of them, and FIRST: everything below is read out of the very
+  // files the shop could not read, so none of it is worth acting on. Answered as nothing to do
+  // rather than left to `startPrinting` to refuse - by then a client has been built and a socket
+  // opened to the machine, and the refusal reaches the foreman as a fault to write down.
+  if (onto.unreadable) return { did: 'nothing', because: 'unreadable' };
 
   if (onto.paused) return { did: 'nothing', because: 'paused' };
 

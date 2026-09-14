@@ -46,6 +46,24 @@ describe('what the shop is doing', () => {
       expect(stateOf(printer({ [field]: trouble }))).toEqual({ condition, why: 'the door is open' });
     });
 
+    // Its own condition rather than one of the four above, because it is not a fact about the
+    // MACHINE - it is the shop saying it cannot read that machine's own files, and there is no
+    // `since` on it because it is found when the file is read rather than written when it went bad.
+    it('reads a printer whose files it cannot read as unreadable, and says why', () => {
+      const broken = printer({ unreadable: { reason: 'status.json is not JSON' } });
+
+      expect(stateOf(broken)).toEqual({ condition: 'unreadable', why: 'status.json is not JSON' });
+    });
+
+    // AIDEV-NOTE: first of all of them. Everything else this says about a machine is read out of the
+    // very files it could not read, so none of it is worth reporting ahead of the fact that it could
+    // not read them.
+    it('is unreadable rather than anything else it appears to be', () => {
+      const broken = printer({ unreadable: { reason: 'status.json is not JSON' }, paused: trouble, holding: { job: 1, phase: 'printing' } });
+
+      expect(stateOf(broken).condition).toBe('unreadable');
+    });
+
     // AIDEV-NOTE: the order matters and is not the order the fields are declared in. A person said
     // something about the room, and no machine can contradict that - so a stopped printer holding a
     // print reads as stopped rather than as printing.

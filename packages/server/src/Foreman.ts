@@ -179,7 +179,7 @@ export class Foreman {
   private async startWhatCanBeStarted(): Promise<void> {
     for (const printer of await this.shop.printers()) {
       // Holding anything at all means the bed is not clear, verdict or no verdict.
-      if (printer.paused || printer.unreachable || printer.refused || printer.holding) continue;
+      if (printer.unreadable || printer.paused || printer.unreachable || printer.refused || printer.holding) continue;
 
       await this.start(printer);
     }

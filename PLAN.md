@@ -53,14 +53,6 @@ code keeps.
   is written down twice and enforced in neither of the places that would catch somebody getting it
   wrong. `packages/client/src/token.ts`
 
-- [ ] One unreadable file in the data directory stops the whole shop, where everywhere else a file
-  that cannot be read leaves things as they were and says why. `readRecord`, `readPrinter` and
-  `readStatus` in `JobStore.ts` catch the `readFile` and not the `JSON.parse` - and everything goes
-  through `printers()`, so a single unparseable `printer.json` or `status.json` takes down the job
-  list, the printer list, submission and the printing loop at once, and a restart does not clear it.
-  Not an attack: these are the shop's own files and they are written atomically. It is the one place
-  the rule the rest of the shop keeps is not kept
-
 ### Installation
 
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this

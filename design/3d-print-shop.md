@@ -734,6 +734,45 @@ fault nobody caused, would be worse than one that simply picks the print up agai
 A print already running is not interrupted. It is on the bed, the printer's status still says so,
 and the next run picks it up - which is what `resumeWatching` is for.
 
+## A file the shop cannot read
+
+Everything the shop holds is read back off disk, so what it does with a file it cannot parse is a
+decision it has to make three times over - and the answer is different each time, because each file
+leaves the shop knowing a different amount. The rule throughout is the one already there: an
+unreadable file of some kind means what an ABSENT file of that kind has always meant.
+
+**A job record** that will not parse is a job not in the list, which is what a missing one is. There
+is nothing in a job record the shop could act on half of - no filament to schedule by, no owner to
+answer to - so half a job is not a job.
+
+**A printer's record** that will not parse is a printer the shop does not have, which is again what
+a missing one is. It says what the machine IS: the bed a job is measured against, the address it is
+reached at. Without it there is nothing to schedule against and nowhere to send anything, and a
+machine the shop cannot describe is not one it can offer. `printer add` writes a fresh record and
+keeps the status file, so the machine comes back holding whatever it was holding.
+
+**A printer's status is the one that is different**, and it is the one that actually happens: the
+record is written once when a printer is added, where the status is rewritten on every load, pause,
+resume, start and finish. It is NOT read as an empty status, which is the trap - `holding` lives in
+that file, and it is the only record that a job is on a bed. Read as nothing, a print in progress
+would be queued for another machine to print as well. So the printer stays in the list, carrying a
+trouble that says its own files cannot be read, and nothing is started on it.
+
+That trouble is derived when the printer is read rather than written down, the way `camera` is -
+there is nowhere to record a fact about a file that could not be read. It carries no `since` for the
+same reason: the shop knows the file is bad now, not when it went bad. An operator doing anything at
+all to the machine puts it right, because changing a status reads it first and a status nobody can
+read is one there is nothing to keep from.
+
+**What none of this recovers is what the machine was holding**, and that is worth saying plainly. A
+job that was on that bed reads as queued and another printer may take it, so a plate can be printed
+twice. Stopping that means stopping the whole shop over one bad file, which is a larger thing than
+the fault - so the shop reports the machine as needing somebody, and a person is what settles it.
+
+Said once per file rather than per read: `printers()` and `all()` are asked on every request that
+touches anything, so a line each time is a log nobody can read, and being readable in one pass is
+what this log is for.
+
 ## What state a printer is in
 
 **Nothing records a printer's state as a word.** It is read from what is written down about the

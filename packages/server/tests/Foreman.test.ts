@@ -107,6 +107,58 @@ describe('the foreman', () => {
     await fs.rm(parentOf(where), { recursive: true, force: true });
   });
 
+  // AIDEV-NOTE: the foreman's own clause, which is a line of its own and can regress on its own.
+  // `startPrinting` refuses an unreadable printer too - asked in JobStore.test.ts - but by then a
+  // whole plate has been read off disk and pushed at a machine, and the answer was always going to
+  // be no. This is the shop not looking at it in the first place.
+  describe('a printer whose own files it cannot read', () => {
+    const said: string[] = [];
+
+    const corruptTheStatusOf = async (name: string): Promise<void> => {
+      await fs.writeFile(path.join(where.state, 'printers', name, 'status.json'), '{ not json');
+    };
+
+    beforeEach(() => {
+      said.length = 0;
+    });
+
+    it('is not started on, however much work is waiting', async () => {
+      await submit();
+      await shop.load(await shop.printerNamed('mk4'), ['PLA-Red']);
+      await corruptTheStatusOf('mk4');
+
+      await foreman.considerStarting();
+
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    // AIDEV-NOTE: and passed over QUIETLY. Left to `startPrinting` to refuse, every pass over the
+    // queue built a client, opened a socket to the machine and wrote down a fault - one line each
+    // time anything in the shop changed, about a thing the shop already knew it could not use.
+    it('is passed over without a machine being reached or a fault written down', async () => {
+      await submit();
+      await shop.load(await shop.printerNamed('mk4'), ['PLA-Red']);
+      await corruptTheStatusOf('mk4');
+
+      await aForeman(shop, mockReach, toStdout(() => new Date(), (line) => said.push(line))).considerStarting();
+
+      expect(mockReach).not.toHaveBeenCalled();
+      expect(said.join('\n')).not.toContain('could not start anything');
+    });
+
+    // The whole of what isolation means here: one bad file is one bad machine.
+    it('does not stop the shop starting work on the others', async () => {
+      await addPrinter('mini');
+      await submit();
+      await shop.load(await shop.printerNamed('mini'), ['PLA-Red']);
+      await corruptTheStatusOf('mk4');
+
+      await foreman.considerStarting();
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // AIDEV-NOTE: the machine's half of the story. The shop runs unattended for hours, and without
   // these lines the only durable trace of anything is the sentence in `printer.paused.reason` -
   // which says nothing about the prints that went well, or about what happened in what order.

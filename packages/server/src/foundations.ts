@@ -64,7 +64,7 @@ export async function layTheFoundations({ data, etc: said, maxGcode, writing }: 
   // system keeps that kind. The branch is in dataLayout.ts and this is its first caller rather than
   // its home - the server is a library too, and an embedder needs the same answer.
   const where = data === undefined ? defaultLayout() : layoutUnder(data);
-  const store = new JobStore(where, { maxGcodeBytes: maxGcode });
+  const store = new JobStore(where, { maxGcodeBytes: maxGcode }, log);
 
   // A data directory that is not there, or is already being served, is a shop that must refuse to
   // start rather than start and do damage.
