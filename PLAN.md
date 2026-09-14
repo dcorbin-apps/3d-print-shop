@@ -40,19 +40,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   mid-request changes which printers there are. A cache that outlives a request is a second answer to
   that, which is what this store is built not to have. `packages/server/src/JobStore.ts`
 
-### Security
-
-Found by reading the whole of `packages/server/src`, the client and the installer, rather than by
-anything going wrong. The shop listens on loopback unless told otherwise and the auth model holds,
-so none of these is urgent - they are the places that read as gaps beside the rules the rest of the
-code keeps.
-
-- [ ] `defaultToken()` reads the token file without looking at its mode. The server refuses its OWN
-  credential files at anything looser than 0600 - `readOnlyByItsOwner` in `credentials.ts`, for the
-  reason ssh does it - and the installer tells an operator to `chmod 600` this very file. So the rule
-  is written down twice and enforced in neither of the places that would catch somebody getting it
-  wrong. `packages/client/src/token.ts`
-
 ### Installation
 
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this
