@@ -1,0 +1,63 @@
+name: CI
+
+# AIDEV-NOTE: the same things `yarn` is asked for on a machine, in the order they have to happen in -
+# which is not the order they are listed in package.json. See the note on the build step.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push answers the same question as the first, so the first one's answer is not worth
+# paying for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Nothing here takes three minutes. A job that runs longer is one that hung, and the default is
+    # six hours of it.
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Before setup-node, which asks yarn where its cache is and cannot ask until yarn is there.
+      # The version is `packageManager` in package.json, so it is the one a machine here uses.
+      - run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      # `--immutable` so a lockfile that does not match the manifests fails here rather than being
+      # quietly rewritten into something nobody reviewed.
+      - run: yarn install --immutable
+
+      - run: yarn lint
+
+      # AIDEV-NOTE: BEFORE typecheck and before the tests, and neither is tidiness. `dist/` is
+      # gitignored, so a fresh checkout has none - and the packages resolve each OTHER through it:
+      # every `exports` map points at `dist`, so `@3d-print-shop/client/browser` is a missing module
+      # to tsc until the client has been built. The tests that spawn a command line reach the shop
+      # through the built client too, so without this they would be testing what is not there.
+      # Measured, not assumed: `yarn typecheck` in a fresh clone is a wall of TS2307.
+      - run: yarn build
+
+      - run: yarn typecheck
+
+      # Unit and acceptance tests. Steps of their own rather than one line, so a red X says which
+      # kind of answer went wrong before anybody opens the log.
+      - run: yarn test
+
+      # AIDEV-NOTE: what the shop ASSUMES of things it did not write - what busboy does with a part
+      # that is too long, what `ws` hands over for a text frame, what express makes of a raw request
+      # line. They are here because the thing that breaks them is a dependency moving underneath,
+      # which is exactly what a machine that installs from a lockfile and runs every day catches and
+      # a person reading a changelog does not.
+      - run: yarn assumptions
