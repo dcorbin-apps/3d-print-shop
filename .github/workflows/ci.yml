@@ -29,13 +29,16 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      # AIDEV-NOTE: v5 of both, because v4 runs on node 20 and the runners have deprecated it - a
+      # run on v4 is forced onto node 24 anyway and says so in the log every time. The inputs below
+      # are unchanged between the two; the major is the runtime it executes on, not what it takes.
+      - uses: actions/checkout@v5
 
       # Before setup-node, which asks yarn where its cache is and cannot ask until yarn is there.
       # The version is `packageManager` in package.json, so it is the one a machine here uses.
       - run: corepack enable
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: yarn
