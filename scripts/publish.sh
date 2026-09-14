@@ -42,10 +42,14 @@ while read -r name location; do
   echo "packed $name from $location"
 
   if [ "$dry" = "--dry-run" ]; then
-    # No provenance in a dry run: signing it wants a runner and an OIDC token, and neither is here.
     npm publish "$tarball" --access public --dry-run
   else
-    npm publish "$tarball" --access public --provenance
+    # AIDEV-NOTE: no `--provenance`. Publishing this way generates it anyway - npm attests every
+    # trusted publish from Actions without being asked - and asking for it explicitly is what breaks
+    # the ONE publish that cannot happen here: the first. A package has to exist before npm will let
+    # a trusted publisher be attached to it, so version one goes up by hand, from a machine, where
+    # there is no OIDC token to sign anything with and the flag is an error rather than a wish.
+    npm publish "$tarball" --access public
   fi
 done < <(yarn workspaces list --no-private --json | node -e '
   let said = "";

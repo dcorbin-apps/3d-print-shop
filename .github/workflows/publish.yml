@@ -31,14 +31,20 @@ jobs:
 
       - run: corepack enable
 
-      # AIDEV-NOTE: deliberately no `registry-url`. It writes an .npmrc naming an auth token from the
-      # environment, and there is no token here - npm finds the registry by default and finds its
-      # credentials through OIDC. Trusted publishing wants a recent npm, so the version is said out
-      # loud: if a run ever fails asking for auth, that line and this note are where to start.
+      # AIDEV-NOTE: `registry-url` as npm's own example has it. It writes an .npmrc naming an auth
+      # token from the environment and there is no token here, which is fine: publishing finds its
+      # credentials through OIDC, and nothing else in this job talks to the registry authenticated.
+      #
+      # And NO cache, which is not an oversight - npm's guidance for a release build is not to have
+      # one. What a cache buys is a minute; what it costs is a store of somebody else's bytes standing
+      # between a tag and a signed artifact. CI caches, because CI publishes nothing.
+      #
+      # Trusted publishing wants npm 11.5.1 and node 22.14 or later, so the npm version is printed:
+      # if a run ever fails asking for auth, that line is where to start.
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
-          cache: yarn
+          registry-url: 'https://registry.npmjs.org'
 
       - run: npm --version
 

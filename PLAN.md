@@ -53,9 +53,15 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   `portal:../3d-print-shop/packages/client`, which cannot survive a fresh clone that has no shop
   next door
 
-  What is left is the publishing itself, and two things nobody can decide from inside the repository:
-  no package carries a `repository` field, because there is no remote to name; and every version is
-  `1.0.0` with nothing bumping them, which is a release habit rather than a line of code.
+  What is left is the FIRST publish, which cannot be done by the workflow that does all the others.
+  npm will not attach a trusted publisher to a package that does not exist yet, so version one of each
+  goes up from a machine - `yarn build && ./scripts/publish.sh`, with somebody's own 2FA - and only
+  then can `dcorbin-apps/3d-print-shop` + `publish.yml` be named as the publisher on npmjs. Every
+  release after that is a pushed tag and nothing else. Checked against npm's documentation rather
+  than assumed; `scripts/publish.sh` asks for no provenance precisely so that first one can work.
+
+  And a release habit: every version is `1.0.0` with nothing bumping them, which is a decision about
+  how this is released rather than a line of code.
 
   How the page ships is settled - `ui` is a package of its own, and the installer depends on it. See
   design/3d-print-shop.md, "How the page reaches a machine", for why it is that rather than built
