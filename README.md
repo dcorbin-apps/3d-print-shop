@@ -99,11 +99,13 @@ on macOS, `printshop` on Linux) that can be logged in as by nobody; the director
 in and `/etc/3d-print-shop`, owned by it at 0700; a copy of the built shop under `/usr/local/lib/3d-print-shop`
 owned by root; and a `launchd` daemon or a `systemd` unit that runs it.
 
-If the page has been built it is copied too, and the service is pointed at it with `--page`. Without
-one the shop answers its API and serves nothing, which it says at the time.
+The built page is copied too, and the service is pointed at it with `--page`. It is not optional:
+the page is how a person uses the shop - where they log in, watch a machine and say whether what came
+off the bed is any good - so an install without one is refused rather than made.
 
 **It refuses rather than guesses.** No node outside a home directory that is new enough, no build to
-install, or a shop with no callers yet: each stops it, and each says what to do about it. The node it
+install, no page built, or a shop with no callers yet: each stops it, and each says what to do about
+it. The node it
 looks for has to be a system one - a daemon runs as `_printshop`, which cannot read into your home
 directory, so a version manager's node is no good to it (`brew install node@24`).
 

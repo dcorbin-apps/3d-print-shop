@@ -53,6 +53,20 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   `portal:../3d-print-shop/packages/client`, which cannot survive a fresh clone that has no shop
   next door
 
+  What has to be settled first is HOW THE PAGE SHIPS, and it is a blocker rather than a detail now
+  that an install without one is refused. Installed from a package, the installer looks for the page
+  in `@3d-print-shop/ui` beside itself - and that package is `private: true` and is not a dependency
+  of the installer, so it can never be there and every npm install would be refused. Three ways out,
+  none free: publish `ui` as a real package and depend on it; build the page into `server` and ship
+  it inside that; or have the installer fetch it. Whichever it is, the page is a CLIENT of the shop,
+  so nothing may make the server resolve it through the ui package - see design/3d-print-shop.md.
+
+  The metadata is the small half, and none of it is there: no `files` on `client`, `server` or
+  `octoprint-sim`, so a publish would ship `src`, `tests` and `tsconfig.json` as well; no
+  `publishConfig` with `access: public`, which a scoped package needs or npm keeps it private; no
+  `repository` anywhere; and every version is `1.0.0` with nothing bumping them. The `workspace:*`
+  dependencies are fine - yarn rewrites those on publish.
+
 ### Beyond one printer
 
 - [ ] Multi-printer routing — the store and the foreman already carry several, and `printableNow`

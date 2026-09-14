@@ -43,28 +43,25 @@ if [ "$MODE" = package ]; then
   BUILT="$HERE/../server/dist/main.js"
   SERVER=$BUILT
   MANIFEST="$HERE/package.json"
-  PAGE="$HERE/../ui/dist"
+  BUILT_PAGE="$HERE/../ui/dist"
+  PAGE=$BUILT_PAGE
 else
   REPO=$(cd "$HERE/../.." && pwd)
   BUILT="$REPO/packages/server/dist/main.js"
   SERVER="$INSTALL_DIR/packages/server/dist/main.js"
   MANIFEST="$REPO/package.json"
+  BUILT_PAGE="$REPO/packages/ui/dist"
   PAGE="$INSTALL_DIR/packages/ui/dist"
 fi
 
-# AIDEV-NOTE: the page is optional, and a shop without one is a shop that answers its API and serves
-# nothing - which is what an install with no `yarn build` of the ui looks like. Said as an ARGUMENT
-# only when there is something there, because a shop pointed at a directory that is not there would
-# answer every page request with a failure to read index.html.
+# AIDEV-NOTE: always said, because the page is not optional - `requirePage` has already refused an
+# install without one. It used to be left out when the directory was missing, which is how a shop
+# that served nobody anything came up looking like a successful install.
 pageArguments() {
-  [ -d "$PAGE" ] || return 0
-
   printf '    <string>--page</string>\n    <string>%s</string>\n' "$PAGE"
 }
 
 pageOption() {
-  [ -d "$PAGE" ] || return 0
-
   printf ' --page %s' "$PAGE"
 }
 
@@ -101,6 +98,22 @@ asTyped() {
 
 requireRoot() {
   [ "$(id -u)" = 0 ] || refuse "this writes under /var, /etc and /usr/local, so it needs sudo: sudo $(asTyped "$1")"
+}
+
+# AIDEV-NOTE: the page is REQUIRED, and this is where that is enforced. The shop is installed for a
+# person to use and the page is how a person uses it - it is where somebody logs in, watches a
+# machine and gives a verdict on what came off the bed. A shop answering only its API is a shop
+# nobody in the workshop can do any of that with, so it is refused rather than installed and
+# mentioned. Shaped like `requireBuild` below, and for the same reason: each mode is told the remedy
+# it actually has.
+requirePage() {
+  [ -d "$BUILT_PAGE" ] && return 0
+
+  if [ "$MODE" = package ]; then
+    refuse "$BUILT_PAGE is not there - @3d-print-shop/ui is not installed beside this"
+  fi
+
+  refuse "$BUILT_PAGE is not there - run 'yarn install && yarn build' in $REPO first, which builds it"
 }
 
 requireBuild() {
@@ -214,9 +227,9 @@ copiedTheBuild() {
     copiedIn "$REPO/packages/$package/dist" "packages/$package"
   done
 
-  # The page, if it has been built. Files rather than a module: the shop is pointed at the directory
-  # and told nothing about what is in it.
-  if [ -d "$REPO/packages/ui/dist" ]; then copiedIn "$REPO/packages/ui/dist" 'packages/ui'; fi
+  # The page. Files rather than a module: the shop is pointed at the directory and told nothing about
+  # what is in it. Not conditional - `requirePage` has already refused an install without one.
+  copiedIn "$BUILT_PAGE" 'packages/ui'
 }
 
 # AIDEV-NOTE: node_modules whole, symlinks and all. Yarn links a workspace as a RELATIVE symlink
@@ -430,6 +443,7 @@ reading() {
 install() {
   requireRoot install
   requireBuild
+  requirePage
 
   local wanted node
   wanted=$(requiredNode)
@@ -452,11 +466,7 @@ install() {
     say "  $INSTALL_DIR  (root, and readable by everybody - there is nothing secret in it)"
   fi
 
-  if [ -d "$PAGE" ]; then
-    say "  $PAGE  (the page it serves beside the API)"
-  else
-    say '  no page built, so it will answer its API and serve nothing - run yarn build and install again'
-  fi
+  say "  $PAGE  (the page it serves beside the API)"
 
   say 'what supervises it:'
   if [ "$PLATFORM" = macos ]; then
@@ -509,6 +519,7 @@ RUNNING
 update() {
   requireRoot update
   requireBuild
+  requirePage
   [ "$MODE" = checkout ] || refuse 'an installed package is updated by installing it again: sudo npm i -g @3d-print-shop/installer'
   isInstalled || refuse "there is no service to update - run 'sudo $(asTyped install)' first"
 
