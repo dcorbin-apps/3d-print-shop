@@ -53,19 +53,17 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   `portal:../3d-print-shop/packages/client`, which cannot survive a fresh clone that has no shop
   next door
 
-  What has to be settled first is HOW THE PAGE SHIPS, and it is a blocker rather than a detail now
-  that an install without one is refused. Installed from a package, the installer looks for the page
-  in `@3d-print-shop/ui` beside itself - and that package is `private: true` and is not a dependency
-  of the installer, so it can never be there and every npm install would be refused. Three ways out,
-  none free: publish `ui` as a real package and depend on it; build the page into `server` and ship
-  it inside that; or have the installer fetch it. Whichever it is, the page is a CLIENT of the shop,
-  so nothing may make the server resolve it through the ui package - see design/3d-print-shop.md.
+  What is left is the publishing itself, and two things nobody can decide from inside the repository:
+  no package carries a `repository` field, because there is no remote to name; and every version is
+  `1.0.0` with nothing bumping them, which is a release habit rather than a line of code.
 
-  The metadata is the small half, and none of it is there: no `files` on `client`, `server` or
-  `octoprint-sim`, so a publish would ship `src`, `tests` and `tsconfig.json` as well; no
-  `publishConfig` with `access: public`, which a scoped package needs or npm keeps it private; no
-  `repository` anywhere; and every version is `1.0.0` with nothing bumping them. The `workspace:*`
-  dependencies are fine - yarn rewrites those on publish.
+  How the page ships is settled - `ui` is a package of its own, and the installer depends on it. See
+  design/3d-print-shop.md, "How the page reaches a machine", for why it is that rather than built
+  into the server.
+
+  One scrap to tidy when somebody is next in there: `octoprint-sim` emits
+  `dist/octoprint-sim/tests/tsconfig.tsbuildinfo`, so its tests' tsconfig is writing into `dist`.
+  Harmless, and it would be shipped.
 
 ### Beyond one printer
 

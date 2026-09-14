@@ -37,6 +37,7 @@ __metadata:
   resolution: "@3d-print-shop/installer@workspace:packages/installer"
   dependencies:
     "@3d-print-shop/server": "workspace:*"
+    "@3d-print-shop/ui": "workspace:*"
   bin:
     3d-print-shop-install: ./install.sh
   languageName: unknown
@@ -75,7 +76,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@3d-print-shop/ui@workspace:packages/ui":
+"@3d-print-shop/ui@workspace:*, @3d-print-shop/ui@workspace:packages/ui":
   version: 0.0.0-use.local
   resolution: "@3d-print-shop/ui@workspace:packages/ui"
   dependencies:

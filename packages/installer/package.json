@@ -18,7 +18,8 @@
     "test": "echo \"tests run from root\" && exit 0"
   },
   "dependencies": {
-    "@3d-print-shop/server": "workspace:*"
+    "@3d-print-shop/server": "workspace:*",
+    "@3d-print-shop/ui": "workspace:*"
   },
   "engines": {
     "node": ">=24.16 <25"

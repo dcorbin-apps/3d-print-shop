@@ -604,6 +604,21 @@ reaches the API through `@3d-print-shop/client` exactly as a slicer would, and a
 resolved the page's files through the ui package would be the server depending on one of its
 clients. The dependency runs one way, and pointing it at a path is what keeps it that way.
 
+**How the page reaches a machine.** It is a package of its own, `@3d-print-shop/ui`, and the thing
+that depends on it is the INSTALLER - which is already what knows about both halves, because wiring
+a service together is what it is for. The server never learns the page exists; it is handed a path.
+
+The other two ways were weighed and cost more than they bought. Building the page into the server
+gives one artifact that can never skew, and pays for it by making the server's build depend on a
+client, which is the direction that may never run - the runtime rule would survive and the invariant
+would not. Having the installer fetch it keeps both packages clean and puts a network fetch into a
+script that has never had one, which buys offline failures and a checksum nobody has written, in the
+one tool whose whole doctrine is that it refuses rather than guesses.
+
+What the chosen way costs is a package nobody imports - its only reader is a shell script copying
+`dist` - and a version that has to be pinned exactly, so a page and an API cannot drift apart on one
+machine.
+
 And it is served without a credential, because the page nobody has logged in to yet is the page they
 log in ON. There is nothing in it worth protecting - a bundle and a stylesheet - and requiring one
 would be a login screen that cannot be fetched without having logged in.
