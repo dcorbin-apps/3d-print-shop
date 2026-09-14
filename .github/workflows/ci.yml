@@ -49,15 +49,18 @@ jobs:
 
       - run: yarn lint
 
-      # AIDEV-NOTE: BEFORE typecheck and before the tests, and neither is tidiness. `dist/` is
-      # gitignored, so a fresh checkout has none - and the packages resolve each OTHER through it:
-      # every `exports` map points at `dist`, so `@3d-print-shop/client/browser` is a missing module
-      # to tsc until the client has been built. The tests that spawn a command line reach the shop
-      # through the built client too, so without this they would be testing what is not there.
-      # Measured, not assumed: `yarn typecheck` in a fresh clone is a wall of TS2307.
+      # AIDEV-NOTE: BEFORE the tests, and not for tidiness. `dist/` is gitignored, so a fresh
+      # checkout has none - and the packages resolve each OTHER through it: every `exports` map
+      # points at `dist`, so `@3d-print-shop/client/browser` is a missing module until the client has
+      # been built. The tests that spawn a command line reach the shop through the built client too,
+      # so without this they would be testing what is not there.
+      #
+      # AIDEV-NOTE: and no `yarn typecheck` step, because this IS the typecheck. That script is a
+      # shortcut for a person who wants an answer without waiting for an emit; here the emit happens
+      # anyway. What it covers that this does not is the TEST sources - and ts-jest typechecks those
+      # as it compiles them, so a type error in a test fails the run below. The only thing neither
+      # reaches is a test helper no test imports, which is worth less than the minute.
       - run: yarn build
-
-      - run: yarn typecheck
 
       # Unit and acceptance tests. Steps of their own rather than one line, so a red X says which
       # kind of answer went wrong before anybody opens the log.
