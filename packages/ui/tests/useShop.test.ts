@@ -1,7 +1,7 @@
 import { describe, it, expect, jest, afterEach, beforeEach } from '@jest/globals';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import type { Caller, RegisteredPrinter } from '@3d-print-shop/client/browser';
-import { POLL_MS, useShop } from '../src/useShop';
+import { useShop } from '../src/useShop';
 
 // AIDEV-NOTE: the shop is reached through the real HttpShop, so what is faked is the one thing below
 // it that a test cannot have - the network. `fetch` is replaced and nothing else is, which keeps the
@@ -122,11 +122,6 @@ describe('what the page keeps asking the shop', () => {
       await waitFor(() => expect(result.current.jobs).toHaveLength(1));
 
       fetching.mockResolvedValue(answering({}, 401));
-      await act(async () => {
-        jest.advanceTimersByTime(POLL_MS);
-        await Promise.resolve();
-      });
-
       await waitFor(() => expect(result.current.jobs).toHaveLength(0));
     });
   });
@@ -139,11 +134,6 @@ describe('what the page keeps asking the shop', () => {
       await waitFor(() => expect(result.current.jobs).toHaveLength(1));
 
       fetching.mockRejectedValue(new Error('connection refused'));
-      await act(async () => {
-        jest.advanceTimersByTime(POLL_MS);
-        await Promise.resolve();
-      });
-
       await waitFor(() => expect(result.current.trouble).toContain('Cannot reach the print shop'));
       expect(result.current.jobs).toHaveLength(1);
     });
@@ -154,11 +144,6 @@ describe('what the page keeps asking the shop', () => {
       await waitFor(() => expect(result.current.trouble).toBeDefined());
 
       answersEverything();
-      await act(async () => {
-        jest.advanceTimersByTime(POLL_MS);
-        await Promise.resolve();
-      });
-
       await waitFor(() => expect(result.current.caller).toEqual(DAVE));
     });
   });
