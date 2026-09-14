@@ -210,16 +210,24 @@ describe('the commands an operator types', () => {
   });
 
   // AIDEV-NOTE: the default way a command reaches the shop, which every test above replaces - so
-  // without this the one line that reads `--shop-url` is the one line nothing looks at. Asked of a
-  // port nothing is on, because a client that cannot reach a shop says WHICH shop it could not
-  // reach, and that names the url it was built with.
+  // without this the one line that reads `--shop-url` is the one line nothing looks at. A client that
+  // cannot reach a shop says WHICH shop it could not reach, and that names the url it was built with.
+  //
+  // AIDEV-NOTE: the failure is HANDED IN rather than had by asking a port nothing is on, which is
+  // what this used to do. The default url is the port a shop really runs on, so the second of these
+  // reached the shop on the machine it was being written on and was answered 401 - a test that passed
+  // only while nobody was running the thing it is about. Injected, the url is still built by the real
+  // `reachTheShop` and still read back out of the real client's complaint; what is gone is the
+  // socket, which was never the claim.
   describe('the client a command reaches the shop with by default', () => {
+    const nothingThere: typeof fetch = () => Promise.reject(new Error('nothing is listening'));
+
     it('is pointed where --shop-url says', async () => {
-      await expect(reachTheShop({ shopUrl: 'http://127.0.0.1:1' }).jobs()).rejects.toThrow('http://127.0.0.1:1');
+      await expect(reachTheShop({ shopUrl: 'http://127.0.0.1:1' }, nothingThere).jobs()).rejects.toThrow('http://127.0.0.1:1');
     });
 
     it('is pointed where a client decides when nobody said', async () => {
-      await expect(reachTheShop({}).jobs()).rejects.toThrow(defaultShopUrl());
+      await expect(reachTheShop({}, nothingThere).jobs()).rejects.toThrow(defaultShopUrl());
     });
   });
 
