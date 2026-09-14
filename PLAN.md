@@ -12,11 +12,17 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The service
 
-- [ ] Stream a plate to the printer rather than reading it whole. `send` in `OctoPrint.ts` builds the
-  upload with `FormData`, which wants a Blob, and a Blob wants its bytes - so a gcode the shop was
-  careful never to hold while STORING it is held whole while sending it, up to `maxGcodeBytes` and
-  128MB by default. Streaming it means writing the multipart body by hand. Worth doing when a plate
-  is big enough to notice, and nothing has measured that yet
+- [ ] FUTURE - not a near-term task. Stream a plate to the printer rather than reading it whole.
+  `send` in `OctoPrint.ts` builds the upload with `FormData`, which wants a Blob, and a Blob wants its
+  bytes - so a gcode the shop was careful never to hold while STORING it is held whole while sending
+  it, up to `maxGcodeBytes` and 128MB by default. No plate here has been big enough to notice, and
+  nothing has measured one.
+
+  Two things are settled already, so whoever picks it up need not find them out again: node's `fetch`
+  takes a streamed body (`duplex: 'half'`), so the work is the multipart framing rather than a fight
+  with the HTTP client; and the body's length is arithmetic rather than chunked, because `gcodeBytes`
+  is on the job record and `startNextPrint` is holding the job when it calls `send` - which avoids
+  having to find out what OctoPrint makes of a chunked upload
 
 - [ ] The shop can say when IT is in trouble, rather than only what each printer is doing. A store
   or data-directory fault is nobody's printer's fault and now stops nothing, so a log line is all there is -
