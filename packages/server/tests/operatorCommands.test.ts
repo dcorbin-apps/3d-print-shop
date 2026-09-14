@@ -33,6 +33,7 @@ describe('the commands an operator types', () => {
   let shop: Shop;
   let said: string[];
   let reachedWith: { shopUrl?: string }[];
+  let complained: string[];
 
   const mk4: RegisteredPrinter = {
     name: 'mk4',
@@ -53,7 +54,7 @@ describe('the commands an operator types', () => {
   });
 
   const typed = (line: string): Promise<number> =>
-    run(['node', 'shop', ...line.split(' ').filter((word) => word !== '')], () => undefined, {
+    run(['node', 'shop', ...line.split(' ').filter((word) => word !== '')], (message) => complained.push(message), {
       say: (lines) => said.push(...lines),
       reach: (options) => {
         reachedWith.push(options);
@@ -65,6 +66,7 @@ describe('the commands an operator types', () => {
   beforeEach(() => {
     said = [];
     reachedWith = [];
+    complained = [];
 
     mockJobs = jest.fn<Shop['jobs']>();
     mockJobs.mockResolvedValue({ accessibleJobs: [], totalJobs: 0 } satisfies JobsHeld);
@@ -139,6 +141,15 @@ describe('the commands an operator types', () => {
     it('refuses an id that is not one, without asking the shop', async () => {
       expect(await typed('job approve seven')).toBe(1);
       expect(mockVerdict).not.toHaveBeenCalled();
+    });
+
+    // AIDEV-NOTE: commander writes its OWN complaints, and it wrote them straight at the process -
+    // around the sink `run` was handed. A caller that asked for the output went unheard for exactly
+    // the messages it had least say over, and this suite printed one into every test run.
+    it('says why through whoever asked for the output, rather than past them', async () => {
+      await typed('job approve seven');
+
+      expect(complained.join('\n')).toContain('cannot read "seven" as a job id');
     });
   });
 

@@ -44,6 +44,12 @@ export interface CliParts {
   // can be asked without a terminal.
   /** How a command asks for a password nobody has set yet. */
   ask?: () => Promise<string>;
+  // AIDEV-NOTE: the shop's LOG, which is not `say` and must not become it: `say` is a command's
+  // answer to whoever typed it, and this is the running record a supervisor captures. `Groundwork`
+  // has taken one since it was written - what it did not have was a way through from here, so a test
+  // that served a shop printed its whole log into the test run and could not ask what it said.
+  /** Where the lines of a served shop's log go. Stdout unless something else is asked for. */
+  writing?: (line: string) => void;
 }
 
 // AIDEV-NOTE: the default `reach`, named so that what it makes of `--shop-url` can be asked. Left
@@ -53,7 +59,7 @@ export function reachTheShop(options: { shopUrl?: string }, howToReach?: typeof 
   return new HttpShop(options.shopUrl ?? defaultShopUrl(), defaultToken(), howToReach);
 }
 
-export function createCLI({ reach, say: told, ask }: CliParts = {}): Command {
+export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Command {
   const program = new Command();
   const shop = reach ?? reachTheShop;
 
@@ -82,7 +88,7 @@ export function createCLI({ reach, say: told, ask }: CliParts = {}): Command {
     .action(async (options: { port: number; listen?: string; data?: string; maxGcode?: number; etc?: string; page?: string }) => {
       // Everything that has to be true before a request is answered, in the order it has to be true
       // in - and every refusal it can make is asked for directly in tests/foundations.test.ts.
-      const foundations = await layTheFoundations(options);
+      const foundations = await layTheFoundations({ ...options, writing });
       const { where, store, etc, log, releaseData, holding } = foundations;
       // Both change while the shop runs - a SIGHUP re-reads them, and a printer added over the API
       // brings a key with it - so they are what this process HOLDS rather than what it read once.
@@ -348,6 +354,19 @@ function overrideExits(command: Command): void {
   command.commands.forEach(overrideExits);
 }
 
+// AIDEV-NOTE: commander writes its OWN complaints - a bad argument, an unknown option - and it wrote
+// them straight at the process, around whatever sink `run` was handed. So a caller that asked for
+// its output went unheard for exactly the messages it had least control over, and a test that meant
+// to swallow one printed it into the run instead.
+//
+// Every command rather than the root, and for the reason `overrideExits` is: a subcommand raises its
+// own argument errors, and the ones here were built before this is called, so nothing is inherited.
+// The newline is commander's; `complain` is given a message and decides its own line endings.
+function writeErrorsTo(command: Command, complain: (message: string) => void): void {
+  command.configureOutput({ writeErr: (said) => complain(said.replace(/\n$/, '')) });
+  command.commands.forEach((under) => writeErrorsTo(under, complain));
+}
+
 export async function run(argv: string[], complain: (message: string) => void = console.error, parts: CliParts = {}): Promise<number> {
   const cli = createCLI(parts);
 
@@ -367,6 +386,7 @@ export async function run(argv: string[], complain: (message: string) => void = 
   // Every command, not just the root: a subcommand raises its own argument errors, and the ones here
   // were built before this call, so nothing was inherited.
   overrideExits(cli);
+  writeErrorsTo(cli, complain);
 
   try {
     // AIDEV-NOTE: parseAsync, not parse - commander only awaits an action's returned promise in the

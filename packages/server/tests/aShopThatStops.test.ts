@@ -39,6 +39,9 @@ describe('a shop asked to stop', () => {
   const serving = async (): Promise<void> => {
     await run(['node', 'shop', 'serve', '--data', parentOf(where), '--etc', etc, '--port', '0'], () => undefined, {
       say: (lines) => said.push(...lines),
+      // Dropped rather than read: what a serving shop writes down is log.test.ts's to ask about.
+      // What matters here is that it has somewhere to go that is not the test's own output.
+      writing: () => undefined,
     });
 
     const listening = /listening on (\S+):(\d+)/.exec(said.join('\n'));
