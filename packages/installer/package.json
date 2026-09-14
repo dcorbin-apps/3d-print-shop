@@ -5,6 +5,11 @@
   "description": "Installs 3d-print-shop as a service: the user that owns its work, the directories it keeps it in, and launchd or systemd to run it",
   "author": "dcorbin",
   "license": "PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dcorbin-apps/3d-print-shop.git",
+    "directory": "packages/installer"
+  },
   "bin": {
     "3d-print-shop-install": "./install.sh"
   },

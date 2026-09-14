@@ -20,6 +20,10 @@
   "keywords": [],
   "author": "dcorbin",
   "license": "PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dcorbin-apps/3d-print-shop.git"
+  },
   "description": "A service that takes print jobs and gets them onto a printer",
   "devDependencies": {
     "@jest/globals": "^29.4.5",
