@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { TOKEN_ENV, defaultToken, defaultTokenFile } from '../src/token';
+import { TOKEN_ENV, UnusableToken, defaultToken, defaultTokenFile } from '../src/token';
 import { DEFAULT_SHOP_URL, SHOP_URL_ENV, defaultShopUrl } from '../src/shopUrl';
 
 // AIDEV-NOTE: a caller's own token is ONE string belonging to whoever is calling rather than to the
@@ -43,6 +43,45 @@ describe('the token a client presents', () => {
       delete process.env.XDG_CONFIG_HOME;
 
       expect(defaultTokenFile()).toMatch(/\.config[/\\]3d-print-shop[/\\]token$/);
+    });
+  });
+
+  // AIDEV-NOTE: what is in that file is a BEARER credential - whoever presents it is that caller,
+  // and on an ordinary install it is the first admin's - so a mode that lets anybody else read it is
+  // the whole of the protection gone while every command still works. Refused rather than ignored:
+  // ignoring it answers 401 with the right token sitting on disk, which sends somebody looking
+  // anywhere but at the mode.
+  describe('a token file somebody else can read', () => {
+    const writtenAt = async (mode: number): Promise<void> => {
+      await writeFile(path.join(config, '3d-print-shop', 'token'), 'a token', { mode });
+    };
+
+    it('is refused rather than presented', async () => {
+      await writtenAt(0o644);
+
+      expect(() => defaultToken()).toThrow(UnusableToken);
+    });
+
+    // Group as much as everybody: what matters is that nobody ELSE can read it.
+    it('is refused for a group it was shared with too', async () => {
+      await writtenAt(0o640);
+
+      expect(() => defaultToken()).toThrow(UnusableToken);
+    });
+
+    it('says which file and what its mode is, because that is the thing to be put right', async () => {
+      await writtenAt(0o644);
+
+      expect(() => defaultToken()).toThrow(defaultTokenFile());
+      expect(() => defaultToken()).toThrow('644');
+    });
+
+    // The file is not the thing being used, so what it is set to is nobody's business.
+    it('is not looked at when the environment named a token', async () => {
+      await writtenAt(0o644);
+      process.env[TOKEN_ENV] = 'the one in the environment';
+
+      expect(defaultToken()).toBe('the one in the environment');
     });
   });
 

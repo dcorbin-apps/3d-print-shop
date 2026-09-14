@@ -31,6 +31,11 @@ file, and read an environment variable for the shop's URL.
 
 ## Running one
 
+**macOS and Linux.** The shop is a Unix service and is built as one: the installer makes a system
+user and a `launchd` or `systemd` daemon, the directories it keeps its work in are judged by their
+mode, and a credential is refused if anybody but its owner can read it. None of that has a meaning
+on Windows, which is not a target and is not tested.
+
 ```
 yarn install
 yarn build
