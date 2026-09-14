@@ -1,0 +1,59 @@
+name: Publish
+
+# AIDEV-NOTE: a pushed tag and nothing else. A release is a deliberate act - there is no version to
+# publish that somebody did not first write into the manifests and commit - so the thing that starts
+# it is the thing that says which version this is.
+on:
+  push:
+    tags: ['v*']
+
+# Never two at once, and never cancelled part way: half a release is five packages of which some are
+# on the registry and some are not, and the ones that landed cannot be taken back.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # AIDEV-NOTE: what makes this work without a secret. npm exchanges a token minted here for a
+  # short-lived publish token - trusted publishing - and sigstore signs the provenance with one too.
+  # There is no NPM_TOKEN in this repository, and that is the point: a long-lived credential in a
+  # secret is a credential that can leak, and this one lives for the length of one job.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - run: corepack enable
+
+      # AIDEV-NOTE: deliberately no `registry-url`. It writes an .npmrc naming an auth token from the
+      # environment, and there is no token here - npm finds the registry by default and finds its
+      # credentials through OIDC. Trusted publishing wants a recent npm, so the version is said out
+      # loud: if a run ever fails asking for auth, that line and this note are where to start.
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - run: npm --version
+
+      - run: yarn install --immutable
+
+      # Before anything is built or run, because it costs a second and the thing it catches - a tag
+      # pushed without the bump - cannot be undone once a version has gone to the registry.
+      - run: node scripts/tag-matches-manifests.mjs "$GITHUB_REF_NAME"
+
+      # AIDEV-NOTE: the same gate CI runs, run again. A tag can sit on a commit CI never saw - pushed
+      # before it finished, or onto something older - and publishing is the one thing here that
+      # cannot be taken back. Minutes against a version that is spent for good.
+      - run: yarn lint
+      - run: yarn build
+      - run: yarn test
+      - run: yarn assumptions
+
+      - run: ./scripts/publish.sh
