@@ -35,22 +35,16 @@ done
 into=$(mktemp -d)
 trap 'rm -rf "$into"' EXIT
 
+# AIDEV-NOTE: read into a list FIRST, and then walked with a `for`. A `while read ... done < <(...)`
+# gives the loop the listing as its standard input, and every command inside inherits it - so npm
+# asking for a one-time password would read the next package's line instead of what somebody typed,
+# and an account with two-factor authentication could not be published from at all. The first publish
+# of each package is exactly the one that has to happen by hand, at a terminal, with that prompt.
+names=()
+locations=()
 while read -r name location; do
-  tarball="$into/${name//\//-}.tgz"
-
-  ( cd "$location" && yarn pack -o "$tarball" >/dev/null )
-  echo "packed $name from $location"
-
-  if [ "$dry" = "--dry-run" ]; then
-    npm publish "$tarball" --access public --dry-run
-  else
-    # AIDEV-NOTE: no `--provenance`. Publishing this way generates it anyway - npm attests every
-    # trusted publish from Actions without being asked - and asking for it explicitly is what breaks
-    # the ONE publish that cannot happen here: the first. A package has to exist before npm will let
-    # a trusted publisher be attached to it, so version one goes up by hand, from a machine, where
-    # there is no OIDC token to sign anything with and the flag is an error rather than a wish.
-    npm publish "$tarball" --access public
-  fi
+  names+=("$name")
+  locations+=("$location")
 done < <(yarn workspaces list --no-private --json | node -e '
   let said = "";
   process.stdin.on("data", (piece) => (said += piece)).on("end", () => {
@@ -60,3 +54,23 @@ done < <(yarn workspaces list --no-private --json | node -e '
     }
   });
 ')
+
+for at in "${!names[@]}"; do
+  name=${names[$at]}
+  location=${locations[$at]}
+  tarball="$into/${name//\//-}.tgz"
+
+  ( cd "$location" && yarn pack -o "$tarball" >/dev/null )
+  echo "packed $name from $location"
+
+  if [ "$dry" = "--dry-run" ]; then
+    npm publish "$tarball" --access public --dry-run
+  else
+    # AIDEV-NOTE: no `--provenance`. Publishing from Actions generates it anyway - npm attests every
+    # trusted publish without being asked - and asking for it explicitly is what breaks the ONE
+    # publish that cannot happen there: the first. A package has to exist before npm will let a
+    # trusted publisher be attached to it, so version one goes up by hand, from a machine, where
+    # there is no OIDC token to sign anything with and the flag is an error rather than a wish.
+    npm publish "$tarball" --access public
+  fi
+done
