@@ -149,7 +149,9 @@ describe('the commands an operator types', () => {
     it('says why through whoever asked for the output, rather than past them', async () => {
       await typed('job approve seven');
 
-      expect(complained.join('\n')).toContain('cannot read "seven" as a job id');
+      // The whole of it, not a fragment: what was wrong with the old one was the half in FRONT of
+      // this sentence, so a test that only looked for the sentence would have passed either way.
+      expect(complained).toEqual(['cannot read "seven" as a job id']);
     });
   });
 

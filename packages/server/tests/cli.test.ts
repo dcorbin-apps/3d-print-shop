@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { InvalidArgumentError } from 'commander';
-import { createCLI, readMegabytes, readJobId, readRole, readPort, run, unknownCommandIn } from '../src/cli';
+import { createCLI, ourSentenceIn, readJobId, readMegabytes, readPort, readRole, run, unknownCommandIn } from '../src/cli';
 
 // AIDEV-NOTE: commander answers a --help anywhere in argv before deciding whether the command in
 // front of it exists, so a typo that happens to carry one was answered with help and exit 0 - which
@@ -161,5 +161,48 @@ describe('reading the role an operator typed', () => {
 
   it.each([['Admin'], ['ADMIN'], ['operator'], [''], ['admin ']])('will not read %j as one', (said) => {
     expect(() => readRole(said)).toThrow('a role is "admin" or "user"');
+  });
+
+  // AIDEV-NOTE: the two shapes commander composes are pinned in
+  // tests/assumptions/whatCommanderSays.test.ts, because they are its wording and not ours. What is
+  // asked here is what this shop does with them: takes its sentence off and leaves the one a parser
+  // wrote, which is how every rule checked anywhere else already reads.
+  describe('the sentence an operator is left with', () => {
+    it('drops what commander said about an argument', () => {
+      expect(ourSentenceIn(`error: command-argument value 'seven' is invalid for argument 'id'. cannot read "seven" as a job id`)).toBe(
+        'cannot read "seven" as a job id'
+      );
+    });
+
+    it('drops what it said about an option, which it words differently', () => {
+      expect(ourSentenceIn(`error: option '--port <port>' argument 'abc' is invalid. cannot read "abc" as a port`)).toBe(
+        'cannot read "abc" as a port'
+      );
+    });
+
+    // Its own complaints are its to word. The shop raises one of these itself, in the same words, so
+    // that an unknown command and an unknown option read alike.
+    it.each([["error: unknown option '--nope'"], ["error: missing required argument 'id'"], ["error: unknown command 'wibble'"]])(
+      'leaves %p exactly as commander wrote it',
+      (line) => {
+        expect(ourSentenceIn(line)).toBe(line);
+      }
+    );
+
+    // AIDEV-NOTE: only commander's half, however our half is punctuated. Matched greedily this runs
+    // to the LAST full stop in the line and takes the first sentence of the parser's message with
+    // it - which no message here would have shown, because none of them has a full stop in it yet.
+    it('takes its half only, even when ours has a full stop of its own', () => {
+      const composed = `error: command-argument value 'x' is invalid for argument 'id'. a job id counts from one. "x" does not`;
+
+      expect(ourSentenceIn(composed)).toBe('a job id counts from one. "x" does not');
+    });
+
+    // A sentence of ours that was never composed into one of commander's is nobody's to trim.
+    it('leaves a sentence that arrived on its own alone', () => {
+      const said = 'cannot read "250x210" as a build volume - expected <width>x<depth>x<height> in mm';
+
+      expect(ourSentenceIn(said)).toBe(said);
+    });
   });
 });

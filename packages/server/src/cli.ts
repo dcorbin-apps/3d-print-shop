@@ -354,6 +354,27 @@ function overrideExits(command: Command): void {
   command.commands.forEach(overrideExits);
 }
 
+// AIDEV-NOTE: what commander composes when a PARSER of ours refuses a value: its own sentence about
+// the argument, and then ours after it. `error: command-argument value 'seven' is invalid for
+// argument 'id'. cannot read "seven" as a job id` is one fact said twice, in two voices, quoting the
+// value two different ways - and it never says what a job id IS, which is the half an operator
+// needs. Every parser here writes a sentence that stands on its own, so the half commander composed
+// comes off and what is read is the one this shop wrote. That is also what an operator already gets
+// when a rule is checked anywhere but a parser: `cannot read "250x210" as a build volume - expected
+// <width>x<depth>x<height> in mm`, with no prefix in front of it.
+//
+// NOT commander's own structural complaints - an unknown option, a missing argument - which are its
+// to word, and are worded the way `run` words the one it raises itself.
+//
+// Reworded upstream this stops matching and the composed sentence goes out whole, which is what it
+// does today - degraded rather than broken. Pinned in tests/assumptions/whatCommanderSays.test.ts.
+const COMPOSED_BY_COMMANDER = /^error: (?:command-argument value .+? is invalid for argument .+?|option .+? argument .+? is invalid)\. /;
+
+/** Commander's sentence about one of our parsers, taken off the front of the parser's own. */
+export function ourSentenceIn(said: string): string {
+  return said.replace(COMPOSED_BY_COMMANDER, '');
+}
+
 // AIDEV-NOTE: commander writes its OWN complaints - a bad argument, an unknown option - and it wrote
 // them straight at the process, around whatever sink `run` was handed. So a caller that asked for
 // its output went unheard for exactly the messages it had least control over, and a test that meant
@@ -363,7 +384,7 @@ function overrideExits(command: Command): void {
 // own argument errors, and the ones here were built before this is called, so nothing is inherited.
 // The newline is commander's; `complain` is given a message and decides its own line endings.
 function writeErrorsTo(command: Command, complain: (message: string) => void): void {
-  command.configureOutput({ writeErr: (said) => complain(said.replace(/\n$/, '')) });
+  command.configureOutput({ writeErr: (said) => complain(ourSentenceIn(said.replace(/\n$/, ''))) });
   command.commands.forEach((under) => writeErrorsTo(under, complain));
 }
 
