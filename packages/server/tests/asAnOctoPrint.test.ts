@@ -3,6 +3,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import { OCTOPRINT_PREFIX } from '@3d-print-shop/client';
 import { createApi } from '../src/api';
+import { whatToCallIt } from '../src/asAnOctoPrint';
 import { Callers } from '../src/credentials';
 import { JobStore } from '../src/JobStore';
 import { digestOf } from '../src/secrets';
@@ -78,10 +79,10 @@ describe('the shop wearing a protocol it borrowed', () => {
     expect(job).toMatchObject({ filaments: ['PLA-SpaceGray'], estimatedPrintSeconds: 5400, state: 'queued', owner: 'dave' });
   });
 
-  it('names the job after the file that arrived', async () => {
-    await upload(A_PLATE, 'player-box.gcode');
+  it('names the job after the file that arrived, in the words a person would use', async () => {
+    await upload(A_PLATE, 'ClampDock_0.4n_0.2mm_PLA_MK4IS_6m.gcode');
 
-    expect((await shop.all())[0].displayName).toBe('player-box.gcode');
+    expect((await shop.all())[0].displayName).toBe('ClampDock');
   });
 
   it('takes the bed the plate was sliced for as the room it needs', async () => {
@@ -161,5 +162,38 @@ describe('the shop wearing a protocol it borrowed', () => {
 
     expect(said.files.local.refs.resource).toContain(`${OCTOPRINT_PREFIX}/api/files/local/tray.gcode`);
     expect(said.job.id).toBe(((await shop.all())[0] as Job).id);
+  });
+
+  // AIDEV-NOTE: (UT) over a string. What a slicer's default template actually produces is pinned by
+  // the real plate in tests/assumptions; this is what the shop makes of such a name.
+  describe('what to call a job that arrived as a file', () => {
+    it('keeps the model and drops what it was sliced with', () => {
+      expect(whatToCallIt('ClampDock_0.4n_0.2mm_PLA_MK4IS_6m.gcode')).toBe('ClampDock');
+    });
+
+    it('recognises the template by its layer height alone', () => {
+      expect(whatToCallIt('Tray_0.2mm_PETG_MK4_2h.gcode')).toBe('Tray');
+    });
+
+    // A person who named a file `Player_Box` meant two words, and cutting at the first underscore
+    // would leave them with `Player`.
+    it('leaves a name that was not sliced from a template whole, with its underscores as spaces', () => {
+      expect(whatToCallIt('Player_Box_v2.gcode')).toBe('Player Box v2');
+    });
+
+    it('drops the extension whatever else it does', () => {
+      expect(whatToCallIt('cube.gcode')).toBe('cube');
+      expect(whatToCallIt('cube.GCODE')).toBe('cube');
+    });
+
+    it('takes a name with no extension at all', () => {
+      expect(whatToCallIt('cube')).toBe('cube');
+    });
+
+    // Undefined rather than empty, so the shop names it the way it names anything it was not told.
+    it('says nothing when there is nothing left to call it', () => {
+      expect(whatToCallIt('.gcode')).toBeUndefined();
+      expect(whatToCallIt('_0.4n_0.2mm_PLA.gcode')).toBeUndefined();
+    });
   });
 });

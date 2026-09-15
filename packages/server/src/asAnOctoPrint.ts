@@ -58,7 +58,7 @@ export function serveAsAnOctoPrint(api: Express, prefix: string, what: AnOctoPri
   });
 
   api.post(`${prefix}/api/files/local`, async (request, response) => {
-    const job = await takeAPlate(what, request, request.caller.id);
+    const { job, filename } = await takeAPlate(what, request, request.caller.id);
 
     log.info('a plate arrived over the borrowed protocol', {
       job: job.id,
@@ -68,7 +68,7 @@ export function serveAsAnOctoPrint(api: Express, prefix: string, what: AnOctoPri
       owner: job.owner,
     });
 
-    response.status(201).json(answerFor(request, prefix, job));
+    response.status(201).json(answerFor(request, prefix, job, filename));
   });
 
   // AIDEV-NOTE: the point past which this stops pretending. These commands mean START NOW and STOP
@@ -84,10 +84,10 @@ export function serveAsAnOctoPrint(api: Express, prefix: string, what: AnOctoPri
 // has to be this way round here: what the job needs is written INSIDE the plate, so there is nothing
 // to judge until the bytes have been read. The cost is that the plate is written twice, and that a
 // submission nothing can take is answered only once it has all arrived.
-function takeAPlate(what: AnOctoPrint, request: Request, owner: string): Promise<Job> {
+function takeAPlate(what: AnOctoPrint, request: Request, owner: string): Promise<Taken> {
   const parked = path.join(what.spool, `${randomUUID()}.gcode`);
 
-  return new Promise<Job>((resolve, reject) => {
+  return new Promise<Taken>((resolve, reject) => {
     const parts = busboy({ headers: request.headers, limits: { files: 1, fileSize: what.shop.maxGcodeBytes } });
     let landed: Promise<string> | undefined;
 
@@ -116,13 +116,37 @@ function takeAPlate(what: AnOctoPrint, request: Request, owner: string): Promise
       // is empty when the answer goes out and one that is empty shortly afterwards - which is a
       // shop that reports a job while still holding a second copy of it.
       landed
-        .then((filename) => submitWhatArrived(what.shop, parked, filename, owner))
+        .then(async (filename) => ({ job: await submitWhatArrived(what.shop, parked, filename, owner), filename }))
         .finally(() => rm(parked, { force: true }))
         .then(resolve, reject);
     });
 
     request.pipe(parts);
   });
+}
+
+// AIDEV-NOTE: what a slicer calls a file is not what a person calls a job. The default output name
+// is a template - the model, and then the settings it was sliced with - which is exactly right on a
+// disk full of variants and noise in a queue, where the printer and the filament are already columns
+// of their own.
+//
+// The templated part is recognised by its NOZZLE or LAYER HEIGHT segment (`0.4n`, `0.2mm`), which is
+// the part of that template no ordinary name has in it. Recognised, everything from the first
+// underscore goes; not recognised, the name is left whole and its underscores become spaces, because
+// a person who named a file `Player_Box` meant two words. Doing the first to every name would cut
+// `Player_Box_v2` down to `Player`.
+const SLICED_WITH = /^\d+(\.\d+)?(n|mm)$/;
+
+/** What to call a job that arrived as a file, in the words a person would use for it. */
+export function whatToCallIt(filename: string): string | undefined {
+  const withoutSuffix = filename.replace(/\.gcode$/i, '');
+  const [first, ...rest] = withoutSuffix.split('_');
+
+  const named = rest.some((segment) => SLICED_WITH.test(segment)) ? (first ?? '') : withoutSuffix.replace(/_/g, ' ');
+
+  // Nothing left to call it by - a file named `.gcode`, or `_0.4n_...` with no model in front of it.
+  // Undefined rather than empty, so the shop names it the way it names anything else it was not told.
+  return named.trim() === '' ? undefined : named.trim();
 }
 
 async function submitWhatArrived(shop: JobStore, parked: string, filename: string, owner: string): Promise<Job> {
@@ -148,7 +172,7 @@ async function submitWhatArrived(shop: JobStore, parked: string, filename: strin
 
   const details: JobDetails = {
     filaments: plate.filaments,
-    displayName: filename,
+    displayName: whatToCallIt(filename),
     estimatedPrintSeconds: plate.estimatedPrintSeconds,
     requiredBuildVolume: plate.requiredBuildVolume,
   };
@@ -187,19 +211,29 @@ async function readAt(handle: Awaited<ReturnType<typeof open>>, from: number, le
   return into.toString('utf8');
 }
 
+/** A plate taken in: the job it became, and the name the caller sent it under. */
+interface Taken {
+  job: Job;
+  filename: string;
+}
+
 // AIDEV-NOTE: built from what reached the shop rather than from a name it was configured with, for
 // the reason every other absolute URL here is - the shop does not know its own name. The PREFIX has
 // to be in them or a caller following one lands on the page instead of on this.
-function answerFor(request: Request, prefix: string, job: Job): unknown {
-  const at = `${request.protocol}://${request.get('host') ?? ''}${prefix}/api/files/local/${encodeURIComponent(job.displayName)}`;
+//
+// The FILENAME and not the job's name. This half of the answer is the borrowed protocol describing
+// the file a caller just sent, which is the name it sent it under; what the shop decided to call the
+// job is a different fact and is in `job` below, where a caller that cares can see both.
+function answerFor(request: Request, prefix: string, job: Job, filename: string): unknown {
+  const at = `${request.protocol}://${request.get('host') ?? ''}${prefix}/api/files/local/${encodeURIComponent(filename)}`;
 
   return {
     done: true,
     files: {
-      local: { name: job.displayName, path: job.displayName, origin: 'local', refs: { resource: at, download: at } },
+      local: { name: filename, path: filename, origin: 'local', refs: { resource: at, download: at } },
     },
     // Said beside the answer a caller expects, because what actually happened is not what the shape
     // above can say: the plate is queued, and the shop starts it when something can.
-    job: { id: job.id, state: job.state, filaments: job.filaments },
+    job: { id: job.id, displayName: job.displayName, state: job.state, filaments: job.filaments },
   };
 }

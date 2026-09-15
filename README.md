@@ -467,6 +467,14 @@ the right number: a plate's coordinates include the prime line, the skirt and th
 placed against the bed it was sliced for. The object's own extent is the unsafe number, and is
 deliberately not what is read.
 
+**A job is named for the model, not for the file.** A slicer's default output name is a template -
+the model, then the settings it was sliced with - which is right on a disk full of variants and noise
+in a queue, where the filament and the printer are columns of their own. So
+`ClampDock_0.4n_0.2mm_PLA_MK4IS_6m.gcode` arrives as **ClampDock**. A name carrying no such template
+is left whole with its underscores read as spaces, because somebody who called a file `Player_Box`
+meant two words. The answer still describes the file under the name it was sent as; what the shop
+decided to call the job is beside it.
+
 **Where it stops pretending.** `POST /octoprint/api/job` is refused, and says why: those commands
 mean start now and stop now against a machine somebody is standing at, and this is a queue that
 decides for itself when a job may run. An upload asking to print at once is taken and queued like
