@@ -17,8 +17,12 @@ interface JobControlsProps {
 
 // AIDEV-NOTE: on the row itself, because there are two of them. A menu is worth its click when it is
 // hiding a list; hiding two buttons behind one button is a click to reach a click. What each is FOR
-// is its tooltip - a word, the same word the button would have said - and its accessible name says
+// is said on hover - a word, the same word the button would have said - and its accessible name says
 // the word and which job, because a screen is offering this for every job at once.
+//
+// The word is `data-says` and drawn by the stylesheet rather than `title`, because a browser puts a
+// title UNDER THE POINTER - which on a mark this size is the pointer sitting on top of the only
+// thing it came to read. Drawn above the button instead, and out of the way of the mouse.
 //
 // What is offered is decided here and refused again by the shop, which is the same manners the `+`
 // on the printer row keeps. No pause on a print that has started: a pause keeps a job from STARTING,
@@ -68,7 +72,7 @@ export function JobControls({ job, actions, confirm = window.confirm.bind(window
         {queued && (
           <button
             type="button"
-            title={held ? 'Resume' : 'Pause'}
+            data-says={held ? 'Resume' : 'Pause'}
             aria-label={`${held ? 'Resume' : 'Pause'} job ${job.id}`}
             disabled={busy}
             onClick={() => void doing(() => actions.onHold(job.id, !held))}
@@ -80,7 +84,7 @@ export function JobControls({ job, actions, confirm = window.confirm.bind(window
         <button
           type="button"
           className="remove"
-          title={printing ? 'Cancel' : 'Delete'}
+          data-says={printing ? 'Cancel' : 'Delete'}
           aria-label={`${printing ? 'Cancel' : 'Delete'} job ${job.id}`}
           disabled={busy}
           onClick={remove}

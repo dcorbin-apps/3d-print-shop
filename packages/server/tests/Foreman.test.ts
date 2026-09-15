@@ -57,9 +57,13 @@ describe('the foreman', () => {
   }
 
   // AIDEV-NOTE: every foreman this file makes, remembered so that the teardown can stop it. One that
-  // is still watching is one still WRITING, and the teardown deletes the data directory out from under it -
-  // which surfaces as `ENOTEMPTY` from rmdir, in whichever test was unlucky, about one full run in
-  // eight. A test that starts something is a test that has to stop it.
+  // is still watching is one still WRITING, and the teardown deletes the data directory out from
+  // under it - which surfaces as `ENOTEMPTY` from rmdir. A test that starts something is a test that
+  // has to stop it, and that is a rule here rather than a hazard to expect.
+  //
+  // The same fault has now been found twice more: a foreman writing down what a machine said about
+  // itself, in a promise `watchersSettled` did not hold, and sessions left unsettled in
+  // foundations.test.ts. Anything a test sets going has to be waited for by name.
   const foremen: Foreman[] = [];
 
   function aForeman(...how: ConstructorParameters<typeof Foreman>): Foreman {

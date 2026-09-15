@@ -101,7 +101,9 @@ describe('what can be done with a job', () => {
     ])('tells somebody %s can be %s, in the word the button would have said', (_what, word, overrides) => {
       show(overrides);
 
-      expect(screen.getByRole('button', { name: `${word} job 7` }).getAttribute('title')).toBe(word);
+      // `data-says` and not `title`: a browser draws a title under the pointer, which on a mark this
+      // size is the pointer covering the word. The stylesheet draws this one above the button.
+      expect(screen.getByRole('button', { name: `${word} job 7` }).getAttribute('data-says')).toBe(word);
     });
   });
 

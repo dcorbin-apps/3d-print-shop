@@ -326,6 +326,7 @@ body {
 }
 
 .job-controls button {
+  position: relative;
   display: flex;
   align-items: center;
   padding: 2px 4px;
@@ -355,6 +356,33 @@ body {
 .job-controls .mark {
   width: 15px;
   height: 15px;
+}
+
+/* ABOVE the mark, not under the pointer - which is where a browser puts a `title`, and on something
+   this small the pointer then covers the word it was there to show. Never a mouse target itself. */
+.job-controls button::after {
+  content: attr(data-says);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: 30;
+  padding: 2px 6px;
+  color: var(--ink);
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 80ms ease-in;
+  pointer-events: none;
+}
+
+.job-controls button:hover:not(:disabled)::after,
+.job-controls button:focus-visible::after {
+  opacity: 1;
 }
 
 /* A refusal is the shop's sentence and belongs under the whole row, where there is room for one. */

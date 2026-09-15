@@ -29,3 +29,10 @@ runs one way. Naming one is how the dependency starts, so nothing here names one
 # Behavior
 
 * Do not put comments at the top of a source file. Instead, name the file well.
+* A FLAKY TEST IS NEVER TOLERATED. Not noted, not worked around, not re-run until it passes - a
+  suite that sometimes fails teaches everybody to stop reading it, and the next real failure is
+  read as the usual noise. Find it and fix it. If it genuinely cannot be fixed now, it is written
+  into PLAN.md as work and said out loud to whoever is being handed it - never left as a comment
+  explaining how often it happens.
+* `yarn test` passing once says little about a race. A suspected flake is run repeatedly - ten
+  full runs or more - and the repeat is what says it is fixed.
