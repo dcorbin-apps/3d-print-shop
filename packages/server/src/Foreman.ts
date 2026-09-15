@@ -44,6 +44,9 @@ export class Foreman {
   // The machines already telling this foreman how they are, so nothing is subscribed to twice.
   private readonly listeningTo = new Set<string>();
 
+  // Work the shop has started that is not a watcher, so that `watchersSettled` can wait for it.
+  private readonly alsoInFlight = new Set<Promise<unknown>>();
+
   constructor(
     private readonly shop: JobStore,
     private readonly machines: Machines,
@@ -62,7 +65,19 @@ export class Foreman {
 
   /** Settles when nothing is watching any more, so a caller can wait for the shop to go quiet. */
   async watchersSettled(): Promise<void> {
-    await Promise.allSettled([...this.watching.values()]);
+    // Settled rather than settled-once: finishing one can start another - a print picked up, a
+    // machine saying it is well again - and a shutdown wants the end of all of it.
+    while (this.watching.size > 0 || this.alsoInFlight.size > 0) {
+      await Promise.allSettled([...this.watching.values(), ...this.alsoInFlight]);
+    }
+  }
+
+  /** Keep hold of work that is not a watcher, so that going quiet waits for it too. */
+  private track<T>(work: Promise<T>): Promise<T> {
+    const held = work.finally(() => this.alsoInFlight.delete(held));
+    this.alsoInFlight.add(held);
+
+    return held;
   }
 
   /** Start something on every printer that is free to take it. */
@@ -296,7 +311,14 @@ export class Foreman {
     // one. Keyed on the subscribe instead, a printer that never tells would be reached every tick.
     this.listeningTo.add(name);
     machine.saysWhatItCanDo?.((canPrint, why) => {
-      void this.writeDownWhatItSaid(name, canPrint, why).catch((failure: unknown) =>
+      // AIDEV-NOTE: a machine says how it is whenever it likes, including while the shop is on its
+      // way out - so this is TRACKED rather than merely started. `watchersSettled` is what a shutdown
+      // waits on, and an untracked write here is the shop writing to a store after it has said it
+      // went quiet. It showed up as ENOTEMPTY in a test whose teardown removed the data directory
+      // underneath one, which is the same fault wearing a smaller hat.
+      if (this.stopping) return;
+
+      this.track(this.writeDownWhatItSaid(name, canPrint, why)).catch((failure: unknown) =>
         this.log.error('could not write down what a printer said about itself', { printer: name, why: (failure as Error).message }),
       );
     });

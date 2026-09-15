@@ -213,11 +213,16 @@ force in one act.
 
 **A job is renamed on its name**: double-click it, type, and Enter or clicking away keeps it while
 Escape abandons it. Renaming is editing the thing you are looking at, so it happens there rather than
-behind a menu.
+behind anything.
 
-**Every job has a menu on its right** for the acts that have consequences - pause, and be rid of it.
-It floats over the list, so reading one job moves nothing else on the page, and closes when attention
-goes elsewhere. A name is a label and can be
+**Two marks sit at the right of every job** - pause or resume it, and be rid of it - each naming
+itself on hover in the word it would have said. A job that is printing is offered no pause, because a
+pause keeps a job from starting and that one started; its second mark says **Cancel** and is a square
+rather than a bin, since stopping a print is not throwing it away - what comes off that bed is still
+owed a verdict.
+
+The shop's own number for a job is not on the page. It is how a client and the shop name one to each
+other; a person reads the name. A name is a label and can be
 changed at any time; what was submitted is kept untouched beside it, because a job record is written
 once and renaming somebody's mind is not a reason to break that. Pausing holds a queued job back so
 the shop passes it over, and is not offered on a print that has started - a hold keeps a job from

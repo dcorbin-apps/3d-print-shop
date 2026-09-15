@@ -264,18 +264,13 @@ body {
 
 .job {
   display: grid;
-  /* id, name, state, and the menu on the right. A fourth column rather than a fourth thing wrapping
-     onto a row of its own, which is where it went when the grid only had three. */
-  grid-template-columns: 2.5em 1fr auto auto;
+  /* The name, what it is doing, and what can be done with it. The shop's own id for a job is not
+     here: it is how the shop and a client name one to each other, and a person reads the name. */
+  grid-template-columns: 1fr auto auto;
   gap: 8px;
   align-items: baseline;
   padding: 4px 0;
   border-top: 1px solid var(--edge);
-}
-
-.job .id {
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
 }
 
 /* The name is editable in place, so it has to be the same size and in the same spot either way -
@@ -320,80 +315,53 @@ body {
   font-style: italic;
 }
 
-/* The menu FLOATS. A list that reflowed under somebody's cursor is what this replaced, so the popup
-   is taken out of the flow entirely and the row it belongs to does not change size when it opens. */
-.job-menu {
-  position: relative;
+/* On the row, not behind a click. Two marks in the last column, quiet until somebody is near them. */
+.job-controls {
+  display: flex;
+  align-items: center;
+  /* The row lines its text up on a baseline, which a mark does not have one of - left to it, the
+     icons hang below the name they belong to. Centred against the row instead. */
+  align-self: center;
+  gap: 2px;
 }
 
-.job-menu-open {
-  padding: 0 6px;
+.job-controls button {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
   color: var(--dim);
-  font: inherit;
-  line-height: 1;
   background: none;
   border: 1px solid transparent;
   border-radius: 5px;
   cursor: pointer;
 }
 
-.job-menu-open:hover,
-.job-menu-open[aria-expanded='true'] {
+.job-controls button:hover:not(:disabled) {
   color: var(--ink);
   border-color: var(--edge);
 }
 
-.job-menu-popup {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  min-width: 11em;
-  padding: 6px;
-  background: var(--raised);
-  border: 1px solid var(--edge);
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
-}
-
-.job-menu-popup button,
-.job-menu-popup input {
-  width: 100%;
-  text-align: left;
-  padding: 4px 9px;
-  color: var(--ink);
-  font: inherit;
-  font-size: 11px;
-  background: var(--raised);
-  border: 1px solid var(--edge);
-  border-radius: 5px;
-}
-
-.job-menu-popup button {
-  cursor: pointer;
-}
-
-/* The one that cannot be undone says so before it is pressed, not only in the question it asks. */
-.job-menu-popup button.remove {
+/* The one that cannot be undone says so on the way to being pressed, not only in the question. */
+.job-controls button.remove:hover:not(:disabled) {
   color: var(--wrong);
+  border-color: var(--wrong);
 }
 
-/* Renaming happens inside the popup rather than replacing it, so the field and its button stack with
-   everything else rather than turning the popup into a row halfway down. */
-.job-menu-popup form {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.job-controls button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
-/* A refusal is the shop's sentence, and it has to fit in a popup rather than widening one. */
-.job-menu-popup .refused {
-  max-width: 18em;
+.job-controls .mark {
+  width: 15px;
+  height: 15px;
+}
+
+/* A refusal is the shop's sentence and belongs under the whole row, where there is room for one. */
+.job-refused {
+  grid-column: 1 / -1;
   margin: 2px 0 0;
+  color: var(--wrong);
   font-size: 11px;
 }
 

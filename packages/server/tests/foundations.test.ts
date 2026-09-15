@@ -168,10 +168,17 @@ describe('what a shop must have before it serves anything', () => {
   // sessions.test.ts; what is here is where a running shop puts the file, which is the half that
   // decides whether a restart finds it at all.
   describe('who was logged in last time', () => {
+    // AIDEV-NOTE: every sessions object made here is SETTLED before the test ends, including the ones
+    // whose answer is all the test wanted. Picking up sweeps what has expired and writes the rest
+    // back, so one left unsettled is still writing when the teardown removes the directory - which
+    // surfaced as `ENOTEMPTY` from rmdir, in whichever test was unlucky, about one run in eight.
     it('is nobody on a machine that has never had one', async () => {
       const { log } = await laying();
 
-      await expect(sessionsKeptIn(layoutUnder(data), log)).resolves.toMatchObject({ pickedUp: 0 });
+      const fresh = await sessionsKeptIn(layoutUnder(data), log);
+
+      expect(fresh).toMatchObject({ pickedUp: 0 });
+      await fresh.sessions.settled();
     });
 
     it('is still logged in after the shop has been stopped and started again', async () => {
@@ -184,6 +191,7 @@ describe('what a shop must have before it serves anything', () => {
 
       expect(again.sessions.whose(secret)).toBe('dave');
       expect(again.pickedUp).toBe(1);
+      await again.sessions.settled();
     });
 
     it('is not logged in again by a restart after logging out', async () => {
@@ -193,7 +201,10 @@ describe('what a shop must have before it serves anything', () => {
       first.sessions.end(secret);
       await first.sessions.settled();
 
-      expect((await sessionsKeptIn(layoutUnder(data), log)).sessions.whose(secret)).toBeUndefined();
+      const again = await sessionsKeptIn(layoutUnder(data), log);
+
+      expect(again.sessions.whose(secret)).toBeUndefined();
+      await again.sessions.settled();
     });
 
     // AIDEV-NOTE: with the STATE, because the jobs directory is one directory per job and the store

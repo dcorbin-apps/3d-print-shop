@@ -948,8 +948,14 @@ describe('the foreman', () => {
       tellTheForeman(true, 'Operational');
       await until(available('mk4'));
 
-      await until(jobIs(job, 'printing'));
-      expect(mockSend).toHaveBeenCalled();
+      // AIDEV-NOTE: waited for rather than asserted after `jobIs(job, 'printing')`. `startNextPrint`
+      // claims the bed BEFORE it sends - the write is what stops a second printer taking the same
+      // job - so the store says printing while the plate is still on its way, and an assertion
+      // placed after that wait fails whenever the machine is a moment behind. It failed about one
+      // full run in three, which is exactly slow enough to look like something else.
+      await until(() => Promise.resolve(mockSend.mock.calls.length > 0));
+
+      expect(await jobIs(job, 'printing')()).toBe(true);
     });
 
     // An operator's word cannot make hardware answer, so `printer start` must not clear this one -
