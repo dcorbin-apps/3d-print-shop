@@ -13,6 +13,10 @@ dist/
 
 # What a shop is handed, and what it prints - never source
 *.gcode
+# Except this one, which is neither: it is a plate a real tool wrote, kept as the fixture that makes
+# the spellings in slicedPlate.ts something measured rather than something remembered. Named one file
+# at a time on purpose - the rule above is right, and this is the exception to it rather than a hole.
+!packages/server/tests/assumptions/aRealPlate.gcode
 
 # A shop run from this checkout: its spool holds work and its etc holds credentials. Neither is
 # source, and one of them is secrets - a token in the clear reached a commit this way once.

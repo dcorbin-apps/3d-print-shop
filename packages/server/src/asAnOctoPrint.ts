@@ -30,8 +30,12 @@ export interface AnOctoPrint {
 // honest about what this actually is.
 const CLAIMED = { api: '0.1', server: '1.9.3', text: 'OctoPrint 1.9.3', shop: '3d-print-shop' };
 
+// AIDEV-NOTE: 64K each end, against a measured 17K - the plate in tests/assumptions keeps its whole
+// settings block within that of its last byte, and whatAPlateSays.test.ts fails if a plate ever needs
+// more than this window allows. The head is nearly all thumbnail in that one and carries
+// no settings at all; it is read anyway because not every tool writes its block at the end.
 /** How much of each end of a plate is read looking for what it says about itself. */
-const ENDS_BYTES = 64 * 1024;
+export const ENDS_BYTES = 64 * 1024;
 
 const PLATE_PART = 'file';
 
@@ -148,7 +152,7 @@ async function submitWhatArrived(shop: JobStore, parked: string, filename: strin
 // AIDEV-NOTE: both ends, because the same setting is written in a short block at the top by one tool
 // and in a long one at the bottom by another, and a plate can be tens of megabytes of neither. What
 // this cannot do is find a setting in the middle, which nothing is known to write.
-async function endsOf(plate: string): Promise<string> {
+export async function endsOf(plate: string): Promise<string> {
   const handle = await open(plate, 'r');
 
   try {

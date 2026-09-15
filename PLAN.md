@@ -54,11 +54,13 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
     it has been reasoned about rather than measured. If some tool cannot do a subpath at all, the
     fallback is a listener of its own on another port - which is a second socket to secure and
     another thing in the data lock, so it is worth knowing before anybody pays for it
-  * PIN A REAL PLATE. `slicedPlate.ts` reads a TABLE of spellings - `filament_type`, `bed_shape`,
-    `estimated printing time (normal mode)` and the rest - and that table was written from memory of
-    somebody else's file format. One real plate in tests/assumptions would turn it from recall into
-    something pinned, and adding a spelling is then a string in a list. Until that exists, a plate
-    refused for naming no filament may be the parser's fault and not the plate's
+  * PIN A PLATE FROM A SECOND TOOL. One real plate is now kept as
+    `packages/server/tests/assumptions/aRealPlate.gcode` - named past the `*.gcode` rule in
+    .gitignore, because it is a fixture and not print work - and pinned by whatAPlateSays.test.ts, so the spellings `slicedPlate.ts` looks for are measured
+    rather than remembered - but measured against ONE tool. The other spellings in that table
+    (`printable_area`, `printable_height`, `total estimated time`) are still recall, and a plate from
+    anything else would say whether they are right. Until then a plate refused for naming no filament
+    may be the parser's fault rather than the plate's, and only for a tool nobody has tried
   * DECIDE WHAT AN UPLOAD-AND-PRINT SHOULD SEE. The flag means start now; the shop takes the plate
     and queues it, and the answer says `queued` rather than claiming it started. That is honest and
     it is not visible - the button says it printed. Nothing is wrong yet, and the first person to
@@ -67,7 +69,10 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   What is DONE and needs no revisiting: it is a face over the same `submit`, under `/octoprint`,
   out of the page fallback; the token is read from the other protocol's header under that prefix and
   nowhere else; commanding a queue is refused with a reason; and what a job needs is read from the
-  plate's own comments, in the face and never in the store.
+  plate's own comments, in the face and never in the store. A real plate keeps its settings within
+  17K of its last byte against a 64K window, and names the settings profile it was sliced with beside
+  the material - which is deliberately not read, because it is a name in somebody else's namespace
+  and a job waiting for it would wait for ever.
 
 - [ ] FUTURE, and deliberately held. The borrowed protocol writes a plate TWICE - once into the spool
   while it reads what the plate says about itself, and again into the job directory when it submits.

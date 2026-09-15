@@ -12,7 +12,13 @@ export interface SlicedPlate {
 // these invents its own name for the same fact, and the ones here are the ones that have been seen -
 // so adding support for another is a string in a list rather than a branch. Nothing here may name
 // the tool a spelling came from: what writes a plate is a client, and the shop names none.
-const FILAMENT_KEYS = ['filament_type', 'filament_settings_id'];
+// AIDEV-NOTE: the MATERIAL and not the profile. A real plate carries `filament_settings_id` beside
+// this - a quoted name for the settings somebody sliced with - and it was in here as a fallback until
+// a real one was read. It is the wrong answer twice over: it is a name in the slicing tool's
+// namespace rather than a material an operator loads, so a job taking it would wait for a filament
+// nobody will ever say is on the machine. Refusing a plate that names no material is the better
+// failure, and it says so.
+const FILAMENT_KEYS = ['filament_type'];
 const ESTIMATE_KEYS = ['estimated printing time (normal mode)', 'estimated printing time', 'total estimated time'];
 const WIDTH_AND_DEPTH_KEYS = ['bed_shape', 'printable_area'];
 const HEIGHT_KEYS = ['max_print_height', 'printable_height'];
