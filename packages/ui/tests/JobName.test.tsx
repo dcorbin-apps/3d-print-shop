@@ -28,8 +28,10 @@ describe('renaming a job on the job', () => {
     };
   }
 
-  const show = (): void => {
-    render(<JobName job={job()} onRename={onRename} />);
+  const show = (): { seenAs: (displayName: string) => void } => {
+    const shown = render(<JobName job={job()} onRename={onRename} />);
+
+    return { seenAs: (displayName) => shown.rerender(<JobName job={job({ displayName })} onRename={onRename} />) };
   };
 
   // AIDEV-NOTE: its own function rather than `show(undefined)`, which would take the DEFAULT
@@ -138,5 +140,45 @@ describe('renaming a job on the job', () => {
     fireEvent.doubleClick(screen.getByText('Player Box'));
 
     expect(screen.queryByLabelText('A name for job 7')).toBeNull();
+  });
+
+  // AIDEV-NOTE: the field closes at once and the new name arrives on the next poll, so for a moment
+  // the row is rendering a job that still says the old thing. Showing it flashed the old name back
+  // at somebody who had just finished typing, which reads as the rename having failed.
+  describe('before the shop has answered', () => {
+    it('shows what was asked for rather than the name the job still has', async () => {
+      show();
+      startEditing();
+      type('Clamp Dock');
+
+      fireEvent.keyDown(editing(), { key: 'Enter' });
+
+      await waitFor(() => expect(screen.getByText('Clamp Dock')).toBeDefined());
+      expect(screen.queryByText('Player Box')).toBeNull();
+    });
+
+    it("goes back to the job's own name when the shop will not take it", async () => {
+      onRename.mockRejectedValue(new Error('no job 7'));
+      show();
+      startEditing();
+      type('Clamp Dock');
+
+      fireEvent.keyDown(editing(), { key: 'Enter' });
+
+      await waitFor(() => expect(screen.getByText('Player Box')).toBeDefined());
+    });
+
+    // Held only until the job itself says so, because from then on the job is the better answer.
+    it('defers to the job once the new name has come round', async () => {
+      const shown = show();
+      startEditing();
+      type('Clamp Dock');
+      fireEvent.keyDown(editing(), { key: 'Enter' });
+      await waitFor(() => expect(onRename).toHaveBeenCalled());
+
+      shown.seenAs('Clamp Dock');
+
+      expect(screen.getByText('Clamp Dock')).toBeDefined();
+    });
   });
 });

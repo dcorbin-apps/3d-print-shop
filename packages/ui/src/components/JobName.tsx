@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Job } from '@3d-print-shop/client/browser';
 
 interface JobNameProps {
@@ -20,15 +20,26 @@ export function JobName({ job, onRename }: JobNameProps): React.JSX.Element {
   const [name, setName] = useState(job.displayName);
   const [refused, setRefused] = useState<string | undefined>(undefined);
 
+  // AIDEV-NOTE: what was asked for, shown until the shop's answer comes back round. Closing the
+  // field is instant and the new name is not - it arrives on the next poll - so without this the row
+  // shows the OLD name for as long as that takes, which reads as the edit having failed.
+  const [wanted, setWanted] = useState<string | undefined>(undefined);
+
   // AIDEV-NOTE: a ref and not state, because what it guards happens within one turn. Escape unmounts
   // the input, unmounting blurs it, and a blur is a commit - so without this, abandoning an edit
   // would save it. Enter commits and then unmounts too, which would otherwise commit twice.
   const settled = useRef(false);
 
+  // Held only until the shop agrees, and then dropped: from that moment the job itself is the better
+  // answer, and anything renaming it elsewhere should be what this row shows.
+  useEffect(() => {
+    if (wanted !== undefined && job.displayName === wanted) setWanted(undefined);
+  }, [job.displayName, wanted]);
+
   const start = (): void => {
     if (onRename === undefined) return;
 
-    setName(job.displayName);
+    setName(wanted ?? job.displayName);
     setRefused(undefined);
     settled.current = false;
     setEditing(true);
@@ -47,12 +58,16 @@ export function JobName({ job, onRename }: JobNameProps): React.JSX.Element {
 
     // Nothing typed, or nothing changed. Both are somebody deciding against it rather than asking
     // for an empty name, and neither is worth a request.
-    const wanted = name.trim();
-    if (wanted === '' || wanted === job.displayName) return;
+    const asked = name.trim();
+    if (asked === '' || asked === job.displayName) return;
+
+    setWanted(asked);
 
     try {
-      await onRename(job.id, wanted);
+      await onRename(job.id, asked);
     } catch (failure) {
+      // It is not going to arrive, so the row goes back to saying what the job actually is.
+      setWanted(undefined);
       setRefused((failure as Error).message);
     }
   };
@@ -60,7 +75,7 @@ export function JobName({ job, onRename }: JobNameProps): React.JSX.Element {
   if (!editing) {
     return (
       <span className="name" title={onRename === undefined ? undefined : 'Double-click to rename'} onDoubleClick={start}>
-        {job.displayName}
+        {wanted ?? job.displayName}
         {refused !== undefined && <span className="refused"> {refused}</span>}
       </span>
     );
