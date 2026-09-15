@@ -69,6 +69,31 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   nowhere else; commanding a queue is refused with a reason; and what a job needs is read from the
   plate's own comments, in the face and never in the store.
 
+- [ ] FUTURE, and deliberately held. The borrowed protocol writes a plate TWICE - once into the spool
+  while it reads what the plate says about itself, and again into the job directory when it submits.
+  Nothing has measured this and it is very unlikely to be what is slow: it is one sequential write of
+  a file that has just arrived over the network and is still in page cache. Same judgment as the
+  streaming entry above, and for the same reason.
+
+  When somebody does measure it, the shape to reach for is a RENAME and not a handle. Let the spool
+  be a directory the STORE owns on the same filesystem as the jobs - `jobs/.incoming/` - have the
+  face stream into it while parsing, and finish by renaming the file into the job directory the store
+  made. One write, atomic, and the store is still the only thing writing into its own tree.
+
+  What must NOT be reached for is `submit` handing an open file out to be written into. It is safe -
+  the record is written last already, so a job directory without a record is a state `all()` skips
+  and the store tolerates - but it turns one method's failure window into a two-call protocol whose
+  second call a crashed caller never makes. That leaves gcode in the jobs directory with no record:
+  invisible to everything that reads, permanent, and an id spent. Cleaning it up means a sweep that
+  deletes directories under `jobs/`, which is a far more frightening loop to write than one over
+  scratch. The rename gets the same single write without any of that.
+
+  The reason it cannot simply be done today: the spool is under the runtime directory, which is where
+  it belongs while a plate is not yet work the shop has accepted - and on Linux that is usually tmpfs
+  while the jobs are not. A rename across them fails `EXDEV` and falls back to a copy, which is the
+  second write again with extra steps. Moving the spool under the jobs root is the part that has to
+  be decided, because it puts scratch inside the directory that holds real work.
+
 ### Installation
 
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this
