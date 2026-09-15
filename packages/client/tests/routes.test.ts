@@ -16,7 +16,7 @@ describe('every path this client asks the shop for', () => {
 
   beforeEach(() => {
     fetching.mockImplementation(() =>
-      Promise.resolve({ ok: false, status: 418, json: () => Promise.resolve({ error: 'not what this is about' }) } as Response)
+      Promise.resolve({ ok: false, status: 418, json: () => Promise.resolve({ error: 'not what this is about' }) } as Response),
     );
     global.fetch = fetching;
   });
@@ -55,7 +55,9 @@ describe('every path this client asks the shop for', () => {
   it('is under one of the routes the shop is known to answer', async () => {
     await everythingItCanBeAsked();
 
-    const strays = asked().filter((path) => !SHOP_ROUTES.some((route) => path === route || path.startsWith(`${route}/`) || path.startsWith(`${route}?`)));
+    const strays = asked().filter(
+      (path) => !SHOP_ROUTES.some((route) => path === route || path.startsWith(`${route}/`) || path.startsWith(`${route}?`)),
+    );
 
     expect(strays).toEqual([]);
   });
@@ -66,7 +68,9 @@ describe('every path this client asks the shop for', () => {
   it('covers every route the shop is known to answer, but for the ones not meant for this client', async () => {
     await everythingItCanBeAsked();
 
-    const unasked = SHOP_ROUTES.filter((route) => !asked().some((path) => path === route || path.startsWith(`${route}/`) || path.startsWith(`${route}?`)));
+    const unasked = SHOP_ROUTES.filter(
+      (route) => !asked().some((path) => path === route || path.startsWith(`${route}/`) || path.startsWith(`${route}?`)),
+    );
 
     expect(unasked).toEqual(BORROWED_ROUTES);
   });

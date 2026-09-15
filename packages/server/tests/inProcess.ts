@@ -119,10 +119,12 @@ function parsed(text: string): unknown {
 export function multipart(parts: { name: string; value: string | Buffer; filename?: string }[], boundary = 'aboundary'): Buffer {
   const written = parts.map(({ name, value, filename }) =>
     Buffer.concat([
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"${filename === undefined ? '' : `; filename="${filename}"`}\r\n\r\n`),
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${name}"${filename === undefined ? '' : `; filename="${filename}"`}\r\n\r\n`,
+      ),
       Buffer.isBuffer(value) ? value : Buffer.from(value),
       Buffer.from('\r\n'),
-    ])
+    ]),
   );
 
   return Buffer.concat([...written, Buffer.from(`--${boundary}--\r\n`)]);
@@ -182,9 +184,9 @@ export function throughTheApp(api: Express): typeof fetch {
           new Response(carries ? body : null, {
             status: response.statusCode,
             headers: Object.entries(response.getHeaders()).flatMap(([name, value]) =>
-              value === undefined ? [] : [[name, Array.isArray(value) ? value.join(', ') : String(value)] as [string, string]]
+              value === undefined ? [] : [[name, Array.isArray(value) ? value.join(', ') : String(value)] as [string, string]],
             ),
-          })
+          }),
         );
       });
 

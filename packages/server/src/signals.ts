@@ -41,10 +41,7 @@ export function answerSignals(on: Signalled, { stop, reread }: Answers): void {
 // throw here and why what comes back is always something to hold.
 /** Read again everything the shop was given, and answer with what it now holds. */
 export async function rereadEverything(etc: string, held: Held, sessions: Sessions, log: Log): Promise<Held> {
-  const [callers, printerKeys] = await Promise.all([
-    rereadCallers(etc, held.callers, log),
-    rereadPrinterKeys(etc, held.printerKeys, log),
-  ]);
+  const [callers, printerKeys] = await Promise.all([rereadCallers(etc, held.callers, log), rereadPrinterKeys(etc, held.printerKeys, log)]);
 
   // AIDEV-NOTE: the other half of what a new password is for. `caller password` says every browser
   // logged in as them is logged out once the shop has re-read this, and this is the sentence that

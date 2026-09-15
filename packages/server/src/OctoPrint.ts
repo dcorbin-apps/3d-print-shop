@@ -77,9 +77,9 @@ export function adapting(socket: WsLike): PushSocket {
 }
 
 /**
-  * Waits out the backoff before attempt `n`. Settles early when `cancelled` fires, and must let go
-  * of whatever it is waiting on when it does - see `reconnectAfter`.
-  */
+ * Waits out the backoff before attempt `n`. Settles early when `cancelled` fires, and must let go
+ * of whatever it is waiting on when it does - see `reconnectAfter`.
+ */
 export type ReconnectDelay = (attempt: number, cancelled: AbortSignal) => Promise<void>;
 
 const MAX_RECONNECT_DELAY_MS = 60_000;
@@ -104,7 +104,7 @@ export const reconnectAfter: ReconnectDelay = (attempt, cancelled) =>
         clearTimeout(timer);
         resolve();
       },
-      { once: true }
+      { once: true },
     );
   });
 
@@ -283,7 +283,7 @@ export class OctoPrint implements Printer {
     private readonly httpClient: HttpClient = globalThis.fetch.bind(globalThis),
     private readonly socketFactory: PushSocketFactory = pushSocket,
     private readonly reconnectDelay: ReconnectDelay = reconnectAfter,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
   ) {}
 
   connect(): Promise<void> {
@@ -337,7 +337,7 @@ export class OctoPrint implements Printer {
     if (typeof body.session !== 'string' || typeof body.name !== 'string' || body.name === '') {
       // A guest login returns no name, which means the api key was not accepted as a user.
       throw new CouldNotReach(
-        `OctoPrint passive login did not return a usable session (name: ${JSON.stringify(body.name)}, session: ${JSON.stringify(body.session)}). Check the API key.`
+        `OctoPrint passive login did not return a usable session (name: ${JSON.stringify(body.name)}, session: ${JSON.stringify(body.session)}). Check the API key.`,
       );
     }
 
@@ -548,7 +548,7 @@ export class OctoPrint implements Printer {
     if (outOfContactMs < (this.config.lostContactTimeoutMs ?? DEFAULT_LOST_CONTACT_TIMEOUT_MS)) return;
 
     const error = new Error(
-      `Lost contact with OctoPrint at ${this.config.baseUrl} for ${Math.round(outOfContactMs / 1000)}s; the outcome of the print is unknown. Check the printer before printing anything else.`
+      `Lost contact with OctoPrint at ${this.config.baseUrl} for ${Math.round(outOfContactMs / 1000)}s; the outcome of the print is unknown. Check the printer before printing anything else.`,
     );
     for (const waiter of this.pendingCompletions.values()) {
       waiter.reject(error);

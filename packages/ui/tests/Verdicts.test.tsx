@@ -54,7 +54,7 @@ describe('judging a print from the page it was watched on', () => {
     said.mockReturnValue(
       new Promise<void>((done) => {
         taken = done;
-      })
+      }),
     );
     offering();
 

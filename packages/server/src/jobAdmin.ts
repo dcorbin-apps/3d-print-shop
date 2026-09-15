@@ -33,9 +33,7 @@ export async function whatToLoadNext(shop: Shop, printer?: string): Promise<stri
 // Which of the two questions was asked, because "nothing queued" at a machine that could take
 // none of a busy queue would read as a shop with nothing to do.
 function nothingIsWaiting(printer: string | undefined): string {
-  return printer === undefined
-    ? 'nothing queued - nothing is waiting on any filament'
-    : `nothing queued that ${printer} could take`;
+  return printer === undefined ? 'nothing queued - nothing is waiting on any filament' : `nothing queued that ${printer} could take`;
 }
 
 function jobsWaiting({ jobs, estimatedPrintSeconds }: FilamentDemand): string {

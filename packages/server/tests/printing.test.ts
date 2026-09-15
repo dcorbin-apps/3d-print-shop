@@ -39,7 +39,9 @@ describe('printing the next job', () => {
 
     // A machine that files a job where it was asked to, which is the ordinary case. A test about one
     // that files it somewhere else says so itself.
-    mockSend = jest.fn<(remotePath: string, gcode: Readable) => Promise<string>>().mockImplementation((remotePath) => Promise.resolve(remotePath));
+    mockSend = jest
+      .fn<(remotePath: string, gcode: Readable) => Promise<string>>()
+      .mockImplementation((remotePath) => Promise.resolve(remotePath));
     mockAwaitOutcome = jest.fn<(remotePath: string) => Promise<PrinterOutcome>>().mockResolvedValue('finished');
     machine = { send: mockSend, awaitOutcome: mockAwaitOutcome };
 

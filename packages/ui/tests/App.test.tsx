@@ -193,7 +193,7 @@ describe('the page, against a shop that answers', () => {
               },
             ],
             totalJobs: 1,
-          })
+          }),
         );
       });
     };

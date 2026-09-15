@@ -35,7 +35,7 @@ describe('validateDetails', () => {
     'refuses %p, which is not a list of filament names',
     (filaments) => {
       expect(() => validateDetails(details({ filaments: filaments as unknown as string[] }))).toThrow(InvalidSubmission);
-    }
+    },
   );
 
   // An empty name would schedule against a material nobody can load.
@@ -47,7 +47,10 @@ describe('validateDetails', () => {
   // whatever is reading it - an operator's list, a log line, a page. The shop cannot answer for those
   // and so does not accept what would break them.
   describe('the name a client gives a job', () => {
-    const named = (displayName: unknown): (() => void) => (): void => validateDetails(details({ displayName: displayName as string }));
+    const named =
+      (displayName: unknown): (() => void) =>
+      (): void =>
+        validateDetails(details({ displayName: displayName as string }));
 
     it.each([[5], [null], [{}], [[]], [true]])('refuses %p, which is not text', (displayName) => {
       expect(named(displayName)).toThrow('is not a name for a job');
@@ -67,8 +70,10 @@ describe('validateDetails', () => {
   // unchanged. Its type said an object and it took a string; now it takes names against text, and a
   // client with structure of its own encodes it.
   describe('the meaning a client keeps attached', () => {
-    const carrying = (metadata: unknown): (() => void) => (): void =>
-      validateDetails(details({ metadata: metadata as Record<string, string> }));
+    const carrying =
+      (metadata: unknown): (() => void) =>
+      (): void =>
+        validateDetails(details({ metadata: metadata as Record<string, string> }));
 
     it('takes names against text', () => {
       expect(carrying({ pieces: 'cards', kit: 'wingspan' })).not.toThrow();
@@ -121,7 +126,7 @@ describe('validateDetails', () => {
       'refuses %p as how long a print takes',
       (said) => {
         expect(() => validateDetails(details({ estimatedPrintSeconds: said }))).toThrow('is not how long a print takes');
-      }
+      },
     );
 
     // Said back so an operator reading the log can see what arrived - and JSON.stringify writes
@@ -172,7 +177,7 @@ describe('validateDetails', () => {
       'takes %p, which a printer does not transliterate',
       (remotePath) => {
         accepts(remotePath);
-      }
+      },
     );
 
     // Traversal, and the forms of it OctoPrint itself refuses or resolves away. The reason is
@@ -211,14 +216,12 @@ describe('validateDetails', () => {
     // `a&b.gcode` is stored as `ab.gcode` - so a job asking for one would be watched for at a path
     // the printer never used, and its bed held until somebody gave up on it. Nothing about them is
     // illegal on a filesystem, which is why they are a rule of their own.
-    it.each([
-      ["gamekit/Sam & Ella's tray.gcode"],
-      ['semi;colon.gcode'],
-      ['dollar$sign.gcode'],
-      ['all&three;of$them.gcode'],
-    ])('refuses %p, which a printer would silently shorten', (remotePath) => {
-      refuses(remotePath);
-    });
+    it.each([["gamekit/Sam & Ella's tray.gcode"], ['semi;colon.gcode'], ['dollar$sign.gcode'], ['all&three;of$them.gcode']])(
+      'refuses %p, which a printer would silently shorten',
+      (remotePath) => {
+        refuses(remotePath);
+      },
+    );
 
     it('says which characters a printer takes out, because a client has to choose another name', () => {
       expect(() => validateDetails(details({ remotePath: 'a&b.gcode' }))).toThrow('takes "&", ";" and "$" out of a name');

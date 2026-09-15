@@ -49,6 +49,12 @@ jobs:
 
       - run: yarn lint
 
+      # AIDEV-NOTE: a step of its own because `yarn lint` cannot answer this. eslint-config-prettier
+      # turns every formatting rule OFF - correctly, so the two do not fight - which means nothing in
+      # this build checked formatting at all, and the repository had drifted to 50 files that its own
+      # config disagreed with before anybody noticed. `yarn format:fix` is what fixes a red one.
+      - run: yarn format
+
       # AIDEV-NOTE: BEFORE the tests, and not for tidiness. `dist/` is gitignored, so a fresh
       # checkout has none - and the packages resolve each OTHER through it: every `exports` map
       # points at `dist`, so `@3d-print-shop/client/browser` is a missing module until the client has

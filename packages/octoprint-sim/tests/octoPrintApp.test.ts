@@ -26,10 +26,14 @@ describe('the shape octo-sim answers over HTTP', () => {
   const BOUNDARY = 'aboundary';
 
   function uploadOf(filename: string, folder: string): Buffer {
-    const part = (disposition: string, value: string): string => `--${BOUNDARY}\r\nContent-Disposition: form-data; ${disposition}\r\n\r\n${value}\r\n`;
+    const part = (disposition: string, value: string): string =>
+      `--${BOUNDARY}\r\nContent-Disposition: form-data; ${disposition}\r\n\r\n${value}\r\n`;
 
     return Buffer.from(
-      part(`name="file"; filename="${filename}"`, 'G1 X0 Y0\n') + part('name="path"', folder) + part('name="print"', 'true') + `--${BOUNDARY}--\r\n`
+      part(`name="file"; filename="${filename}"`, 'G1 X0 Y0\n') +
+        part('name="path"', folder) +
+        part('name="print"', 'true') +
+        `--${BOUNDARY}--\r\n`,
     );
   }
 
@@ -72,7 +76,7 @@ describe('the shape octo-sim answers over HTTP', () => {
     let issued = 0;
     printer = new SimulatedPrinter(
       () => 1_700_000_000_000,
-      () => `sess-${++issued}`
+      () => `sess-${++issued}`,
     );
     pushes = new PushSockets(printer);
     submitted = [];
@@ -103,7 +107,12 @@ describe('the shape octo-sim answers over HTTP', () => {
     });
 
     it('is refused with nothing to print', async () => {
-      const refused = await answered('POST', '/api/files/local', Buffer.from(`--${BOUNDARY}--\r\n`), `multipart/form-data; boundary=${BOUNDARY}`);
+      const refused = await answered(
+        'POST',
+        '/api/files/local',
+        Buffer.from(`--${BOUNDARY}--\r\n`),
+        `multipart/form-data; boundary=${BOUNDARY}`,
+      );
 
       expect(refused.status).toBe(400);
     });

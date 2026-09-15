@@ -37,7 +37,7 @@ describe('reaching a printer', () => {
       disconnect: jest.fn<() => void>(() => giveUp?.(new Error('closed'))),
       send: jest.fn<(remotePath: string, gcode: never) => Promise<string>>().mockResolvedValue('plates/job-1.gcode'),
       awaitOutcome: jest.fn<(remotePath: string) => Promise<PrinterOutcome>>(
-        () => new Promise<PrinterOutcome>((_settled, failed) => (giveUp = failed))
+        () => new Promise<PrinterOutcome>((_settled, failed) => (giveUp = failed)),
       ),
     };
   }
@@ -136,7 +136,7 @@ describe('reaching a printer', () => {
   // Named rather than numbered, so an operator is told which file to put it in and under what.
   it('refuses a printer nobody has given a key, saying where one goes', async () => {
     await expect(machines.reach(named('mini'))).rejects.toThrow(
-      "no API key for mini - the shop reads it from printer-keys.json, keyed by the printer's name"
+      "no API key for mini - the shop reads it from printer-keys.json, keyed by the printer's name",
     );
   });
 });

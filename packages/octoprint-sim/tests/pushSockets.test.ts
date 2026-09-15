@@ -37,7 +37,7 @@ describe('who hears the printer', () => {
     issued = 0;
     printer = new SimulatedPrinter(
       () => 1_700_000_000_000,
-      () => `sess-${++issued}`
+      () => `sess-${++issued}`,
     );
     pushes = new PushSockets(printer);
   });

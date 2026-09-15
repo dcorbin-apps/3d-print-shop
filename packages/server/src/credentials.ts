@@ -574,7 +574,9 @@ async function readOnlyByItsOwner(file: string): Promise<unknown> {
 
   const openTo = found.mode & 0o077;
   if (openTo !== 0) {
-    throw new UnusableCredentials(`${file} can be read by somebody other than its owner (mode ${(found.mode & 0o777).toString(8)}) - it holds secrets, so it must be 0600`);
+    throw new UnusableCredentials(
+      `${file} can be read by somebody other than its owner (mode ${(found.mode & 0o777).toString(8)}) - it holds secrets, so it must be 0600`,
+    );
   }
 
   try {

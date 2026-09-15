@@ -28,7 +28,8 @@ describe('what node does with a signal', () => {
   });
 
   it('leaves a process that has one running, to answer it in its own time', async () => {
-    const answering = "process.on('SIGHUP', () => { console.error('heard'); process.exit(7); }); console.log('ready'); setInterval(() => {}, 1000);";
+    const answering =
+      "process.on('SIGHUP', () => { console.error('heard'); process.exit(7); }); console.log('ready'); setInterval(() => {}, 1000);";
 
     expect(await nodeDoing(answering, 'SIGHUP')).toMatchObject({ code: 7 });
   });
@@ -44,7 +45,7 @@ describe('what node does with a signal', () => {
         const child = spawn('node', ['-e', letting]);
         child.on('error', failed);
         child.on('close', (code) => ended(code));
-      })
+      }),
     ).resolves.toBe(0);
   });
 });

@@ -50,7 +50,7 @@ export class SimulatedPrinter {
 
   constructor(
     private readonly now: () => number = Date.now,
-    private readonly newSession: () => string = () => `sess-${Math.random().toString(36).slice(2)}`
+    private readonly newSession: () => string = () => `sess-${Math.random().toString(36).slice(2)}`,
   ) {}
 
   // AIDEV-NOTE: the key is not checked, on login or anywhere else - this is a test double and not a

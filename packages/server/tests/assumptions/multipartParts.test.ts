@@ -34,7 +34,7 @@ describe('what busboy makes of a submission', () => {
     const written = parts.map(
       ({ name, value, filename }) =>
         `--${BOUNDARY}\r\nContent-Disposition: form-data; name="${name}"` +
-        `${filename === undefined ? '' : `; filename="${filename}"`}\r\n\r\n${value}\r\n`
+        `${filename === undefined ? '' : `; filename="${filename}"`}\r\n\r\n${value}\r\n`,
     );
 
     return Buffer.from(`${written.join('')}--${BOUNDARY}--\r\n`);

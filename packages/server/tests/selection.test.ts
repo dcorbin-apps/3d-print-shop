@@ -55,12 +55,9 @@ describe('choosing what to print', () => {
       expect(ids(printableNow(held, printer(['red'])))).toEqual([1, 2, 3]);
     });
 
-    it.each<[Job['state']]>([['printing'], ['awaiting-approval']])(
-      'does not offer a job that is already %s',
-      (state) => {
-        expect(printableNow([job(1, ['red'], { state })], printer(['red']))).toEqual([]);
-      }
-    );
+    it.each<[Job['state']]>([['printing'], ['awaiting-approval']])('does not offer a job that is already %s', (state) => {
+      expect(printableNow([job(1, ['red'], { state })], printer(['red']))).toEqual([]);
+    });
 
     // AIDEV-NOTE: axis for axis, no rotation. Gcode carries absolute coordinates, so turning a job
     // to make it fit would mean slicing it again - which the shop cannot do.
@@ -170,9 +167,7 @@ describe('choosing what to print', () => {
       const timed = (id: number, filament: string, seconds: number): Job => job(id, [filament], { estimatedPrintSeconds: seconds });
 
       it('totals what every job waiting on a filament says it takes', () => {
-        expect(waitingOn([timed(1, 'red', 3600), timed(2, 'red', 1800)])).toEqual([
-          { filament: 'red', jobs: 2, estimatedPrintSeconds: 5400 },
-        ]);
+        expect(waitingOn([timed(1, 'red', 3600), timed(2, 'red', 1800)])).toEqual([{ filament: 'red', jobs: 2, estimatedPrintSeconds: 5400 }]);
       });
 
       it('says nothing of the total when one of them did not say', () => {

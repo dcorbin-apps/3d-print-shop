@@ -8,7 +8,13 @@ describe('what the shop writes down', () => {
   function written(): { log: Log; lines: () => string[] } {
     const said: string[] = [];
 
-    return { log: toStdout(() => at, (line) => said.push(line)), lines: () => said };
+    return {
+      log: toStdout(
+        () => at,
+        (line) => said.push(line),
+      ),
+      lines: () => said,
+    };
   }
 
   it('says when it happened, at what level, and what happened', () => {

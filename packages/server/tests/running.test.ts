@@ -2,7 +2,15 @@ import { describe, it, expect, afterEach, beforeEach, jest } from '@jest/globals
 import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { PasswordDidNotStick, keepReachingForWhatIsLost, keepingTheKey, keepingTheirPassword, lookingForWork, stoppingTheShop, tryingAgain } from '../src/running';
+import {
+  PasswordDidNotStick,
+  keepReachingForWhatIsLost,
+  keepingTheKey,
+  keepingTheirPassword,
+  lookingForWork,
+  stoppingTheShop,
+  tryingAgain,
+} from '../src/running';
 import { printerKeysIn, writeFirstCaller } from '../src/credentials';
 import { silent, toStdout } from '../src/log';
 import type { Log } from '../src/log';
@@ -36,7 +44,7 @@ describe('a shop that is running', () => {
     lines = [];
     log = toStdout(
       () => new Date(),
-      (line) => lines.push(line)
+      (line) => lines.push(line),
     );
 
     mockConsiderStarting = jest.fn<TheForeman['considerStarting']>();
@@ -172,7 +180,7 @@ describe('a shop that is running', () => {
         new Map([
           ['mk4', 'one-key'],
           ['mini', 'another'],
-        ])
+        ]),
       );
     });
 

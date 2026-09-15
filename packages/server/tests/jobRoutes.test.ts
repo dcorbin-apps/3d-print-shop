@@ -378,9 +378,9 @@ describe('the jobs, over the shop routes', () => {
           callers: () => callers,
           log: toStdout(
             () => new Date(),
-            (line) => lines.push(line)
+            (line) => lines.push(line),
           ),
-        })
+        }),
       );
 
       const answer = await submitting(submission(playerBox, 'G1\n'), ADMIN, noRoom);
@@ -418,7 +418,7 @@ describe('the jobs, over the shop routes', () => {
       await mkdir(path.join(where.jobs, '9'), { recursive: true });
       await writeFile(
         path.join(where.jobs, '9', 'job.json'),
-        JSON.stringify({ id: 9, displayName: 'Old Box', filaments: ['PLA-SpaceGray'], submittedAt: new Date().toISOString(), gcodeBytes: 3 })
+        JSON.stringify({ id: 9, displayName: 'Old Box', filaments: ['PLA-SpaceGray'], submittedAt: new Date().toISOString(), gcodeBytes: 3 }),
       );
 
       return 9;
@@ -571,9 +571,9 @@ describe('the jobs, over the shop routes', () => {
           callers: () => callers,
           log: toStdout(
             () => new Date(),
-            (line) => lines.push(line)
+            (line) => lines.push(line),
           ),
-        })
+        }),
       );
 
       const answer = await unusable('GET', '/jobs', { token: ADMIN });

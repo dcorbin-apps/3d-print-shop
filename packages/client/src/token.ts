@@ -74,6 +74,6 @@ function requireOnlyItsOwnerCanRead(file: string, mode: number): void {
 
   throw new UnusableToken(
     `${file} can be read by somebody other than its owner (mode ${(mode & 0o777).toString(8)}) - ` +
-      `it is the token this shop knows you by, so it must be 0600: chmod 600 ${file}`
+      `it is the token this shop knows you by, so it must be 0600: chmod 600 ${file}`,
   );
 }

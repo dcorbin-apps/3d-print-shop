@@ -134,7 +134,7 @@ describe('a shop, a printer, and two jobs', () => {
     // The printer is added with the key it is reached by, in one call, and told what is on it.
     const { created } = await shop.addPrinter(
       { name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: `http://127.0.0.1:${printer.port}` },
-      'a-key-for-the-sim'
+      'a-key-for-the-sim',
     );
     expect(created).toBe(true);
     await shop.load('mk4', ['PLA']);

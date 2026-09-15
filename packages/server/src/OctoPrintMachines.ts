@@ -5,7 +5,6 @@ import type { Machines } from './Foreman.js';
 import type { Printer } from './printing.js';
 import type { RegisteredPrinter } from './Printer.js';
 
-
 /** What this keeps of a machine: a printer that can also be opened and let go of. */
 export interface Machine extends Printer {
   connect(): Promise<void>;
@@ -36,7 +35,7 @@ export class OctoPrintMachines {
   // SIGHUP - and a key read at startup is the one an operator is correcting.
   constructor(
     private readonly keys: () => ReadonlyMap<string, string> = () => new Map(),
-    private readonly makeMachine: MakeMachine = (config): Machine => new OctoPrint(config)
+    private readonly makeMachine: MakeMachine = (config): Machine => new OctoPrint(config),
   ) {}
 
   // AIDEV-NOTE: a key that has changed is compared here and nowhere else, which is what makes

@@ -58,7 +58,16 @@ export {
 } from './JobStore.js';
 export type { DataLimits } from './JobStore.js';
 export type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from './OctoPrint.js';
-export { OctoPrint, adapting, octoPrintCamera, pushSocket, reconnectAfter, reconnectDelayMs, whySocketFailed, whyUnreachable } from './OctoPrint.js';
+export {
+  OctoPrint,
+  adapting,
+  octoPrintCamera,
+  pushSocket,
+  reconnectAfter,
+  reconnectDelayMs,
+  whySocketFailed,
+  whyUnreachable,
+} from './OctoPrint.js';
 export type { Holding, PrinterApi, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
 export { canTake, fitsInside, whereToWatch } from './Printer.js';
 export { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';

@@ -27,7 +27,7 @@ describe('the life of a job', () => {
     return Readable.from(
       (function* () {
         for (let i = 0; i < lines; i++) yield line;
-      })()
+      })(),
     );
   }
 
@@ -53,54 +53,50 @@ describe('the life of a job', () => {
 
   const DAVE = 'u-dave';
 
-  it(
-    'is taken in, printed, rejected, printed again, approved, and gone',
-    async () => {
-      const shop = new JobStore(where);
-      await shop.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://mk4' });
+  it('is taken in, printed, rejected, printed again, approved, and gone', async () => {
+    const shop = new JobStore(where);
+    await shop.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://mk4' });
 
-      const job = await shop.submit(
-        {
-          filaments: ['PLA-SpaceGray'],
-          displayName: 'Player Box',
-          requiredBuildVolume: { x: 120, y: 90, z: 40 },
-          metadata: { pieces: 'player_box' },
-        },
-        realisticGcode(),
-        DAVE
-      );
-      expect(job.gcodeBytes).toBeGreaterThan(MEGABYTES * 1024 * 1024);
+    const job = await shop.submit(
+      {
+        filaments: ['PLA-SpaceGray'],
+        displayName: 'Player Box',
+        requiredBuildVolume: { x: 120, y: 90, z: 40 },
+        metadata: { pieces: 'player_box' },
+      },
+      realisticGcode(),
+      DAVE,
+    );
+    expect(job.gcodeBytes).toBeGreaterThan(MEGABYTES * 1024 * 1024);
 
-      // What was stored is what arrived - a truncated or re-encoded stream would not match. Read
-      // back as a stream too, which is how a printer will be fed it.
-      const digest = await digestOf(await shop.gcodeStream(job.id));
-      expect(digest.endsWith(`:${job.gcodeBytes}`)).toBe(true);
+    // What was stored is what arrived - a truncated or re-encoded stream would not match. Read
+    // back as a stream too, which is how a printer will be fed it.
+    const digest = await digestOf(await shop.gcodeStream(job.id));
+    expect(digest.endsWith(`:${job.gcodeBytes}`)).toBe(true);
 
-      // A print that ran to the end, and a person who says it is not usable anyway.
-      await shop.startPrinting(await shop.printerNamed('mk4'), job.id);
-      await shop.finishedPrinting(await shop.printerNamed('mk4'), 'finished');
-      expect(await shop.reject(job.id)).toMatchObject({ state: 'queued' });
+    // A print that ran to the end, and a person who says it is not usable anyway.
+    await shop.startPrinting(await shop.printerNamed('mk4'), job.id);
+    await shop.finishedPrinting(await shop.printerNamed('mk4'), 'finished');
+    expect(await shop.reject(job.id)).toMatchObject({ state: 'queued' });
 
-      // The service restarts while the reprint is still owed.
-      const afterRestart = new JobStore(where);
-      expect(await afterRestart.all()).toMatchObject([{ id: job.id, displayName: 'Player Box', state: 'queued' }]);
+    // The service restarts while the reprint is still owed.
+    const afterRestart = new JobStore(where);
+    expect(await afterRestart.all()).toMatchObject([{ id: job.id, displayName: 'Player Box', state: 'queued' }]);
 
-      // The same bytes are still there to run again - which is why approval, not the printer, is
-      // what discards them.
-      expect(await digestOf(await afterRestart.gcodeStream(job.id))).toBe(digest);
+    // The same bytes are still there to run again - which is why approval, not the printer, is
+    // what discards them.
+    expect(await digestOf(await afterRestart.gcodeStream(job.id))).toBe(digest);
 
-      await afterRestart.startPrinting(await afterRestart.printerNamed('mk4'), job.id);
-      await afterRestart.finishedPrinting(await afterRestart.printerNamed('mk4'), 'finished');
-      await afterRestart.approve(job.id);
+    await afterRestart.startPrinting(await afterRestart.printerNamed('mk4'), job.id);
+    await afterRestart.finishedPrinting(await afterRestart.printerNamed('mk4'), 'finished');
+    await afterRestart.approve(job.id);
 
-      // The shop holds outstanding work, so a job that succeeded leaves no trace in it.
-      expect(await afterRestart.all()).toEqual([]);
-      await expect(fs.readdir(where.jobs)).resolves.toEqual([]);
+    // The shop holds outstanding work, so a job that succeeded leaves no trace in it.
+    expect(await afterRestart.all()).toEqual([]);
+    await expect(fs.readdir(where.jobs)).resolves.toEqual([]);
 
-      // ...but its number is spent. The next job is 2.
-      const next = await afterRestart.submit({ filaments: ['PLA-White'] }, Readable.from(['G1 X0\n']), DAVE);
-      expect(next.id).toBe(2);
-    },
-    30_000
-  );
+    // ...but its number is spent. The next job is 2.
+    const next = await afterRestart.submit({ filaments: ['PLA-White'] }, Readable.from(['G1 X0\n']), DAVE);
+    expect(next.id).toBe(2);
+  }, 30_000);
 });

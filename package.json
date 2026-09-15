@@ -12,6 +12,8 @@
     "build": "yarn workspaces foreach -A -p --topological-dev run build",
     "typecheck": "yarn workspaces foreach -A -p --topological-dev run typecheck",
     "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
     "ut": "./scripts/test.sh --testPathIgnorePatterns /tests/acceptance/ /tests/assumptions/",
     "at": "./scripts/test.sh tests/acceptance",
     "assumptions": "./scripts/test.sh tests/assumptions",

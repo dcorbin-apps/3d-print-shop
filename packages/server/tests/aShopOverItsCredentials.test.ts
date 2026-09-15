@@ -53,9 +53,9 @@ describe('a shop over the credentials an operator wrote', () => {
         },
         log: toStdout(
           () => new Date(),
-          (line) => said.push(line)
+          (line) => said.push(line),
         ),
-      })
+      }),
     );
   }, 60_000);
 

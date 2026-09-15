@@ -18,7 +18,9 @@ describe('where a shop listens', () => {
   let where: DataLayout;
   let listening: Server[];
 
-  const callers = new Callers([{ caller: { id: 'dave', name: 'dave', role: 'admin' }, credentials: [{ kind: 'token', hash: digestOf('a-token') }] }]);
+  const callers = new Callers([
+    { caller: { id: 'dave', name: 'dave', role: 'admin' }, credentials: [{ kind: 'token', hash: digestOf('a-token') }] },
+  ]);
 
   const serving = async (at?: string): Promise<AddressInfo> => {
     const server = await serve(new JobStore(where), 0, { callers: () => callers }, ...(at === undefined ? [] : [at]));

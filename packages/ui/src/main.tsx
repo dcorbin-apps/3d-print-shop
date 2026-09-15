@@ -9,5 +9,5 @@ if (mount === null) throw new Error('index.html has no #root to mount on');
 createRoot(mount).render(
   <StrictMode>
     <App />
-  </StrictMode>
+  </StrictMode>,
 );

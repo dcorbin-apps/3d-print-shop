@@ -64,7 +64,7 @@ function validateMetadata(metadata: unknown): void {
 
     if (value.length > MAX_METADATA_VALUE) {
       throw new InvalidSubmission(
-        `metadata ${JSON.stringify(name)} is ${value.length} characters, and a metadata value is at most ${MAX_METADATA_VALUE}`
+        `metadata ${JSON.stringify(name)} is ${value.length} characters, and a metadata value is at most ${MAX_METADATA_VALUE}`,
       );
     }
   }
@@ -76,7 +76,9 @@ function validateMetadata(metadata: unknown): void {
 // 500 and calling a client's mistake its own fault.
 function validateFilaments(filaments: unknown): void {
   if (!Array.isArray(filaments) || filaments.some((filament) => typeof filament !== 'string')) {
-    throw new InvalidSubmission(`${JSON.stringify(filaments)} is not what a job needs - filaments are a list of names, in the printer's words for them`);
+    throw new InvalidSubmission(
+      `${JSON.stringify(filaments)} is not what a job needs - filaments are a list of names, in the printer's words for them`,
+    );
   }
 
   if (filaments.length === 0) {

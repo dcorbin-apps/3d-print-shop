@@ -14,18 +14,15 @@ describe('the auth frame a push socket presents', () => {
   // AIDEV-NOTE: sockjs.py splits on ':' and requires EXACTLY two parts. Nothing tested this rule
   // until now: every refusal the acceptance suite checked was refused by some other rule first, so
   // taking the count check out was caught by nothing at all.
-  it.each([['justone'], ['a:b:c'], [':has-no-name'], ['has-no-session:'], [':'], ['']])(
-    'is nobody for %j, which is not two parts',
-    (auth) => {
-      expect(parseAuthFrame(JSON.stringify({ auth }))).toBeUndefined();
-    }
-  );
+  it.each([['justone'], ['a:b:c'], [':has-no-name'], ['has-no-session:'], [':'], ['']])('is nobody for %j, which is not two parts', (auth) => {
+    expect(parseAuthFrame(JSON.stringify({ auth }))).toBeUndefined();
+  });
 
   it.each([[JSON.stringify({ subscribe: 'everything' })], [JSON.stringify({ auth: 7 })], [JSON.stringify({ auth: null })], ['{']])(
     'is nobody for %j, which is not an auth frame at all',
     (raw) => {
       expect(parseAuthFrame(raw)).toBeUndefined();
-    }
+    },
   );
 });
 
@@ -37,7 +34,7 @@ describe('the printer octo-sim pretends to be', () => {
     issued = 0;
     printer = new SimulatedPrinter(
       () => 1_700_000_000_000,
-      () => `sess-${++issued}`
+      () => `sess-${++issued}`,
     );
   });
 
@@ -76,14 +73,11 @@ describe('the printer octo-sim pretends to be', () => {
       expect(printer.authenticates(presenting(`somebody-else:${session}`))).toBe(false);
     });
 
-    it.each([[JSON.stringify({ subscribe: 'everything' })], ['not json at all'], [JSON.stringify({ auth: 'a:b:c' })]])(
-      'keeps out %j',
-      (raw) => {
-        printer.logIn();
+    it.each([[JSON.stringify({ subscribe: 'everything' })], ['not json at all'], [JSON.stringify({ auth: 'a:b:c' })]])('keeps out %j', (raw) => {
+      printer.logIn();
 
-        expect(printer.authenticates(raw)).toBe(false);
-      }
-    );
+      expect(printer.authenticates(raw)).toBe(false);
+    });
   });
 
   describe('the one job it can have on the bed', () => {

@@ -31,7 +31,7 @@ describe('what a shop must have before it serves anything', () => {
     await writeFile(
       path.join(etc, CALLERS_FILE),
       JSON.stringify([{ id: 'dave', name: 'dave', role: 'admin', credentials: [{ kind: 'token', hash: digestOf('a-token') }] }]),
-      { mode: 0o600 }
+      { mode: 0o600 },
     );
   };
 

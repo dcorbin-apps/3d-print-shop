@@ -1,5 +1,15 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import { UnreadableVolume, addPrinter, listPrinters, loadFilament, parseBuildVolume, pausePrinter, removePrinter, resumePrinter, shutDownShop,  } from '../src/printerAdmin';
+import {
+  UnreadableVolume,
+  addPrinter,
+  listPrinters,
+  loadFilament,
+  parseBuildVolume,
+  pausePrinter,
+  removePrinter,
+  resumePrinter,
+  shutDownShop,
+} from '../src/printerAdmin';
 import type { PrinterAdded, PrinterRecord, RegisteredPrinter, Shop } from '@3d-print-shop/client';
 
 describe('parseBuildVolume', () => {
@@ -163,7 +173,9 @@ describe('minding the printers', () => {
     it('says which would not take a file, and what the machine said', async () => {
       mockPrinters.mockResolvedValue([printer({ refused: { reason: 'job-1.gcode - upload failed: 400', since: new Date() } })]);
 
-      expect(await listPrinters(shop)).toEqual(['mk4  250x210x220mm  http://mk4  nothing loaded  idle  REFUSED: job-1.gcode - upload failed: 400']);
+      expect(await listPrinters(shop)).toEqual([
+        'mk4  250x210x220mm  http://mk4  nothing loaded  idle  REFUSED: job-1.gcode - upload failed: 400',
+      ]);
     });
   });
 

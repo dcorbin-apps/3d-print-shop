@@ -70,18 +70,8 @@ export function App(): React.JSX.Element {
         onOut={() => void shop.logOut().then(askAgain)}
         onChangePassword={(current, password) => shop.changeMyPassword(current, password)}
       />
-      <PrinterGallery
-        printers={printers}
-        selected={selected}
-        onSelect={setChosen}
-        onAdd={caller?.role === 'admin' ? addPrinter : undefined}
-      />
-      <JobsByFilament
-        jobs={jobs}
-        totalJobs={totalJobs}
-        selected={printers.find((printer) => printer.name === selected)}
-        onVerdict={judge}
-      />
+      <PrinterGallery printers={printers} selected={selected} onSelect={setChosen} onAdd={caller?.role === 'admin' ? addPrinter : undefined} />
+      <JobsByFilament jobs={jobs} totalJobs={totalJobs} selected={printers.find((printer) => printer.name === selected)} onVerdict={judge} />
 
       {!answered && <p className="asking">asking the shop...</p>}
     </div>

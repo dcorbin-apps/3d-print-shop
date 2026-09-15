@@ -38,8 +38,7 @@ describe('the work the shop is holding', () => {
     render(<JobsByFilament jobs={jobs} totalJobs={jobs.length} onVerdict={judged} />);
   };
 
-  const printed = (id: number): Job =>
-    job(id, ['PLA-Red'], { state: 'awaiting-approval', heldBy: 'mk4', lastPrinterOutcome: 'finished' });
+  const printed = (id: number): Job => job(id, ['PLA-Red'], { state: 'awaiting-approval', heldBy: 'mk4', lastPrinterOutcome: 'finished' });
 
   it('says so when there is nothing outstanding', () => {
     showing([]);

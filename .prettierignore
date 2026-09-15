@@ -1,0 +1,11 @@
+node_modules
+dist
+.yarn
+yarn.lock
+
+# Prose, wrapped by hand and meant to stay that way. Prettier reflows markdown, which would rewrite
+# every paragraph in this repository to no purpose and make one commit out of all of them.
+*.md
+
+# A plate a real tool wrote, kept as a fixture. Not source, and not prettier's to touch.
+*.gcode

@@ -79,7 +79,9 @@ describe('the foreman', () => {
     where = await aDataDirectory('print-shop-foreman-');
     shop = new JobStore(where);
 
-    mockSend = jest.fn<(remotePath: string, gcode: Readable) => Promise<string>>().mockImplementation((remotePath) => Promise.resolve(remotePath));
+    mockSend = jest
+      .fn<(remotePath: string, gcode: Readable) => Promise<string>>()
+      .mockImplementation((remotePath) => Promise.resolve(remotePath));
     // Never settles unless a test says so: a print that is still running is the ordinary case.
     const stillPrinting = new Promise<PrinterOutcome>((_heard, never) => {
       stopWaiting = () => never(new Error('the test ended'));
@@ -140,7 +142,14 @@ describe('the foreman', () => {
       await shop.load(await shop.printerNamed('mk4'), ['PLA-Red']);
       await corruptTheStatusOf('mk4');
 
-      await aForeman(shop, mockReach, toStdout(() => new Date(), (line) => said.push(line))).considerStarting();
+      await aForeman(
+        shop,
+        mockReach,
+        toStdout(
+          () => new Date(),
+          (line) => said.push(line),
+        ),
+      ).considerStarting();
 
       expect(mockReach).not.toHaveBeenCalled();
       expect(said.join('\n')).not.toContain('could not start anything');
@@ -168,7 +177,14 @@ describe('the foreman', () => {
 
     beforeEach(() => {
       lines = [];
-      watched = aForeman(shop, mockReach, toStdout(() => new Date(), (line) => lines.push(line)));
+      watched = aForeman(
+        shop,
+        mockReach,
+        toStdout(
+          () => new Date(),
+          (line) => lines.push(line),
+        ),
+      );
     });
 
     it('says what it started, on which printer, and how much gcode went over', async () => {
@@ -185,7 +201,9 @@ describe('the foreman', () => {
 
       await watched.considerStarting();
 
-      expect(lines.join('\n')).toContain('ERROR could not send a job to the printer printer=mk4 job=1 why="OctoPrint upload failed: 400 Bad Request"');
+      expect(lines.join('\n')).toContain(
+        'ERROR could not send a job to the printer printer=mk4 job=1 why="OctoPrint upload failed: 400 Bad Request"',
+      );
     });
 
     // AIDEV-NOTE: waits for the LINE, not for the job's state. The outcome is written to the store
@@ -848,7 +866,14 @@ describe('the foreman', () => {
     // where a store read or a data directory that went away would: inside the start, past the machine.
     beforeEach(async () => {
       lines = [];
-      watched = aForeman(shop, mockReach, toStdout(() => new Date(), (line) => lines.push(line)));
+      watched = aForeman(
+        shop,
+        mockReach,
+        toStdout(
+          () => new Date(),
+          (line) => lines.push(line),
+        ),
+      );
 
       const id = await submit();
       mockReach.mockImplementation(async (): Promise<Printer> => {

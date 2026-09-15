@@ -21,7 +21,9 @@ describe('serving a page beside the API', () => {
   let withoutAPage: ReturnType<typeof drive>;
 
   const ADMIN = 'dave-token';
-  const callers = new Callers([{ caller: { id: 'dave', name: 'dave', role: 'admin' }, credentials: [{ kind: 'token', hash: digestOf(ADMIN) }] }]);
+  const callers = new Callers([
+    { caller: { id: 'dave', name: 'dave', role: 'admin' }, credentials: [{ kind: 'token', hash: digestOf(ADMIN) }] },
+  ]);
 
   const get = (route: string, token?: string): ReturnType<typeof asked> => asked('GET', route, { token });
 

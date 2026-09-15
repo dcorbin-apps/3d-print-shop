@@ -142,7 +142,7 @@ export function keepingTheirPassword(etc: string, write: (etc: string, id: strin
 
     if (!(await isThePassword(password, callers.named(id)?.password ?? ''))) {
       throw new PasswordDidNotStick(
-        `${id}'s password was written and is not what ${etc} now holds - something else changed the callers at the same moment, so nothing here was kept`
+        `${id}'s password was written and is not what ${etc} now holds - something else changed the callers at the same moment, so nothing here was kept`,
       );
     }
 

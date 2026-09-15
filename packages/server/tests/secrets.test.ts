@@ -74,7 +74,7 @@ describe('a password a person chose', () => {
     async (mangled) => {
       expect(await isThePassword('correct horse', mangled)).toBe(false);
     },
-    10_000
+    10_000,
   );
 });
 

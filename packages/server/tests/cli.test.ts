@@ -90,7 +90,7 @@ describe('running a command line', () => {
     'is a failure for %p, however it asks for help',
     async (line) => {
       expect(await running(line)).toBe(1);
-    }
+    },
   );
 
   it('says which word it did not know, the way commander says its own', async () => {
@@ -170,13 +170,13 @@ describe('reading the role an operator typed', () => {
   describe('the sentence an operator is left with', () => {
     it('drops what commander said about an argument', () => {
       expect(ourSentenceIn(`error: command-argument value 'seven' is invalid for argument 'id'. cannot read "seven" as a job id`)).toBe(
-        'cannot read "seven" as a job id'
+        'cannot read "seven" as a job id',
       );
     });
 
     it('drops what it said about an option, which it words differently', () => {
       expect(ourSentenceIn(`error: option '--port <port>' argument 'abc' is invalid. cannot read "abc" as a port`)).toBe(
-        'cannot read "abc" as a port'
+        'cannot read "abc" as a port',
       );
     });
 
@@ -186,7 +186,7 @@ describe('reading the role an operator typed', () => {
       'leaves %p exactly as commander wrote it',
       (line) => {
         expect(ourSentenceIn(line)).toBe(line);
-      }
+      },
     );
 
     // AIDEV-NOTE: only commander's half, however our half is punctuated. Matched greedily this runs

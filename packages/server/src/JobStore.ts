@@ -105,7 +105,7 @@ export class JobStore {
   constructor(
     private readonly where: DataLayout = defaultLayout(),
     limits: DataLimits = {},
-    private readonly log: Log = silent
+    private readonly log: Log = silent,
   ) {
     this.maxGcodeBytes = limits.maxGcodeBytes ?? defaultMaxGcodeBytes();
     this.freeBytes = limits.freeBytes ?? spaceFreeOn;
@@ -369,7 +369,7 @@ export class JobStore {
   async resume(printer: RegisteredPrinter): Promise<RegisteredPrinter> {
     await this.changeStatus(
       printer,
-      ({ paused: _paused, unreachable: _unreachable, refused: _refused, outOfContact: _outOfContact, ...status }) => status
+      ({ paused: _paused, unreachable: _unreachable, refused: _refused, outOfContact: _outOfContact, ...status }) => status,
     );
 
     return this.printerNamed(printer.name);
@@ -573,7 +573,7 @@ export class JobStore {
     for (const kept of [this.where.jobs, this.where.state]) {
       const usable = await stat(kept).then(
         (entry) => entry.isDirectory(),
-        () => false
+        () => false,
       );
       if (!usable) {
         throw new DataUnavailable(`${kept} is not there - it is created when the shop is installed`);
@@ -598,7 +598,7 @@ export class JobStore {
       if ((found.mode & 0o022) !== 0) {
         throw new DataUnavailable(
           `${kept} can be written by somebody other than its owner (mode ${(found.mode & 0o777).toString(8)}) - ` +
-            'a job could be swapped or taken out of it, so it may not be writable by its group or by anybody else'
+            'a job could be swapped or taken out of it, so it may not be writable by its group or by anybody else',
         );
       }
     }

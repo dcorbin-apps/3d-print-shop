@@ -20,7 +20,7 @@ describe('a push socket that cannot connect', () => {
     socket?.close();
 
     expect(whySocketFailed(failure, 'http://127.0.0.1:1')).toBe(
-      'the push socket to http://127.0.0.1:1 closed before it opened: nothing is listening at http://127.0.0.1:1 (ECONNREFUSED)'
+      'the push socket to http://127.0.0.1:1 closed before it opened: nothing is listening at http://127.0.0.1:1 (ECONNREFUSED)',
     );
   });
 });

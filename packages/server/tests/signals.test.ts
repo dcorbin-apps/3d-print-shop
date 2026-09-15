@@ -79,7 +79,7 @@ describe('re-reading everything the shop was given', () => {
         { id: 'dave', name: 'dave', role: 'admin', credentials: [{ kind: 'password', hash: await hashPassword(dave) }] },
         { id: 'ada', name: 'ada', role: 'user', credentials: [{ kind: 'password', hash: adasHash }] },
       ]),
-      { mode: 0o600 }
+      { mode: 0o600 },
     );
   };
 
@@ -106,7 +106,7 @@ describe('re-reading everything the shop was given', () => {
     await writeFile(
       path.join(etc, CALLERS_FILE),
       JSON.stringify([{ id: 'dave', name: 'dave', role: 'admin', credentials: [{ kind: 'token', hash: digestOf('a-token') }] }]),
-      { mode: 0o600 }
+      { mode: 0o600 },
     );
 
     const after = await rereadEverything(etc, before, sessions, silent);
@@ -171,7 +171,7 @@ describe('re-reading everything the shop was given', () => {
       const lines: string[] = [];
       const log: Log = toStdout(
         () => new Date(),
-        (line) => lines.push(line)
+        (line) => lines.push(line),
       );
       const before = await held();
       sessions.begin('dave');

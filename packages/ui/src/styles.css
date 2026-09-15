@@ -22,7 +22,12 @@ body {
   margin: 0;
   background: var(--ground);
   color: var(--ink);
-  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+  font:
+    14px/1.45 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Helvetica Neue',
+    sans-serif;
 }
 
 .shop {

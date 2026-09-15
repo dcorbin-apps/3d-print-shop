@@ -80,7 +80,7 @@ export function createOctoPrintApp(
   printer: SimulatedPrinter,
   pushes: PushSockets,
   onJobSubmitted: JobSubmittedHandler,
-  uploadLimitBytes: number = UPLOAD_LIMIT_BYTES
+  uploadLimitBytes: number = UPLOAD_LIMIT_BYTES,
 ): OctoPrintApp {
   const app = express();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: uploadLimitBytes } });
@@ -172,7 +172,7 @@ export function createOctoPrintApp(
 export function startOctoPrintServer(
   port: number,
   onJobSubmitted: JobSubmittedHandler,
-  uploadLimitBytes: number = UPLOAD_LIMIT_BYTES
+  uploadLimitBytes: number = UPLOAD_LIMIT_BYTES,
 ): Promise<OctoPrintServer> {
   const printer = new SimulatedPrinter();
   const pushes = new PushSockets(printer);

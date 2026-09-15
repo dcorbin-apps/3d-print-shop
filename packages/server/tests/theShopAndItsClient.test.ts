@@ -49,7 +49,10 @@ describe('the shop and its client', () => {
     where = await aDataDirectory('print-shop-contract-');
     store = new JobStore(where);
 
-    const dave = { caller: { id: 'dave', name: 'dave', role: 'admin' as const }, credentials: [{ kind: 'token' as const, hash: digestOf(TOKEN) }] };
+    const dave = {
+      caller: { id: 'dave', name: 'dave', role: 'admin' as const },
+      credentials: [{ kind: 'token' as const, hash: digestOf(TOKEN) }],
+    };
     shop = new HttpShop('http://shop.local', TOKEN, throughTheApp(createApi(store, { callers: () => new Callers([dave]) })));
   });
 

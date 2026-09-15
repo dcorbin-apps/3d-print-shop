@@ -98,7 +98,7 @@ describe('JobStore', () => {
     it('carries the metadata, remote path and printer through untouched', async () => {
       const job = await submit(
         details({ remotePath: 'plates/cards.gcode', printer: 'mk4', metadata: { pieces: 'cards', kit: 'wingspan' } }),
-        gcode()
+        gcode(),
       );
 
       expect(await shop.find(job.id)).toMatchObject({
@@ -153,7 +153,7 @@ describe('JobStore', () => {
         (function* () {
           yield 'G1 X0';
           throw new Error('the link died');
-        })()
+        })(),
       );
 
     it('refuses a stream that delivers nothing', async () => {
@@ -263,7 +263,7 @@ describe('JobStore', () => {
           state: 'awaiting-approval',
           lastPrinterOutcome: outcome,
         });
-      }
+      },
     );
 
     it('sends a rejected print back to the queue, and frees the printer', async () => {
@@ -366,7 +366,7 @@ describe('JobStore', () => {
     // added over the API is added for good, and adding one is a thing an operator does once. Every
     // other restart test here is about what a printer is DOING; this is about it being here at all,
     // which nothing pinned until a printer could be added from somewhere other than a terminal.
-    it('is still one of the shop\'s printers after a restart, with what it was told about it', async () => {
+    it("is still one of the shop's printers after a restart, with what it was told about it", async () => {
       await shop.addPrinter({ name: 'mini', buildVolume: { x: 180, y: 180, z: 180 }, api: 'octoprint', address: 'http://mini' });
 
       expect(await new JobStore(where).printers()).toEqual([
@@ -434,14 +434,11 @@ describe('JobStore', () => {
     });
 
     // Nothing has been printed to judge.
-    it.each<['approve' | 'reject' | 'abandon']>([['approve'], ['reject'], ['abandon']])(
-      'refuses to %s a job still queued',
-      async (verdict) => {
-        const { id } = await submit(details(), gcode());
+    it.each<['approve' | 'reject' | 'abandon']>([['approve'], ['reject'], ['abandon']])('refuses to %s a job still queued', async (verdict) => {
+      const { id } = await submit(details(), gcode());
 
-        await expect(shop[verdict](id)).rejects.toThrow(WrongState);
-      }
-    );
+      await expect(shop[verdict](id)).rejects.toThrow(WrongState);
+    });
 
     // The machine is still printing it. Letting the printer go would queue the job for a second
     // machine while the first is still running it.
@@ -519,7 +516,6 @@ describe('JobStore', () => {
 
       expect((await shop.printerNamed('mk4')).paused?.since).toBeInstanceOf(Date);
     });
-
   });
 
   // AIDEV-NOTE: the shop's own reading of a machine, kept apart from a stop. `paused` is what an
@@ -661,9 +657,7 @@ describe('JobStore', () => {
     });
 
     it('refuses a job for a printer it does not have, naming the ones it does', async () => {
-      await expect(submit(details({ printer: 'ender' }), gcode())).rejects.toThrow(
-        'no printer called ender - this shop has mk4'
-      );
+      await expect(submit(details({ printer: 'ender' }), gcode())).rejects.toThrow('no printer called ender - this shop has mk4');
     });
 
     it('refuses a job too big for anything here, saying how big everything is', async () => {
@@ -810,7 +804,14 @@ describe('JobStore', () => {
     const lines: string[] = [];
 
     const storeThatSays = (): JobStore =>
-      new JobStore(where, {}, toStdout(() => new Date(), (line) => lines.push(line)));
+      new JobStore(
+        where,
+        {},
+        toStdout(
+          () => new Date(),
+          (line) => lines.push(line),
+        ),
+      );
 
     const corrupt = async (file: string): Promise<void> => {
       await fs.writeFile(path.join(where.state, 'printers', file), '{ not json');
@@ -947,5 +948,4 @@ describe('the largest gcode a shop takes', () => {
     process.env[MAX_GCODE_ENV] = said;
     expect(defaultMaxGcodeBytes()).toBe(128 * 1024 * 1024);
   });
-
 });

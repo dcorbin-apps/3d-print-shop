@@ -54,13 +54,10 @@ describe('minding the work', () => {
 
     // AIDEV-NOTE: said rather than left out. A list that quietly showed a caller only their own work
     // would read as the whole queue, and "what is this shop busy with" is what an operator asks it.
-    it('says how many it is holding that are not this caller\'s', async () => {
+    it("says how many it is holding that are not this caller's", async () => {
       mockJobs.mockResolvedValue(holding([job()], 4));
 
-      expect(await listJobs(shop)).toEqual([
-        '1  Player Box  PLA-SpaceGray  queued',
-        'and 3 more this shop is holding, which are not yours',
-      ]);
+      expect(await listJobs(shop)).toEqual(['1  Player Box  PLA-SpaceGray  queued', 'and 3 more this shop is holding, which are not yours']);
     });
 
     it('says the shop is busy even when none of it is theirs', async () => {

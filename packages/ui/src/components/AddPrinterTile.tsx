@@ -51,7 +51,7 @@ export function AddPrinterTile({ onAdd }: AddPrinterTileProps): React.JSX.Elemen
           api: 'octoprint',
           address: typed.address.trim(),
         },
-        typed.key.trim()
+        typed.key.trim(),
       );
       close();
     } catch (failure) {

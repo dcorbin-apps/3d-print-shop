@@ -65,8 +65,8 @@ describe('adding a printer from the row it will appear in', () => {
           api: 'octoprint',
           address: 'http://octopi.local',
         },
-        'mk4-key'
-      )
+        'mk4-key',
+      ),
     );
   });
 
@@ -94,7 +94,7 @@ describe('adding a printer from the row it will appear in', () => {
   });
 
   // The far end is what knows WHY - a name that becomes a directory, an address no printer is at.
-  it('stays open with the shop\'s own words when it is refused', async () => {
+  it("stays open with the shop's own words when it is refused", async () => {
     takesIt.mockRejectedValue(new Error('"mk4/2" is not a name a printer can have - it becomes a directory'));
     open();
     describeAnMk4();

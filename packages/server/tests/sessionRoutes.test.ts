@@ -36,8 +36,8 @@ describe('the sessions, over the shop routes', () => {
             ...(password === undefined ? [] : [{ kind: 'password' as const, hash: await hashPassword(password) }]),
             ...(token === undefined ? [] : [{ kind: 'token' as const, hash: digestOf(token) }]),
           ],
-        }))
-      )
+        })),
+      ),
     );
 
   beforeEach(async () => {
@@ -108,7 +108,7 @@ describe('the sessions, over the shop routes', () => {
     // AIDEV-NOTE: the ORDER, which is the half that would go quietly wrong. Asked after `attempts`,
     // a refusal like this would count against the caller it named - so anybody could spend somebody
     // else's guesses from another site and leave them locked out without ever reaching a password.
-    it('spends nobody\'s guesses on a login it will not act on', async () => {
+    it("spends nobody's guesses on a login it will not act on", async () => {
       const guess = { json: { id: 'dave', password: 'not the password' } };
       for (let tried = 0; tried <= FREELY + 1; tried += 1) await asked('POST', '/sessions', guess);
 
@@ -158,8 +158,7 @@ describe('the sessions, over the shop routes', () => {
     }, 60_000);
 
     describe('and logging out', () => {
-      const loggingOut = (cookie: string): ReturnType<typeof asked> =>
-        asked('DELETE', '/sessions', { headers: { cookie, origin: HERE } });
+      const loggingOut = (cookie: string): ReturnType<typeof asked> => asked('DELETE', '/sessions', { headers: { cookie, origin: HERE } });
 
       it('ends the session it was holding', async () => {
         const cookie = (await logIn('dave', PASSWORD)).cookie();
@@ -228,7 +227,7 @@ describe('the sessions, over the shop routes', () => {
         return naming(
           { id: 'dave', password: passwordOf('dave'), token: ADMIN },
           { id: 'slicer', token: USER },
-          { id: 'ada', password: passwordOf('ada'), token: A_USERS_TOKEN, role: 'user' }
+          { id: 'ada', password: passwordOf('ada'), token: A_USERS_TOKEN, role: 'user' },
         );
       };
 

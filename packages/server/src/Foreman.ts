@@ -44,7 +44,7 @@ export class Foreman {
     private readonly shop: JobStore,
     private readonly machines: Machines,
     private readonly log: Log = silent,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
   /**
@@ -67,7 +67,7 @@ export class Foreman {
 
     const look = this.looking.then(
       () => this.startWhatCanBeStarted(),
-      () => this.startWhatCanBeStarted()
+      () => this.startWhatCanBeStarted(),
     );
     this.looking = look.catch(() => undefined);
 
@@ -87,7 +87,7 @@ export class Foreman {
 
     const retry = this.retrying.then(
       () => this.reachForEverythingLost(),
-      () => this.reachForEverythingLost()
+      () => this.reachForEverythingLost(),
     );
     this.retrying = retry.catch(() => undefined);
 
@@ -283,7 +283,7 @@ export class Foreman {
 
     this.watching.set(
       name,
-      this.watchToTheEnd(name).finally(() => this.watching.delete(name))
+      this.watchToTheEnd(name).finally(() => this.watching.delete(name)),
     );
 
     return true;

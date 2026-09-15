@@ -7,14 +7,7 @@ import type { Job, RegisteredPrinter } from '@3d-print-shop/client/browser';
 
 /** What a machine is doing, in one word an operator can read across a room. */
 export type PrinterCondition =
-  | 'printing'
-  | 'awaiting-approval'
-  | 'stopped'
-  | 'unreachable'
-  | 'refused'
-  | 'out-of-contact'
-  | 'unreadable'
-  | 'idle';
+  'printing' | 'awaiting-approval' | 'stopped' | 'unreachable' | 'refused' | 'out-of-contact' | 'unreadable' | 'idle';
 
 /** What is wrong, when something is - the reason a person was given or the shop found. */
 export interface PrinterState {

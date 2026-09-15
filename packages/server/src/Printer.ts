@@ -31,4 +31,3 @@ export function canTake(printer: PrinterRecord, job: JobRecord): boolean {
 
   return claimed && fitsInside(job.requiredBuildVolume, printer.buildVolume);
 }
-

@@ -49,8 +49,7 @@ describe('a shop asked to stop', () => {
     url = `http://${listening[1]}:${listening[2]}`;
   };
 
-  const askingItToStop = (): Promise<Response> =>
-    fetch(`${url}/shutdown`, { method: 'POST', headers: { authorization: `Bearer ${ADMIN}` } });
+  const askingItToStop = (): Promise<Response> => fetch(`${url}/shutdown`, { method: 'POST', headers: { authorization: `Bearer ${ADMIN}` } });
 
   // Whatever the shop let go of, it does so in its own time - the answer goes back before it starts.
   const settled = (): Promise<void> => new Promise((done) => setTimeout(done, 250));
@@ -64,7 +63,7 @@ describe('a shop asked to stop', () => {
     await writeFile(
       path.join(etc, CALLERS_FILE),
       JSON.stringify([{ id: 'dave', name: 'dave', role: 'admin', credentials: [{ kind: 'token', hash: digestOf(ADMIN) }] }]),
-      { mode: 0o600 }
+      { mode: 0o600 },
     );
     said = [];
   });

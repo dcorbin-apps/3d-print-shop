@@ -31,7 +31,7 @@ export class HttpShop implements Shop {
   constructor(
     private readonly url: string,
     private readonly token?: string,
-    howToReach?: typeof fetch
+    howToReach?: typeof fetch,
   ) {
     this.howToReach = howToReach ?? ((asked, sent) => fetch(asked, sent));
   }

@@ -2,7 +2,27 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { AlreadyHasCallers, CALLERS_FILE, ETC_ENV, PRINTER_KEYS_FILE, UnusableCredentials, callersIn, defaultEtc, printerKeysIn, rereadCallers, rereadPrinterKeys, writeFirstCaller, writePrinterKey, Callers, addCaller, issueToken, migrateCallers, scratchBeside, setPassword, whosePasswordChanged } from '../src/credentials';
+import {
+  AlreadyHasCallers,
+  CALLERS_FILE,
+  ETC_ENV,
+  PRINTER_KEYS_FILE,
+  UnusableCredentials,
+  callersIn,
+  defaultEtc,
+  printerKeysIn,
+  rereadCallers,
+  rereadPrinterKeys,
+  writeFirstCaller,
+  writePrinterKey,
+  Callers,
+  addCaller,
+  issueToken,
+  migrateCallers,
+  scratchBeside,
+  setPassword,
+  whosePasswordChanged,
+} from '../src/credentials';
 import { digestOf, hashPassword, isThePassword } from '../src/secrets';
 import { toStdout } from '../src/log';
 import type { Log } from '../src/log';
@@ -121,7 +141,10 @@ describe('the credentials a shop is given', () => {
 
     // Either might let somebody in, which is one more way in than anybody meant to leave open.
     it('refuses a caller with two passwords', async () => {
-      const two = [{ kind: 'password', hash: 'one' }, { kind: 'password', hash: 'other' }];
+      const two = [
+        { kind: 'password', hash: 'one' },
+        { kind: 'password', hash: 'other' },
+      ];
       await write(CALLERS_FILE, [{ id: 'u-1', name: 'dave', role: 'admin', credentials: two }]);
 
       await expect(callersIn(etc)).rejects.toThrow('two passwords');
@@ -213,7 +236,10 @@ describe('the credentials a shop is given', () => {
 
     beforeEach(() => {
       lines = [];
-      log = toStdout(() => new Date(), (line) => lines.push(line));
+      log = toStdout(
+        () => new Date(),
+        (line) => lines.push(line),
+      );
     });
 
     it('knows a caller the file has since been given', async () => {
@@ -522,7 +548,10 @@ describe('the credentials a shop is given', () => {
 
     beforeEach(() => {
       lines = [];
-      log = toStdout(() => new Date(), (line) => lines.push(line));
+      log = toStdout(
+        () => new Date(),
+        (line) => lines.push(line),
+      );
     });
 
     it('knows the key the file has since been corrected to', async () => {
@@ -588,7 +617,13 @@ describe('the credentials a shop is given', () => {
       await write(PRINTER_KEYS_FILE, { mini: 'mini-key', xl: 'xl-key' });
       await writePrinterKey(etc, 'mk4', 'mk4-key');
 
-      expect(await printerKeysIn(etc)).toEqual(new Map([['mini', 'mini-key'], ['xl', 'xl-key'], ['mk4', 'mk4-key']]));
+      expect(await printerKeysIn(etc)).toEqual(
+        new Map([
+          ['mini', 'mini-key'],
+          ['xl', 'xl-key'],
+          ['mk4', 'mk4-key'],
+        ]),
+      );
     });
 
     it('replaces the key a printer already had', async () => {
@@ -690,7 +725,7 @@ describe('the credentials a shop is given', () => {
         new Map([
           ['mk4', 'one-key'],
           ['mini', 'another'],
-        ])
+        ]),
       );
     });
 

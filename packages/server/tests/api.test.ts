@@ -306,7 +306,7 @@ describe('the verdict a body gives', () => {
     'refuses %p',
     (body) => {
       expect(() => verdictIn(body)).toThrow(UnusableRequest);
-    }
+    },
   );
 
   // A request that brought nothing is a client's mistake worth naming as one, so the complaint still
@@ -328,13 +328,17 @@ describe('the login a body carries', () => {
     expect(loginIn({ id: 'dave', password: 'secret', role: 'admin' })).toEqual({ id: 'dave', password: 'secret' });
   });
 
-  it.each([[{ id: 'dave' }], [{ password: 'a password' }], [{}], [undefined], [{ id: 7, password: 'a password' }], [{ id: 'dave', password: null }]])(
-    'refuses %p, which is not a name and a password',
-    (body) => {
-      expect(() => loginIn(body)).toThrow(UnusableRequest);
-      expect(() => loginIn(body)).toThrow('a login is an id and a password');
-    }
-  );
+  it.each([
+    [{ id: 'dave' }],
+    [{ password: 'a password' }],
+    [{}],
+    [undefined],
+    [{ id: 7, password: 'a password' }],
+    [{ id: 'dave', password: null }],
+  ])('refuses %p, which is not a name and a password', (body) => {
+    expect(() => loginIn(body)).toThrow(UnusableRequest);
+    expect(() => loginIn(body)).toThrow('a login is an id and a password');
+  });
 
   // Empty is a shape this takes and the route refuses by hashing it like any other wrong one, which
   // is what keeps an empty password costing the same as a wrong one.
@@ -354,13 +358,17 @@ describe('the password change a body asks for', () => {
     expect(passwordChangeIn({ id: 'somebody else', current: 'a', password: 'b' })).toEqual({ current: 'a', password: 'b' });
   });
 
-  it.each([[{ current: 'the old one' }], [{ password: 'the new one' }], [{}], [undefined], [{ current: 'a', password: 7 }], [{ current: null, password: 'b' }]])(
-    'refuses %p, which is not both of them',
-    (body) => {
-      expect(() => passwordChangeIn(body)).toThrow(UnusableRequest);
-      expect(() => passwordChangeIn(body)).toThrow('changing a password is the one you have now and the one you want');
-    }
-  );
+  it.each([
+    [{ current: 'the old one' }],
+    [{ password: 'the new one' }],
+    [{}],
+    [undefined],
+    [{ current: 'a', password: 7 }],
+    [{ current: null, password: 'b' }],
+  ])('refuses %p, which is not both of them', (body) => {
+    expect(() => passwordChangeIn(body)).toThrow(UnusableRequest);
+    expect(() => passwordChangeIn(body)).toThrow('changing a password is the one you have now and the one you want');
+  });
 });
 
 // AIDEV-NOTE: the header a browser sends, read for one name. Every one of these was only ever
@@ -412,12 +420,9 @@ describe('the token a request presents', () => {
     expect(tokenIn('Bearer one two')).toBe('one two');
   });
 
-  it.each([[undefined], [''], ['abc123'], ['bearer abc123'], ['Bearer'], ['Bearer '], ['Basic abc123']])(
-    'is nobody at all for %j',
-    (header) => {
-      expect(tokenIn(header)).toBeUndefined();
-    }
-  );
+  it.each([[undefined], [''], ['abc123'], ['bearer abc123'], ['Bearer'], ['Bearer '], ['Basic abc123']])('is nobody at all for %j', (header) => {
+    expect(tokenIn(header)).toBeUndefined();
+  });
 });
 
 // AIDEV-NOTE: the shop keeping the rule SameSite keeps in the browser. A cookie is sent by whatever
@@ -469,7 +474,7 @@ describe('a write that has to have come from here', () => {
 // What express hands the guard for a real request line is not this function's to say, and is pinned
 // in tests/assumptions/theRequestLine.test.ts. That the guard is wired to this at all, and mounted
 // where it must be, is tests/guard.test.ts.
-describe('whether a route is an admin\'s', () => {
+describe("whether a route is an admin's", () => {
   const user = { id: 'slicer', name: 'slicer', role: 'user' as const };
   const admin = { id: 'dave', name: 'dave', role: 'admin' as const };
 
@@ -593,13 +598,13 @@ describe('the status an error becomes', () => {
 
   // What express.json() throws at a body that is not JSON. It carries the offending body, which is
   // what tells it apart from a SyntaxError the shop made itself.
-  it("is 400 for the SyntaxError express raises at a body that is not JSON", () => {
+  it('is 400 for the SyntaxError express raises at a body that is not JSON', () => {
     const refused = Object.assign(new SyntaxError('Unexpected token'), { body: '{ name: mini' });
 
     expect(statusFor(refused)).toBe(400);
   });
 
-  it('is 500 for a SyntaxError that carries no body, which is the shop\'s own', () => {
+  it("is 500 for a SyntaxError that carries no body, which is the shop's own", () => {
     expect(statusFor(new SyntaxError('Unexpected token'))).toBe(500);
   });
 
@@ -610,7 +615,6 @@ describe('the status an error becomes', () => {
     'is 500 for %p, which the shop did not mean',
     (error) => {
       expect(statusFor(error)).toBe(500);
-    }
+    },
   );
 });
-

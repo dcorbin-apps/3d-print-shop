@@ -42,7 +42,7 @@ describe('what commander says when a parser of ours refuses a value', () => {
           .command('approve')
           .argument('<id>', 'which job', refusing)
           .action(() => undefined),
-      ['approve', 'seven']
+      ['approve', 'seven'],
     );
 
     expect(written).toBe(`error: command-argument value 'seven' is invalid for argument 'id'. ${OURS}`);
@@ -51,7 +51,7 @@ describe('what commander says when a parser of ours refuses a value', () => {
   it('words an OPTION differently, and names the flag rather than the argument', () => {
     const written = said(
       (program) => program.option('--port <port>', 'the port to listen on', refusing).action(() => undefined),
-      ['--port', 'seven']
+      ['--port', 'seven'],
     );
 
     expect(written).toBe(`error: option '--port <port>' argument 'seven' is invalid. ${OURS}`);
