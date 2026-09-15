@@ -53,6 +53,26 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   same `submit` and reaches the store through it. A route of its own into the store would be the
   second copy that drifts.
 
+  It goes under a PREFIX of its own rather than at the root, and the reason is in `servePageFrom`:
+  any GET that `isTheShops` does not recognise gets `index.html` back. A caller probing `/api/version`
+  at the root would be handed the page with a 200 - which is exactly the failure the note on
+  `SHOP_ROUTES` was written about, and it tells whoever set it up nothing. Under a prefix listed in
+  `SHOP_ROUTES` that subtree is out of the fallback and can answer honestly, including answering no
+  honestly. The shop's OWN routes stay at the root, which is a separate decision and is untouched:
+  this is the imitation being quarantined under a name, at the cost of one more entry in the list
+  that the dev proxy and `everyPathHttpShopAsksFor` already keep straight.
+
+  The prefix is also where the credential difference lives - that subtree reads the other protocol's
+  header and nowhere else does - so security.md gets a region to name rather than an exception
+  scattered through the middleware.
+
+  Two things that will bite. The upload's answer embeds URLs of its own, and they have to carry the
+  prefix or a caller following one lands on the page; the shop already builds from what reached it
+  rather than from a name it was configured with, so the pattern is there. And accept the subtree
+  with and without a trailing slash, because how the caller joins its host to a path is not the
+  shop's to decide. Prove the join works against a real one before building on it - that, and not
+  the prefix itself, is the part that has historically broken.
+
   The hard part is not the multipart - `packages/octoprint-sim/src/octoPrintServer.ts` has served
   that protocol from the other side all along. It is that `POST /api/files/local` carries a file, a
   path and two flags, and NOTHING the shop schedules on: no filament, no build volume, no estimate.
