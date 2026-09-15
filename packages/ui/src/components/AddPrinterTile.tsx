@@ -21,11 +21,11 @@ export function AddPrinterTile({ onAdd }: AddPrinterTileProps): React.JSX.Elemen
 
   if (!typing) {
     return (
-      <button type="button" className="printer-tile add" onClick={() => setTyping(true)} aria-label="add a printer">
+      <button type="button" className="printer-tile add" onClick={() => setTyping(true)} aria-label="Add a printer">
         <span className="plus" aria-hidden="true">
           +
         </span>
-        <span className="add-what">add a printer</span>
+        <span className="add-what">Add a printer</span>
       </button>
     );
   }
@@ -102,10 +102,10 @@ export function AddPrinterTile({ onAdd }: AddPrinterTileProps): React.JSX.Elemen
 
       <span className="buttons">
         <button type="submit" disabled={adding || !enough(typed)}>
-          {adding ? 'adding...' : 'add'}
+          {adding ? 'Adding...' : 'Add'}
         </button>
         <button type="button" className="quiet" onClick={close}>
-          cancel
+          Cancel
         </button>
       </span>
     </form>

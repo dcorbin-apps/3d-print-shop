@@ -115,7 +115,7 @@ describe('the page, against a shop that answers', () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'add a printer' })).toBeDefined());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add a printer' })).toBeDefined());
   });
 
   it('offers a user nothing of the sort', async () => {
@@ -126,7 +126,7 @@ describe('the page, against a shop that answers', () => {
     // Waited for rather than asserted straight away: absent because the answer has not arrived yet
     // would pass without proving anything.
     await waitFor(() => expect(screen.getByText(/No printers/)).toBeDefined());
-    expect(screen.queryByRole('button', { name: 'add a printer' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add a printer' })).toBeNull();
   });
 
   // AIDEV-NOTE: the whole point of the form, end to end from the page: a machine and the key the
@@ -136,8 +136,8 @@ describe('the page, against a shop that answers', () => {
     answering('admin');
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'add a printer' })).toBeDefined());
-    fireEvent.click(screen.getByRole('button', { name: 'add a printer' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add a printer' })).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'Add a printer' }));
 
     (
       [
@@ -152,7 +152,7 @@ describe('the page, against a shop that answers', () => {
       fireEvent.change(screen.getByLabelText(field, { exact: false }), { target: { value: said } });
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() => expect(asked('POST', '/printers')).toBeDefined());
 
@@ -201,9 +201,9 @@ describe('the page, against a shop that answers', () => {
     it('tells the shop what the person sitting in front of it said', async () => {
       holding();
       render(<App />);
-      await waitFor(() => expect(screen.getByRole('button', { name: 'approve job 7' })).toBeDefined());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Approve job 7' })).toBeDefined());
 
-      fireEvent.click(screen.getByRole('button', { name: 'approve job 7' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Approve job 7' }));
 
       await waitFor(() => expect(asked('PUT', '/jobs/7/verdict')).toBeDefined());
       expect(JSON.parse(String(asked('PUT', '/jobs/7/verdict')?.body))).toEqual({ verdict: 'approved' });
@@ -214,10 +214,10 @@ describe('the page, against a shop that answers', () => {
     it('asks the shop again at once rather than waiting for the next poll', async () => {
       holding();
       render(<App />);
-      await waitFor(() => expect(screen.getByRole('button', { name: 'approve job 7' })).toBeDefined());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Approve job 7' })).toBeDefined());
       const askedBefore = fetching.mock.calls.filter(([where]) => String(where) === '/jobs').length;
 
-      fireEvent.click(screen.getByRole('button', { name: 'approve job 7' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Approve job 7' }));
 
       await waitFor(() => expect(fetching.mock.calls.filter(([where]) => String(where) === '/jobs').length).toBeGreaterThan(askedBefore));
     });
@@ -229,7 +229,7 @@ describe('the page, against a shop that answers', () => {
 
       render(<App />);
 
-      await waitFor(() => expect(screen.getByRole('button', { name: 'give up job 7' })).toBeDefined());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Give up job 7' })).toBeDefined());
     });
   });
 
@@ -254,7 +254,7 @@ describe('the page, against a shop that answers', () => {
         fireEvent.change(screen.getByLabelText(field, { exact: false }), { target: { value: said } });
       });
 
-      fireEvent.click(screen.getByRole('button', { name: 'change' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Change' }));
     };
 
     it('sends the shop the one in use and the one wanted', async () => {

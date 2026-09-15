@@ -130,7 +130,7 @@ describe('the page somebody logs in on', () => {
       loggingIn('dave', 'a password');
 
       await waitFor(() => expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true));
-      expect(screen.getByRole('button').textContent).toBe('asking...');
+      expect(screen.getByRole('button').textContent).toBe('Asking...');
     });
   });
 });

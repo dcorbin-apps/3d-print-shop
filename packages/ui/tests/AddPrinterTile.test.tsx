@@ -10,7 +10,7 @@ describe('adding a printer from the row it will appear in', () => {
 
   const open = (): void => {
     render(<AddPrinterTile onAdd={takesIt} />);
-    fireEvent.click(screen.getByRole('button', { name: 'add a printer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a printer' }));
   };
 
   const type = (label: string, said: string): void => {
@@ -29,7 +29,7 @@ describe('adding a printer from the row it will appear in', () => {
   it('is a plus until somebody presses it', () => {
     render(<AddPrinterTile onAdd={takesIt} />);
 
-    expect(screen.getByRole('button', { name: 'add a printer' }).textContent).toContain('+');
+    expect(screen.getByRole('button', { name: 'Add a printer' }).textContent).toContain('+');
     expect(screen.queryByLabelText('name')).toBeNull();
   });
 
@@ -55,7 +55,7 @@ describe('adding a printer from the row it will appear in', () => {
     open();
     describeAnMk4();
 
-    fireEvent.click(screen.getByRole('button', { name: 'add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() =>
       expect(takesIt).toHaveBeenCalledWith(
@@ -78,7 +78,7 @@ describe('adding a printer from the row it will appear in', () => {
     describeAnMk4();
     type('name', '  mk4  ');
 
-    fireEvent.click(screen.getByRole('button', { name: 'add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() => expect(takesIt).toHaveBeenCalledWith(expect.objectContaining({ name: 'mk4' }), 'mk4-key'));
   });
@@ -88,9 +88,9 @@ describe('adding a printer from the row it will appear in', () => {
     open();
     describeAnMk4();
 
-    fireEvent.click(screen.getByRole('button', { name: 'add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'add a printer' })).toBeDefined());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add a printer' })).toBeDefined());
   });
 
   // The far end is what knows WHY - a name that becomes a directory, an address no printer is at.
@@ -99,7 +99,7 @@ describe('adding a printer from the row it will appear in', () => {
     open();
     describeAnMk4();
 
-    fireEvent.click(screen.getByRole('button', { name: 'add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() => expect(screen.getByText(/it becomes a directory/)).toBeDefined());
     expect(screen.getByLabelText('name', { exact: false })).toBeDefined();
@@ -111,7 +111,7 @@ describe('adding a printer from the row it will appear in', () => {
     open();
     describeAnMk4();
 
-    fireEvent.click(screen.getByRole('button', { name: 'add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() => expect(screen.getByText('no')).toBeDefined());
     expect((screen.getByLabelText('name', { exact: false }) as HTMLInputElement).value).toBe('mk4');
@@ -121,8 +121,8 @@ describe('adding a printer from the row it will appear in', () => {
     open();
     describeAnMk4();
 
-    fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
-    fireEvent.click(screen.getByRole('button', { name: 'add a printer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a printer' }));
 
     expect((screen.getByLabelText('name', { exact: false }) as HTMLInputElement).value).toBe('');
   });
@@ -130,7 +130,7 @@ describe('adding a printer from the row it will appear in', () => {
   // Only what the form can know by itself; everything past this is the shop's to judge and it says
   // so better than this could.
   describe('what it will not send at all', () => {
-    const addIsOffered = (): boolean => !(screen.getByRole('button', { name: 'add' }) as HTMLButtonElement).disabled;
+    const addIsOffered = (): boolean => !(screen.getByRole('button', { name: 'Add' }) as HTMLButtonElement).disabled;
 
     it('offers to add one once every field is filled', () => {
       open();

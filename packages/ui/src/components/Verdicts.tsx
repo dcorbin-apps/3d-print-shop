@@ -12,9 +12,9 @@ interface VerdictsProps {
 // and hides what actually happens to the job. The consequence is on each button as its title, and
 // each of them frees the bed, which is the whole reason a verdict is asked for at all.
 const SAYING: { verdict: Verdict; says: string; means: string }[] = [
-  { verdict: 'approved', says: 'approve', means: 'The print is good - the job leaves the shop, gcode and all' },
-  { verdict: 'rejected', says: 'print again', means: 'Not usable - the job goes back to the queue, to print again from the same gcode' },
-  { verdict: 'abandoned', says: 'give up', means: 'Not usable, and not worth another - the job leaves the shop with nothing to show for it' },
+  { verdict: 'approved', says: 'Approve', means: 'The print is good - the job leaves the shop, gcode and all' },
+  { verdict: 'rejected', says: 'Print again', means: 'Not usable - the job goes back to the queue, to print again from the same gcode' },
+  { verdict: 'abandoned', says: 'Give up', means: 'Not usable, and not worth another - the job leaves the shop with nothing to show for it' },
 ];
 
 // AIDEV-NOTE: the one thing that frees a bed, on the page somebody is already watching the print on.

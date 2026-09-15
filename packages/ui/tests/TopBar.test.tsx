@@ -188,7 +188,7 @@ describe('the banner and what it says the shop is doing', () => {
         fireEvent.click(theName());
         fireEvent.click(changingIt() as HTMLElement);
 
-        fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
         expect(screen.queryByLabelText('current password', { exact: false })).toBeNull();
       });

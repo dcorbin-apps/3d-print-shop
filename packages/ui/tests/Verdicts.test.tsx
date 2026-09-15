@@ -24,9 +24,9 @@ describe('judging a print from the page it was watched on', () => {
   // Three, because the third one is the one a shop cannot do without: a print that was no good and
   // is not worth another still has to let go of the bed it is holding.
   it.each([
-    ['approve', 'approved'],
-    ['print again', 'rejected'],
-    ['give up', 'abandoned'],
+    ['Approve', 'approved'],
+    ['Print again', 'rejected'],
+    ['Give up', 'abandoned'],
   ])('tells the shop that %s means %s', async (button, verdict) => {
     offering();
 
@@ -40,13 +40,13 @@ describe('judging a print from the page it was watched on', () => {
   it('says which job each of them judges', () => {
     offering(12);
 
-    expect(screen.getByRole('button', { name: 'approve job 12' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Approve job 12' })).toBeDefined();
   });
 
   it('says what each of them will do to the job', () => {
     offering();
 
-    expect(screen.getByRole('button', { name: 'print again job 7' }).getAttribute('title')).toContain('print again from the same gcode');
+    expect(screen.getByRole('button', { name: 'Print again job 7' }).getAttribute('title')).toContain('print again from the same gcode');
   });
 
   it('takes one verdict, not one per click', async () => {
@@ -58,9 +58,9 @@ describe('judging a print from the page it was watched on', () => {
     );
     offering();
 
-    press('approve');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'give up job 7' }).hasAttribute('disabled')).toBe(true));
-    press('give up');
+    press('Approve');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Give up job 7' }).hasAttribute('disabled')).toBe(true));
+    press('Give up');
 
     expect(said).toHaveBeenCalledTimes(1);
     taken();
@@ -70,9 +70,9 @@ describe('judging a print from the page it was watched on', () => {
     said.mockReturnValue(new Promise<void>(() => undefined));
     offering();
 
-    press('approve');
+    press('Approve');
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'approve job 7' }).textContent).toBe('approve...'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve job 7' }).textContent).toBe('Approve...'));
   });
 
   // The shop's own words, because this end knows only that a verdict was not taken - not whether the
@@ -81,7 +81,7 @@ describe('judging a print from the page it was watched on', () => {
     said.mockRejectedValue(new Error('job 7 is not yours to judge'));
     offering();
 
-    press('approve');
+    press('Approve');
 
     expect(await screen.findByText('job 7 is not yours to judge')).toBeDefined();
   });
@@ -90,9 +90,9 @@ describe('judging a print from the page it was watched on', () => {
     said.mockRejectedValueOnce(new Error('the shop is not answering'));
     offering();
 
-    press('approve');
+    press('Approve');
     await screen.findByText('the shop is not answering');
-    press('give up');
+    press('Give up');
 
     await waitFor(() => expect(said).toHaveBeenCalledWith('abandoned'));
     expect(screen.queryByText('the shop is not answering')).toBeNull();

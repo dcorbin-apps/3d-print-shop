@@ -1,7 +1,7 @@
 import type { Job, RegisteredPrinter, Verdict } from '@3d-print-shop/client/browser';
 import { asPrintingTime, byFilament } from '../byFilament.js';
-import { JobMenu } from './JobMenu.js';
-import type { JobActions } from './JobMenu.js';
+import { ExpandedJob } from './ExpandedJob.js';
+import type { JobActions } from './ExpandedJob.js';
 import { Verdicts } from './Verdicts.js';
 
 interface JobsByFilamentProps {
@@ -41,7 +41,7 @@ export function JobsByFilament({ jobs, totalJobs, selected, onVerdict, actions }
                 <span className="id">{job.id}</span>
                 <span className="name">{job.displayName}</span>
                 <span className="state">{whereItIs(job)}</span>
-                {actions !== undefined && <JobMenu job={job} actions={actions} />}
+                {actions !== undefined && <ExpandedJob job={job} actions={actions} />}
                 {job.state === 'awaiting-approval' && onVerdict !== undefined && (
                   <Verdicts job={job.id} onVerdict={(verdict) => onVerdict(job.id, verdict)} />
                 )}

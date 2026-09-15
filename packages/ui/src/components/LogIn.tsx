@@ -54,7 +54,7 @@ export function LogIn({ onIn }: LogInProps): React.JSX.Element {
       {refused !== undefined && <p className="refused">{refused}</p>}
 
       <button type="submit" disabled={asking || id.trim() === '' || password === ''}>
-        {asking ? 'asking...' : 'Log in'}
+        {asking ? 'Asking...' : 'Log in'}
       </button>
     </form>
   );

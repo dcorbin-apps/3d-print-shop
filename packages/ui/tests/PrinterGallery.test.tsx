@@ -32,7 +32,7 @@ describe('the gallery of printers', () => {
   // withholding the button is manners, not the guard.
   describe('the way to add one', () => {
     const takesIt = jest.fn<(record: PrinterRecord) => Promise<void>>();
-    const addsOne = (): HTMLElement | null => screen.queryByRole('button', { name: 'add a printer' });
+    const addsOne = (): HTMLElement | null => screen.queryByRole('button', { name: 'Add a printer' });
 
     it('is not offered to a caller who was given no way to add one', () => {
       render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
@@ -60,7 +60,7 @@ describe('the gallery of printers', () => {
 
       const last = screen.getAllByRole('button').at(-1);
 
-      expect(last?.getAttribute('aria-label')).toBe('add a printer');
+      expect(last?.getAttribute('aria-label')).toBe('Add a printer');
     });
   });
 

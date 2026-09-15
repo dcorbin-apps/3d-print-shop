@@ -57,7 +57,7 @@ describe('changing your own password', () => {
     asking();
     fillIn();
 
-    press('change');
+    press('Change');
 
     await waitFor(() => expect(changed).toHaveBeenCalledWith(NOW, NEXT));
   });
@@ -66,7 +66,7 @@ describe('changing your own password', () => {
     asking();
     type('current password', NOW);
 
-    expect(screen.getByRole('button', { name: 'change' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Change' }).hasAttribute('disabled')).toBe(true);
   });
 
   // The one thing this end knows by itself: the shop cannot see that the two new ones differ.
@@ -74,7 +74,7 @@ describe('changing your own password', () => {
     asking();
     fillIn(NOW, NEXT, 'something else again');
 
-    press('change');
+    press('Change');
 
     expect(screen.getByText('The two new ones are not the same')).toBeDefined();
     expect(changed).not.toHaveBeenCalled();
@@ -87,7 +87,7 @@ describe('changing your own password', () => {
     asking();
     fillIn();
 
-    press('change');
+    press('Change');
 
     expect(await screen.findByText('a password has to be at least 12 characters')).toBeDefined();
   });
@@ -97,13 +97,13 @@ describe('changing your own password', () => {
     changed.mockRejectedValueOnce(new Error('that is not the password this caller has now'));
     asking();
     fillIn();
-    press('change');
+    press('Change');
     await screen.findByText('that is not the password this caller has now');
 
     changed.mockReturnValue(new Promise<void>(() => undefined));
-    press('change');
+    press('Change');
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'changing...' })).toBeDefined());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Changing...' })).toBeDefined());
     expect(screen.queryByText('that is not the password this caller has now')).toBeNull();
   });
 
@@ -111,10 +111,10 @@ describe('changing your own password', () => {
     changed.mockRejectedValueOnce(new Error('that is not the password this caller has now'));
     asking();
     fillIn();
-    press('change');
+    press('Change');
     await screen.findByText('that is not the password this caller has now');
 
-    press('change');
+    press('Change');
 
     await waitFor(() => expect(changed).toHaveBeenCalledTimes(2));
   });
@@ -125,7 +125,7 @@ describe('changing your own password', () => {
     asking();
     fillIn();
 
-    press('change');
+    press('Change');
 
     expect(await screen.findByText(/Password changed/)).toBeDefined();
     expect(screen.getByText(/logged out/)).toBeDefined();
@@ -134,10 +134,10 @@ describe('changing your own password', () => {
   it('is put away when there is nothing more to say', async () => {
     asking();
     fillIn();
-    press('change');
+    press('Change');
     await screen.findByText(/Password changed/);
 
-    press('close');
+    press('Close');
 
     expect(closed).toHaveBeenCalled();
   });
@@ -146,7 +146,7 @@ describe('changing your own password', () => {
     asking();
     fillIn();
 
-    press('cancel');
+    press('Cancel');
 
     expect(closed).toHaveBeenCalled();
     expect(changed).not.toHaveBeenCalled();
@@ -157,8 +157,8 @@ describe('changing your own password', () => {
     asking();
     fillIn();
 
-    press('change');
+    press('Change');
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'changing...' }).hasAttribute('disabled')).toBe(true));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Changing...' }).hasAttribute('disabled')).toBe(true));
   });
 });

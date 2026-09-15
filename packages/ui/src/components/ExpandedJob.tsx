@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Job } from '@3d-print-shop/client/browser';
 
 /** What a person may do to a job from the list. Absent, the list only reports. */
@@ -8,28 +8,49 @@ export interface JobActions {
   onRemove: (id: number) => Promise<void>;
 }
 
-interface JobMenuProps {
+interface ExpandedJobProps {
   job: Job;
   actions: JobActions;
   /** Asked before anything a person cannot undo. Answers whether to go on. */
   confirm?: (question: string) => boolean;
 }
 
-// AIDEV-NOTE: what each act is OFFERED for is decided here and refused again by the shop, which is
-// the same manners the `+` on the printer row keeps: withholding a button a caller cannot use is
-// politeness, and the shop refusing it is the guard. A hold is not offered on a print that has
-// started because a hold cannot stop one - saying otherwise on screen would have somebody believe
-// they had stopped a print they had not.
-export function JobMenu({ job, actions, confirm = window.confirm.bind(window) }: JobMenuProps): React.JSX.Element {
+// AIDEV-NOTE: this OPENS A JOB UP rather than being a menu over it. The difference is not cosmetic:
+// a menu is a list of commands that happens to be near a thing, where this is the job's own row
+// showing more of itself - which is why what it offers depends on what the job is doing, and why it
+// closes when somebody's attention goes elsewhere rather than waiting to be dismissed.
+//
+// What each act is offered FOR is decided here and refused again by the shop, which is the same
+// manners the `+` on the printer row keeps: withholding a button a caller cannot use is politeness,
+// and the shop refusing it is the guard. A pause is not offered on a print that has started because
+// a pause cannot stop one - saying otherwise would have somebody believe they had stopped a print.
+export function ExpandedJob({ job, actions, confirm = window.confirm.bind(window) }: ExpandedJobProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(job.displayName);
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | undefined>(undefined);
+  const opened = useRef<HTMLDivElement | null>(null);
 
   const held = job.heldBack !== undefined;
   const queued = job.state === 'queued';
   const printing = job.state === 'printing';
+
+  // AIDEV-NOTE: closed by attention moving on, which is what an opened row should do and what a
+  // dismiss button was standing in for. `mousedown` rather than `click`, so that pressing a button
+  // somewhere else on the page does both things at once rather than only closing this. A refusal
+  // this is showing goes with it: it was about what was just attempted here.
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const closeIfElsewhere = (pressed: MouseEvent): void => {
+      if (opened.current?.contains(pressed.target as Node) === false) setOpen(false);
+    };
+
+    document.addEventListener('mousedown', closeIfElsewhere);
+
+    return () => document.removeEventListener('mousedown', closeIfElsewhere);
+  }, [open]);
 
   // The shop's own words for a refusal. This end knows only that something was not done.
   const doing = async (what: () => Promise<void>): Promise<void> => {
@@ -66,14 +87,14 @@ export function JobMenu({ job, actions, confirm = window.confirm.bind(window) }:
 
   if (!open) {
     return (
-      <button type="button" className="job-menu-open" aria-label={`what can be done with job ${job.id}`} onClick={() => setOpen(true)}>
+      <button type="button" className="job-open" aria-label={`Open job ${job.id}`} onClick={() => setOpen(true)}>
         …
       </button>
     );
   }
 
   return (
-    <div className="job-menu" role="group" aria-label={`job ${job.id}`}>
+    <div className="job-opened" role="group" aria-label={`Job ${job.id}`} ref={opened}>
       {renaming ? (
         <form
           onSubmit={(sending) => {
@@ -81,14 +102,14 @@ export function JobMenu({ job, actions, confirm = window.confirm.bind(window) }:
             void doing(() => actions.onRename(job.id, name));
           }}
         >
-          <input aria-label={`a name for job ${job.id}`} value={name} onChange={(typing) => setName(typing.target.value)} autoFocus />
+          <input aria-label={`A name for job ${job.id}`} value={name} onChange={(typing) => setName(typing.target.value)} autoFocus />
           <button type="submit" disabled={busy}>
-            rename
+            Rename
           </button>
         </form>
       ) : (
         <button type="button" disabled={busy} onClick={() => setRenaming(true)}>
-          rename
+          Rename
         </button>
       )}
 
@@ -99,16 +120,12 @@ export function JobMenu({ job, actions, confirm = window.confirm.bind(window) }:
           title={held ? 'Let this job be printed again when its filament is on' : 'Leave this job where it is until somebody says otherwise'}
           onClick={() => void doing(() => actions.onHold(job.id, !held))}
         >
-          {held ? 'resume' : 'pause'}
+          {held ? 'Resume' : 'Pause'}
         </button>
       )}
 
       <button type="button" className="remove" disabled={busy} onClick={remove}>
-        {printing ? 'cancel' : 'delete'}
-      </button>
-
-      <button type="button" disabled={busy} onClick={() => setOpen(false)}>
-        close
+        {printing ? 'Cancel' : 'Delete'}
       </button>
 
       {refused !== undefined && <p className="refused">{refused}</p>}

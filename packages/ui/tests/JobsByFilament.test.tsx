@@ -106,7 +106,7 @@ describe('the work the shop is holding', () => {
     it('is offered on the print that is waiting for one', () => {
       judging([printed(7)]);
 
-      expect(screen.getByRole('button', { name: 'approve job 7' })).toBeDefined();
+      expect(screen.getByRole('button', { name: 'Approve job 7' })).toBeDefined();
     });
 
     it.each([
@@ -127,7 +127,7 @@ describe('the work the shop is holding', () => {
     it('says which job it was given about', async () => {
       judging([printed(7), printed(9)]);
 
-      fireEvent.click(screen.getByRole('button', { name: 'approve job 9' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Approve job 9' }));
 
       await waitFor(() => expect(judged).toHaveBeenCalledWith(9, 'approved'));
     });

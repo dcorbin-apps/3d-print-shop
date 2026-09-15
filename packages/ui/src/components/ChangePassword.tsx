@@ -52,7 +52,7 @@ export function ChangePassword({ onChange, onDone }: ChangePasswordProps): React
       <div className="change-password done">
         <p>Password changed. Every other browser it was logged in on has been logged out.</p>
         <button type="button" onClick={onDone}>
-          close
+          Close
         </button>
       </div>
     );
@@ -85,10 +85,10 @@ export function ChangePassword({ onChange, onDone }: ChangePasswordProps): React
 
       <span className="buttons">
         <button type="submit" disabled={changing || !enough(typed)}>
-          {changing ? 'changing...' : 'change'}
+          {changing ? 'Changing...' : 'Change'}
         </button>
         <button type="button" className="quiet" onClick={onDone}>
-          cancel
+          Cancel
         </button>
       </span>
     </form>
