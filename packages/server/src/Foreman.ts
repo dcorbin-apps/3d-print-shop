@@ -1,3 +1,4 @@
+import { WrongState } from './JobStore.js';
 import type { JobStore } from './JobStore.js';
 import { silent } from './log.js';
 import type { Log } from './log.js';
@@ -323,6 +324,21 @@ export class Foreman {
   // whose own state the shop cannot know until it is too late to act on it. What that note was
   // guarding against is a connection per idle printer, which is the cost now being paid on purpose -
   // it buys a shop that knows a printer went offline before it picks one to print on.
+  // AIDEV-NOTE: the job is deliberately NOT let go of here, and the bed is not cleared. Cancelling
+  // says stop; what happened then is the machine's to report, and it reports it the way every other
+  // ending is reported - a PrintCancelled event the watcher is already waiting on, which writes the
+  // outcome down and leaves the job where a finished one goes. Anything else here would be the shop
+  // deciding what came off a bed it cannot see.
+  /** Tell a printer to stop what it is printing. What the bed is owed afterwards is a verdict. */
+  async cancelPrintOn(name: string): Promise<void> {
+    const printer = await this.shop.printerNamed(name);
+    const machine = await this.reach(printer);
+
+    if (machine.cancel === undefined) throw new WrongState(`${name} cannot be told to stop`);
+
+    await machine.cancel();
+  }
+
   /** Open a line to every machine the shop has, so that each can say how it is. */
   async keepInTouch(): Promise<void> {
     for (const printer of await this.shop.printers()) {

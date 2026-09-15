@@ -45,6 +45,26 @@ export interface Shop {
    * with nothing when it has left the shop.
    */
   verdict(id: number, verdict: Verdict): Promise<Job | undefined>;
+  /** Call a job something else. What was submitted is untouched; only what it is called changes. */
+  rename(id: number, displayName: string): Promise<Job>;
+  /**
+   * Hold a queued job back, so the shop passes it over until somebody lets it through.
+   *
+   * Refused on a job a printer is holding: a hold keeps a job from STARTING, and that one started.
+   * What stops a running print is `remove`.
+   */
+  hold(id: number): Promise<Job>;
+  /** Let a held job through. It is queued like any other from that moment. */
+  letThrough(id: number): Promise<Job>;
+  /**
+   * Be rid of a job, which is a different act depending on what it is doing.
+   *
+   * A QUEUED one is forgotten - the record, the gcode, all of it. A PRINTING one is cancelled on the
+   * machine, and does NOT leave: the bed still has plastic on it, so the job lands where a finished
+   * one does and waits for somebody's verdict. One already waiting for a verdict is refused, because
+   * a verdict is how that one leaves and it already has that route.
+   */
+  remove(id: number): Promise<void>;
 
   /**
    * Change your own password, presenting the one you have now.

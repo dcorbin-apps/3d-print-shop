@@ -653,9 +653,10 @@ export class OctoPrint implements Printer {
     this.arrivedCompletions.set(path, status);
   }
 
-  // AIDEV-NOTE: not on the Printer port - nothing asks a printer to stop mid-print yet. Kept rather
-  // than deleted because an operator will want it and this is proven against a real OctoPrint.
-  // OctoPrint cancels whatever is running, so it takes no argument.
+  // AIDEV-NOTE: on the Printer port since somebody asked to be able to stop a print. It was written
+  // before anything called it and kept because an operator would want it, which turned out right.
+  // OctoPrint cancels whatever is running, so it takes no argument - the shop knows which print that
+  // is because it is the one the printer is holding.
   async cancel(): Promise<void> {
     const response = await this.reach(`${this.config.baseUrl}/api/job`, {
       method: 'POST',

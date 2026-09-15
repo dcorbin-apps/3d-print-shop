@@ -141,6 +141,11 @@ const OPEN_TO_EVERY_CALLER: readonly { method: string; path: RegExp }[] = [
   // A verdict is the owner's to give, which is a thing about the JOB rather than about the caller's
   // role - so the route is open here and the ownership of it is decided in the route itself.
   { method: 'PUT', path: /^\/jobs\/[^/]+\/verdict$/ },
+  // The same reasoning as a verdict: these are things about a JOB, and whose job it is decides them.
+  { method: 'PUT', path: /^\/jobs\/[^/]+\/name$/ },
+  { method: 'PUT', path: /^\/jobs\/[^/]+\/hold$/ },
+  { method: 'DELETE', path: /^\/jobs\/[^/]+\/hold$/ },
+  { method: 'DELETE', path: /^\/jobs\/[^/]+$/ },
   { method: 'GET', path: /^\/printers$/ },
   // Themselves, and nobody else. See the route.
   { method: 'GET', path: /^\/me$/ },
@@ -296,6 +301,11 @@ export interface ShopHooks {
   // park should be.
   /** Where an in-flight upload is parked while the shop reads what it says about itself. */
   spool?: string;
+  // AIDEV-NOTE: stopping a print reaches a MACHINE, which is the running shop's business and not the
+  // store's - the same reasoning as `keyGiven`. Absent is a shop that cannot be asked to stop one,
+  // which is what an API served without any machines should be.
+  /** Tell a printer to stop what it is printing. The bed is still owed a verdict afterwards. */
+  cancelPrint?: (printer: string) => Promise<void>;
   /** Where the running service writes down what it did. Silent unless somebody supplies one. */
   log?: Log;
 }
@@ -347,6 +357,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
   // written down, because nothing ever has to match it.
   const nobody = hashPassword(newToken());
   const log = hooks.log ?? silent;
+  const cancelPrint = hooks.cancelPrint;
 
   // AIDEV-NOTE: first, so it covers the requests the next middleware REFUSES - a shop being asked
   // for things by somebody it cannot name is the most interesting line it will ever write, and a
@@ -602,6 +613,71 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
   // AIDEV-NOTE: a verdict is a resource rather than an /approve, a /reject and an /abandon, so each
   // one is a value on the same route, and a verdict on a job that has not finished printing is a 409
   // on the thing being set. Only rejecting answers with a job - the other two leave nothing to say.
+  // AIDEV-NOTE: the three of these and the delete below all answer "is this yours" the same way a
+  // verdict does - not yours reads as not here, so that a 403 cannot be used to find out that job 7
+  // exists. What they may then DO is the store's to refuse, and it refuses on what the job is doing.
+  api.put('/jobs/:id/name', async (request, response) => {
+    const id = jobId(request.params.id);
+    const displayName = displayNameIn(request.body);
+    const job = await shop.find(id);
+    if (!job || !theirs(request.caller, job)) throw new NoSuchJob(`no job ${id}`);
+
+    log.info('a job was renamed', { job: id, from: job.displayName, to: displayName, by: request.caller.name });
+
+    response.json(await shop.rename(id, displayName));
+  });
+
+  api.put('/jobs/:id/hold', async (request, response) => {
+    const id = jobId(request.params.id);
+    const job = await shop.find(id);
+    if (!job || !theirs(request.caller, job)) throw new NoSuchJob(`no job ${id}`);
+
+    log.info('a job was held back', { job: id, by: request.caller.name });
+
+    response.json(await shop.holdBack(id));
+  });
+
+  api.delete('/jobs/:id/hold', async (request, response) => {
+    const id = jobId(request.params.id);
+    const job = await shop.find(id);
+    if (!job || !theirs(request.caller, job)) throw new NoSuchJob(`no job ${id}`);
+
+    log.info('a job was let through', { job: id, by: request.caller.name });
+
+    response.json(await shop.letThrough(id));
+  });
+
+  // AIDEV-NOTE: one route, two acts, decided by what the job is DOING rather than by which button a
+  // page offered. A queued job is forgotten. A printing one is stopped on the machine and stays -
+  // there is plastic on that bed, so it lands where a finished print lands and waits for a verdict
+  // like any other. One already waiting for a verdict is refused: that is how it leaves, and saying
+  // yes here would be a second way to do the same thing with none of the record a verdict leaves.
+  api.delete('/jobs/:id', async (request, response) => {
+    const id = jobId(request.params.id);
+    const job = await shop.find(id);
+    if (!job || !theirs(request.caller, job)) throw new NoSuchJob(`no job ${id}`);
+
+    if (job.state === 'awaiting-approval') {
+      throw new WrongState(`job ${id} is waiting for a verdict, and a verdict is how it leaves - approve it, print it again, or give up on it`);
+    }
+
+    if (job.state === 'printing') {
+      if (cancelPrint === undefined) throw new WrongState('this shop cannot be asked to stop a print');
+      if (job.heldBy === undefined) throw new WrongState(`job ${id} is printing on nothing this shop can name`);
+
+      log.info('a print was cancelled', { job: id, printer: job.heldBy, by: request.caller.name, owner: job.owner });
+      await cancelPrint(job.heldBy);
+
+      response.status(202).json({ cancelling: true });
+      return;
+    }
+
+    log.info('a job was forgotten', { job: id, displayName: job.displayName, by: request.caller.name, owner: job.owner });
+    await shop.forget(id);
+
+    response.status(204).end();
+  });
+
   api.put('/jobs/:id/verdict', async (request, response) => {
     const verdict = verdictIn(request.body);
     const id = jobId(request.params.id);
@@ -969,6 +1045,19 @@ export function verdictIn(body: unknown): Verdict {
   }
 
   return verdict;
+}
+
+// AIDEV-NOTE: shape only, the way `verdictIn` is. What makes a NAME acceptable is `validateDisplayName`
+// in Job.ts, which is the rule a submission is held to - one rule, so a name that could not be
+// submitted cannot be arrived at by renaming either.
+export function displayNameIn(body: unknown): string {
+  const { displayName } = bodyOf(body);
+
+  if (typeof displayName !== 'string') {
+    throw new UnusableRequest(`a job's name is text, not ${JSON.stringify(displayName)}`);
+  }
+
+  return displayName;
 }
 
 // AIDEV-NOTE: shape only. Whether the password is RIGHT is the route's, and deliberately slow; what

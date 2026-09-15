@@ -144,6 +144,7 @@ export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Co
           passwordChanged: keepTheirNewPassword,
           page: options.page,
           spool,
+          cancelPrint: (printer: string): Promise<void> => foreman.cancelPrintOn(printer),
           log,
         },
         // Not defaulted here: `serve` holds the default, and a second copy of an address is a second

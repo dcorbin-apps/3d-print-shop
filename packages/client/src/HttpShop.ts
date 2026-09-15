@@ -96,6 +96,24 @@ export class HttpShop implements Shop {
     return answer && asJob(answer);
   }
 
+  async rename(id: number, displayName: string): Promise<Job> {
+    return asJob((await this.answered('PUT', `/jobs/${id}/name`, { displayName })) as WireJob);
+  }
+
+  // Held and let through are the same fact said twice, so they are one resource put and deleted -
+  // the shape a verdict would have had if a verdict could be taken back.
+  async hold(id: number): Promise<Job> {
+    return asJob((await this.answered('PUT', `/jobs/${id}/hold`)) as WireJob);
+  }
+
+  async letThrough(id: number): Promise<Job> {
+    return asJob((await this.answered('DELETE', `/jobs/${id}/hold`)) as WireJob);
+  }
+
+  async remove(id: number): Promise<void> {
+    await this.answered('DELETE', `/jobs/${id}`);
+  }
+
   async waitingOn(printer?: string): Promise<FilamentDemand[]> {
     const forPrinter = printer === undefined ? '' : `?printer=${encodeURIComponent(printer)}`;
 

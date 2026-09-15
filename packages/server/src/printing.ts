@@ -22,6 +22,11 @@ export interface Printer {
   // tells is one the shop goes on believing can print, which is what it believed before any of this.
   /** Told what the machine says about its own fitness to print, and again whenever that changes. */
   saysWhatItCanDo?(told: (canPrint: boolean, why: string) => void): void;
+  // AIDEV-NOTE: optional for the same reason, and it answers when the machine has been TOLD rather
+  // than when the print has stopped. What stopping looks like arrives the way every other ending
+  // does - as the outcome the watcher is already waiting on - so there is nothing to wait for here.
+  /** Tell the machine to stop what it is printing. */
+  cancel?(): Promise<void>;
 }
 
 // AIDEV-NOTE: what tells "I could not get to that machine" apart from every other way a printer can

@@ -584,4 +584,140 @@ describe('the jobs, over the shop routes', () => {
       expect(lines.join('\n')).toContain(`${missing.jobs} is not there - it is created when the shop is installed`);
     });
   });
+
+  // AIDEV-NOTE: (UT) the job menu's four acts over the real router and the real store. What each of
+  // them REFUSES is most of the point: a hold on a print that has started, a delete on a bed that is
+  // owed a verdict, and anything at all on somebody else's job.
+  describe('what a person can do to a job afterwards', () => {
+    let id: number;
+
+    beforeEach(async () => {
+      id = (await submitted(playerBox)).id;
+    });
+
+    const asUser = (method: string, path: string, json?: unknown): ReturnType<typeof asked> => asked(method, path, { token: USER, json });
+
+    describe('renaming it', () => {
+      it('answers with the job under its new name', async () => {
+        const answer = await send('PUT', `/jobs/${id}/name`, { displayName: 'Clamp Dock' });
+
+        expect(answer.status).toBe(200);
+        expect((answer.body as Job).displayName).toBe('Clamp Dock');
+      });
+
+      it('refuses a name that is not text, and says what arrived', async () => {
+        const answer = await send('PUT', `/jobs/${id}/name`, { displayName: 7 });
+
+        expect(answer.status).toBe(400);
+        expect(answer.text).toContain('7');
+      });
+
+      // Held to the same rule a submission is, so a name that could not be submitted cannot be
+      // arrived at by renaming either.
+      it('refuses a name too long to have been submitted', async () => {
+        const answer = await send('PUT', `/jobs/${id}/name`, { displayName: 'x'.repeat(256) });
+
+        expect(answer.status).toBe(400);
+      });
+
+      // Not yours reads as not here, for the reason GET /jobs/:id does: a 403 would confirm it exists.
+      it('is not there for somebody it does not belong to', async () => {
+        const answer = await asUser('PUT', `/jobs/${id}/name`, { displayName: 'Mine Now' });
+
+        expect(answer.status).toBe(404);
+      });
+    });
+
+    describe('holding it back', () => {
+      it('answers with the job, saying when it was held', async () => {
+        const answer = await send('PUT', `/jobs/${id}/hold`);
+
+        expect(answer.status).toBe(200);
+        expect((answer.body as Job).heldBack).toBeDefined();
+      });
+
+      it('lets it through again', async () => {
+        await send('PUT', `/jobs/${id}/hold`);
+
+        const answer = await send('DELETE', `/jobs/${id}/hold`);
+
+        expect((answer.body as Job).heldBack).toBeUndefined();
+      });
+
+      it('is refused once a printer has it, because a hold cannot stop what has started', async () => {
+        await shop.startPrinting(await shop.printerNamed('mk4'), id);
+
+        const answer = await send('PUT', `/jobs/${id}/hold`);
+
+        expect(answer.status).toBe(409);
+      });
+    });
+
+    describe('being rid of it', () => {
+      it('forgets a queued one', async () => {
+        const answer = await send('DELETE', `/jobs/${id}`);
+
+        expect(answer.status).toBe(204);
+        expect(await shop.find(id)).toBeUndefined();
+      });
+
+      it('is not there for somebody it does not belong to, and the job stays', async () => {
+        const answer = await asUser('DELETE', `/jobs/${id}`);
+
+        expect(answer.status).toBe(404);
+        expect(await shop.find(id)).toBeDefined();
+      });
+
+      // A verdict is how that one leaves, and it already has that route.
+      it('refuses one that is waiting for a verdict, and says what to do instead', async () => {
+        await shop.startPrinting(await shop.printerNamed('mk4'), id);
+        await shop.finishedPrinting(await shop.printerNamed('mk4'), 'finished');
+
+        const answer = await send('DELETE', `/jobs/${id}`);
+
+        expect(answer.status).toBe(409);
+        expect(answer.text).toContain('verdict');
+      });
+    });
+  });
+
+  // The printing case needs a shop that has something to cancel WITH, which the rest of this file
+  // deliberately does not give itself.
+  describe('being rid of a job that is printing', () => {
+    let id: number;
+    let mockCancelPrint: jest.Mock<(printer: string) => Promise<void>>;
+    let asking: ReturnType<typeof drive>;
+
+    beforeEach(async () => {
+      mockCancelPrint = jest.fn<(printer: string) => Promise<void>>().mockResolvedValue(undefined);
+      asking = drive(createApi(shop, { callers: () => callers, cancelPrint: mockCancelPrint }));
+      id = ((await asking('POST', '/jobs', { token: ADMIN, body: submission(playerBox), contentType: MULTIPART })).body as Job).id;
+      await shop.startPrinting(await shop.printerNamed('mk4'), id);
+    });
+
+    it('tells the printer holding it to stop', async () => {
+      const answer = await asking('DELETE', `/jobs/${id}`, { token: ADMIN });
+
+      expect(answer.status).toBe(202);
+      expect(mockCancelPrint).toHaveBeenCalledWith('mk4');
+    });
+
+    // There is plastic on that bed. The job goes where a finished print goes and waits for somebody,
+    // which is what the machine reporting the cancellation will bring about.
+    it('leaves the job where it is rather than deleting it out from under the printer', async () => {
+      await asking('DELETE', `/jobs/${id}`, { token: ADMIN });
+
+      expect(await shop.find(id)).toBeDefined();
+      expect((await shop.printerNamed('mk4')).holding?.job).toBe(id);
+    });
+
+    it('is refused by a shop with no machines to ask', async () => {
+      const noMachines = drive(createApi(shop, { callers: () => callers }));
+
+      const answer = await noMachines('DELETE', `/jobs/${id}`, { token: ADMIN });
+
+      expect(answer.status).toBe(409);
+      expect(mockCancelPrint).not.toHaveBeenCalled();
+    });
+  });
 });
