@@ -10,6 +10,30 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ## Remaining Work
 
+### Do this first, and on its own
+
+- [ ] THE NEXT COMMIT IS THE FORMATTING AND NOTHING ELSE. `.prettierrc.json` names no
+  `trailingComma`, and prettier 3 defaults that to `all` where the code in this repository was
+  written under `es5` - so the checked-in source does not match its own config. Measured: 50 files
+  fail `prettier --check` as configured, and 35 fail it with `"trailingComma": "es5"` added, so
+  neither setting describes what is actually here and the repository has drifted under both.
+
+  `yarn lint` cannot see any of it. `eslint-config-prettier` turns the formatting rules off, which is
+  correct and means lint is not the thing that will ever catch this.
+
+  What to do: decide which setting this code is meant to be in, put it in `.prettierrc.json` so it is
+  no longer a default nobody chose, run prettier over everything once, and commit THAT BY ITSELF.
+
+  On its own because a pass that touches fifty files cannot be reviewed alongside a change that
+  means something - the meaning disappears into the reformat, and every `git blame` on those lines
+  afterwards lands on the formatting commit instead of on whoever wrote the line. It has already
+  cost once: a `prettier --write` over a glob reformatted thirty-three files nobody had touched, and
+  untangling that from real work is the whole reason this is written down.
+
+  And add something that keeps it from drifting again - `prettier --check` in CI beside `yarn lint`
+  is the boring answer, and it is the one thing here that is not currently checked by anything.
+
+
 ### The service
 
 - [ ] FUTURE - not a near-term task. Stream a plate to the printer rather than reading it whole.
