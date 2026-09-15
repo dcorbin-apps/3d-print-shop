@@ -133,9 +133,23 @@ listen; one on a different port over the same directory is the case only this ca
 
 ## What changes, and what does not
 
-**A job record is written once and never written again.** It says what was submitted; a job leaves
-the shop when it is approved rather than being updated on the way. There is nothing in it that
-moves, so there is nothing to keep in step with anything else.
+**A job record is written at submission and changed by one thing only: a person renaming the job.**
+It says what the job is; a job leaves the shop when it is approved rather than being updated on the
+way. Nothing in it is derived from, scheduled on, or copied elsewhere - so there is no second version
+of any of it, and nothing to keep in step with anything else. That, rather than the writing-once, was
+always what the rule was protecting: a name is a label, and rewriting a label creates no disagreement
+because nothing else ever held a copy of it.
+
+**A person pausing a job is not in the record**, because that is not what a job IS - it is somebody
+intervening in when it may run. It lives in `statusOverride.json` beside the record, holding when the
+pause was put on and nothing else. In particular it does not hold the job's STATE, which is derived
+below and deliberately stored nowhere; a file that held both would be the second disagreeing copy
+this design spends its effort avoiding.
+
+A pause is enforced twice, and the second one is the guard rather than the manners. `printableNow`
+declines to offer a paused job, which is what stops one being picked up; `startPrinting` refuses one
+outright, because the scheduler decides at one moment and a print begins at another, and a pause can
+land in between.
 
 **Everything that moves belongs to a printer**, because a printer is the only thing here whose state
 actually changes. That is why the two halves of a printer are two files: `printer.json` is what the

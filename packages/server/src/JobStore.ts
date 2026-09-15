@@ -56,25 +56,31 @@ const PRINTERS_DIR = 'printers';
 const NEXT_ID_FILE = 'next-id';
 const RECORD_FILE = 'job.json';
 
-// AIDEV-NOTE: the SECOND file in a job's directory, and the reason the first one never changes. A
-// record is the submission as it arrived and is written once; this is what a person has said about
-// that job SINCE - a name they preferred, a hold they put on it. Kept apart rather than merged into
-// the record for the same reason a printer is a record and a status: what was said once and what
-// moves are two different things, and mixing them is how a written-once file starts being rewritten.
+// AIDEV-NOTE: the second file in a job's directory, and it holds ONE kind of thing: a person having
+// intervened in when this job may run. Nothing else belongs in it, and in particular a job's STATE
+// does not - that is derived by looking for the printer whose `holding` names this job, and there is
+// deliberately no second record of it anywhere to disagree with that one. The name says override
+// because a pause overrides what the shop would otherwise do with a queued job; it does not mean
+// this file may override what the job IS.
 //
-// Absent is the ordinary case and means nobody has said anything, so nothing is written until
-// somebody does and a job directory without one is complete.
-const CHANGED_FILE = 'changed.json';
+// Absent is the ordinary case and means nobody has intervened, so nothing is written until somebody
+// does and a job directory without one is complete.
+const STATUS_OVERRIDE_FILE = 'statusOverride.json';
 const GCODE_FILE = 'print.gcode';
 const PRINTER_FILE = 'printer.json';
 const STATUS_FILE = 'status.json';
 
 type StoredJob = Omit<JobRecord, 'submittedAt'> & { submittedAt: string };
 
-/** What somebody has said about a job since it arrived. Every field absent is the ordinary case. */
-interface StoredChanges {
-  displayName?: string;
-  heldBack?: string;
+/**
+ * A person's intervention in when a job may run. Absent, and absent fields, are the ordinary case.
+ *
+ * `paused` carries WHEN rather than `true`, because everything else this shop writes about something
+ * being held up carries a since - and how long a job has been set aside is the question an operator
+ * actually asks about one.
+ */
+interface StatusOverride {
+  paused?: string;
 }
 interface StoredTrouble {
   reason: string;
@@ -219,10 +225,10 @@ export class JobStore {
     const entries = await readdir(this.where.jobs).catch(() => [] as string[]);
     const records = await Promise.all(entries.map((entry) => this.readRecord(Number(entry))));
 
-    const changes = await Promise.all(records.map(async (record) => (record ? this.readChanges(record.id) : {})));
+    const overrides = await Promise.all(records.map(async (record) => (record ? this.readOverride(record.id) : {})));
 
     return records
-      .flatMap((record, at) => (record === undefined ? [] : [asJob(record, printers, changes[at])]))
+      .flatMap((record, at) => (record === undefined ? [] : [asJob(record, printers, overrides[at])]))
       .sort((one, another) => one.id - another.id);
   }
 
@@ -230,7 +236,7 @@ export class JobStore {
     await this.requireDataRoot();
 
     const record = await this.readRecord(id);
-    return record && asJob(record, await this.printers(), await this.readChanges(id));
+    return record && asJob(record, await this.printers(), await this.readOverride(id));
   }
 
   /**
@@ -256,6 +262,10 @@ export class JobStore {
     if (printer.paused) throw new WrongState(`${onto.name} is stopped: ${printer.paused.reason}`);
     if (printer.holding) throw new WrongState(`${onto.name} is already holding job ${printer.holding.job}`);
     if (job.state !== 'queued') throw new WrongState(`job ${id} is ${job.state}, so it cannot be started`);
+    // AIDEV-NOTE: here and not only in `printableNow`, for the reason everything else in this method
+    // is re-read: the scheduler decided this job was startable at some earlier moment, and somebody
+    // may have paused it since. Declining to OFFER a paused job is manners; this is what makes it so.
+    if (job.heldBack !== undefined) throw new WrongState(`job ${id} is paused, so it cannot be started`);
     if (!canTake(printer, job)) throw new WrongState(`${onto.name} cannot take job ${id}`);
 
     await this.changeStatus(printer, (status) => ({ ...status, holding: { job: id, phase: 'printing' } }));
@@ -455,15 +465,19 @@ export class JobStore {
     return this.printerNamed(printer.name);
   }
 
-  // AIDEV-NOTE: a job's name is the one thing about it a person may correct, and correcting it must
-  // not rewrite the submission. What was asked for stays in the record; what it is called now lives
-  // beside it. Allowed at any state, because a name is a label and labelling a print that is already
-  // running changes nothing about the print.
-  /** Call a job something else. What was submitted is untouched. */
+  // AIDEV-NOTE: the one thing in a job's record that a person may change, and the reason that record
+  // is no longer written strictly once - see design/3d-print-shop.md. A name is a LABEL: nothing is
+  // derived from it, nothing is scheduled on it, and no second copy of it exists to disagree with
+  // this one, so rewriting it creates none of what the write-once rule was protecting against.
+  // Allowed at any state, because labelling a print that is already running changes nothing about
+  // the print.
+  /** Call a job something else. */
   async rename(id: number, displayName: string): Promise<Job> {
     validateDisplayName(displayName);
-    await this.require(id);
-    await this.changeWhatWasSaid(id, (said) => ({ ...said, displayName }));
+    const record = await this.readRecord(id);
+    if (!record) throw new NoSuchJob(`no job ${id}`);
+
+    await this.writeRecord({ ...record, displayName });
 
     return this.require(id);
   }
@@ -474,15 +488,15 @@ export class JobStore {
   // a running print is cancelling it.
   /** Hold a job back, so the shop passes it over until somebody says otherwise. */
   async holdBack(id: number): Promise<Job> {
-    await this.requireNothingIsHolding(id, 'held back');
-    await this.changeWhatWasSaid(id, (said) => ({ ...said, heldBack: new Date().toISOString() }));
+    await this.requireNothingIsHolding(id, 'paused');
+    await this.overrideStatus(id, (override) => ({ ...override, paused: new Date().toISOString() }));
 
     return this.require(id);
   }
 
   /** Let a held job through again. It is queued like any other from that moment. */
   async letThrough(id: number): Promise<Job> {
-    await this.changeWhatWasSaid(id, ({ heldBack: _heldBack, ...said }) => said);
+    await this.overrideStatus(id, ({ paused: _paused, ...override }) => override);
 
     return this.require(id);
   }
@@ -507,26 +521,29 @@ export class JobStore {
     return job;
   }
 
-  private async readChanges(id: number): Promise<StoredChanges> {
-    const contents = await readFile(path.join(this.jobDir(id), CHANGED_FILE), 'utf-8').catch(() => undefined);
+  private async readOverride(id: number): Promise<StatusOverride> {
+    const file = path.join(this.jobDir(id), STATUS_OVERRIDE_FILE);
+    const contents = await readFile(file, 'utf-8').catch(() => undefined);
     if (contents === undefined) return {};
 
     try {
-      return JSON.parse(contents) as StoredChanges;
+      return JSON.parse(contents) as StatusOverride;
     } catch {
-      // Answered as nothing having been said, which is what it was before anybody said it. A job
-      // whose name somebody changed is not worth withholding from every answer over.
-      this.sayOnce(path.join(this.jobDir(id), CHANGED_FILE), 'what was said about a job will not parse, so it is read as nothing', { job: id });
+      // AIDEV-NOTE: read as nobody having intervened, which is what was true before anybody did -
+      // and NOT the way an unreadable record is treated, which takes the job out of every answer.
+      // The difference is what each file is: without the record there is no job, where without this
+      // there is a job nobody has paused. Failing closed here would hide a job over a pause.
+      this.sayOnce(file, 'a job says something about being paused that this shop cannot read, so it is read as not paused', { job: id, file });
 
       return {};
     }
   }
 
-  private async changeWhatWasSaid(id: number, change: (said: StoredChanges) => StoredChanges): Promise<void> {
+  private async overrideStatus(id: number, change: (override: StatusOverride) => StatusOverride): Promise<void> {
     await this.require(id);
 
-    const said = change(await this.readChanges(id));
-    await writeAtomically(path.join(this.jobDir(id), CHANGED_FILE), asJson(said));
+    const override = change(await this.readOverride(id));
+    await writeAtomically(path.join(this.jobDir(id), STATUS_OVERRIDE_FILE), asJson(override));
   }
 
   private async leaveTheShop(id: number): Promise<void> {
@@ -792,22 +809,19 @@ export class JobStore {
 // AIDEV-NOTE: a job's state is READ from the printers, never from the job. Held by one, it is
 // printing or awaiting a verdict; held by none, it is queued. There is nowhere for a second answer
 // to be written, so there is nothing to reconcile.
-function asJob(record: JobRecord, printers: RegisteredPrinter[], changed: StoredChanges = {}): Job {
-  // What a person said about the name wins over what arrived with the job: renaming is the whole
-  // point of saying it, and the record keeps what was submitted for anybody who wants it.
-  const said = { ...record, displayName: changed.displayName ?? record.displayName };
+function asJob(record: JobRecord, printers: RegisteredPrinter[], override: StatusOverride = {}): Job {
   const holder = printers.find((printer) => printer.holding?.job === record.id);
 
-  // AIDEV-NOTE: a hold is only ever reported on a job nothing is holding. A print already on a bed
-  // is not stopped by somebody having pressed pause on the queue, and saying "held" about it would
-  // read as though it were - so the hold is kept on disk and simply not shown while it prints.
-  if (!holder?.holding) return { ...said, state: 'queued', heldBack: whenHeld(changed) };
+  // AIDEV-NOTE: a pause is only ever reported on a job nothing is holding. A print already on a bed
+  // is not stopped by somebody having pressed pause on the queue, and saying "paused" about it would
+  // read as though it were - so it is kept on disk and simply not shown while it prints.
+  if (!holder?.holding) return { ...record, state: 'queued', heldBack: whenPaused(override) };
 
-  return { ...said, state: holder.holding.phase, heldBy: holder.name, lastPrinterOutcome: holder.holding.outcome };
+  return { ...record, state: holder.holding.phase, heldBy: holder.name, lastPrinterOutcome: holder.holding.outcome };
 }
 
-function whenHeld(changed: StoredChanges): Date | undefined {
-  return changed.heldBack === undefined ? undefined : new Date(changed.heldBack);
+function whenPaused(override: StatusOverride): Date | undefined {
+  return override.paused === undefined ? undefined : new Date(override.paused);
 }
 
 // AIDEV-NOTE: piped rather than buffered - a kit's gcode runs to tens of megabytes, and pipeline()

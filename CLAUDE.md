@@ -19,7 +19,12 @@ runs one way. Naming one is how the dependency starts, so nothing here names one
 * The printing loop is deliberately absent from the API. `startPrinting`, `couldNotStart`,
   `finishedPrinting` and the gcode are the loop's own bookkeeping, and publishing them would invite
   a second writer into a store built for one.
-* A job record is written once and never rewritten. Everything that moves belongs to a printer.
+* A job record is written at submission and only ever changed by a person renaming the job. Nothing
+  in it is derived from, scheduled on, or copied anywhere, so there is no second version of any of it
+  to disagree with. Everything that MOVES belongs to a printer.
+* A job's state is derived by finding the printer whose `holding` names it, and is stored nowhere. A
+  person pausing a job is kept in `statusOverride.json` beside the record - that file holds the
+  intervention and never the state.
 
 # Behavior
 

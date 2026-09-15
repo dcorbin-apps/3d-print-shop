@@ -946,15 +946,16 @@ describe('JobStore', () => {
         expect((await shop.find(id))?.displayName).toBe('Clamp Dock');
       });
 
-      // The whole reason a second file exists. If this ever fails, the store has started rewriting
-      // the one thing it promises never to rewrite.
-      it('leaves the submitted record exactly as it was', async () => {
+      // The name is IN the record, so this is the write landing where it should. Nothing else in the
+      // record may move, which is what the second half asserts.
+      it('writes the new name into the record and changes nothing else in it', async () => {
         const before = await recordOnDisk();
 
         await shop.rename(id, 'Clamp Dock');
 
-        expect(await recordOnDisk()).toEqual(before);
-        expect((await recordOnDisk()).displayName).toBe('Player Box');
+        const after = await recordOnDisk();
+        expect(after.displayName).toBe('Clamp Dock');
+        expect({ ...after, displayName: undefined }).toEqual({ ...before, displayName: undefined });
       });
 
       it('refuses a name the shop would have refused at submission', async () => {
@@ -995,6 +996,16 @@ describe('JobStore', () => {
         await shop.startPrinting(await shop.printerNamed('mk4'), id);
 
         await expect(shop.holdBack(id)).rejects.toThrow(WrongState);
+      });
+
+      // AIDEV-NOTE: the guard rather than the manners. `printableNow` declines to OFFER a paused job,
+      // which is what stops one being picked - but the scheduler decides at one moment and the print
+      // starts at another, and a pause can land in between. Without this, that job prints.
+      it('cannot be started by a printer even when it is asked directly', async () => {
+        await shop.holdBack(id);
+
+        await expect(shop.startPrinting(await shop.printerNamed('mk4'), id)).rejects.toThrow(WrongState);
+        expect((await shop.printerNamed('mk4')).holding).toBeUndefined();
       });
     });
 
