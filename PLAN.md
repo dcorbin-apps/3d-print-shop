@@ -102,8 +102,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   second write again with extra steps. Moving the spool under the jobs root is the part that has to
   be decided, because it puts scratch inside the directory that holds real work.
 
-### The build
-
 ### Installation
 
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this
