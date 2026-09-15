@@ -1,7 +1,7 @@
 import { describe, it, expect, jest, afterEach, beforeEach } from '@jest/globals';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Job } from '@3d-print-shop/client/browser';
-import { ExpandedJob } from '../src/components/ExpandedJob';
+import { JobMenu } from '../src/components/JobMenu';
 
 // AIDEV-NOTE: (UT) what the menu OFFERS is most of what is being asked here. The shop refuses what
 // it must whatever this renders - withholding a button is manners and not the guard - but a button
@@ -34,8 +34,8 @@ describe('what can be done with a job', () => {
   }
 
   const open = (overrides: Partial<Job> = {}): void => {
-    render(<ExpandedJob job={job(overrides)} actions={{ onRename, onHold, onRemove }} confirm={confirm} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Open job 7' }));
+    render(<JobMenu job={job(overrides)} actions={{ onRename, onHold, onRemove }} confirm={confirm} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Menu for job 7' }));
   };
 
   const press = (button: string): void => fireEvent.click(screen.getByRole('button', { name: button }));
@@ -124,16 +124,19 @@ describe('what can be done with a job', () => {
     await waitFor(() => expect(screen.getByText('job 7 is waiting for a verdict')).toBeDefined());
   });
 
-  // AIDEV-NOTE: what a dismiss button was standing in for. An opened row closes when attention goes
-  // elsewhere, which is what opening a thing means - and `mousedown` rather than `click` so that
-  // pressing something else on the page does both at once rather than only closing this.
+  // AIDEV-NOTE: what a dismiss button was standing in for. The TRIGGER is always there now - this is
+  // a popup rather than a row that opens - so what these ask about is the popup, never the trigger's
+  // absence. `mousedown` rather than `click`, so pressing something else on the page does both at
+  // once rather than only closing this.
   describe('closing again', () => {
+    const popup = (): HTMLElement | null => screen.queryByRole('menu', { name: 'Job 7' });
+
     it('closes when something else on the page is pressed', () => {
       open();
 
       fireEvent.mouseDown(document.body);
 
-      expect(screen.getByRole('button', { name: 'Open job 7' })).toBeDefined();
+      expect(popup()).toBeNull();
     });
 
     it('stays open while its own buttons are being used', () => {
@@ -141,7 +144,7 @@ describe('what can be done with a job', () => {
 
       fireEvent.mouseDown(screen.getByRole('button', { name: 'Rename' }));
 
-      expect(screen.queryByRole('button', { name: 'Open job 7' })).toBeNull();
+      expect(popup()).not.toBeNull();
     });
 
     it('closes once something it was asked to do is done', async () => {
@@ -149,7 +152,17 @@ describe('what can be done with a job', () => {
 
       press('Pause');
 
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Open job 7' })).toBeDefined());
+      await waitFor(() => expect(popup()).toBeNull());
+    });
+
+    // Pressing the trigger again is the other way to be rid of it, and the trigger is still there to
+    // press - which is the whole difference between this and the row that used to open.
+    it('closes when the trigger is pressed a second time', () => {
+      open();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Menu for job 7' }));
+
+      expect(popup()).toBeNull();
     });
   });
 });

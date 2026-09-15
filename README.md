@@ -211,7 +211,7 @@ browser that was logged in as them is logged out by it; the one that asked is ke
 just proved who it is. It needs no signal and no restart: the shop writes the file and puts it in
 force in one act.
 
-**A job opens up** - rename, pause, and be rid of it. A name is a label and can be
+**Every job has a menu on its right** - rename, pause, and be rid of it. It floats over the list, so reading one job moves nothing else on the page, and closes when attention goes elsewhere. A name is a label and can be
 changed at any time; what was submitted is kept untouched beside it, because a job record is written
 once and renaming somebody's mind is not a reason to break that. Pausing holds a queued job back so
 the shop passes it over, and is not offered on a print that has started - a hold keeps a job from

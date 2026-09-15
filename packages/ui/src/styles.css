@@ -264,7 +264,9 @@ body {
 
 .job {
   display: grid;
-  grid-template-columns: 2.5em 1fr auto;
+  /* id, name, state, and the menu on the right. A fourth column rather than a fourth thing wrapping
+     onto a row of its own, which is where it went when the grid only had three. */
+  grid-template-columns: 2.5em 1fr auto auto;
   gap: 8px;
   align-items: baseline;
   padding: 4px 0;
@@ -296,8 +298,13 @@ body {
   font-style: italic;
 }
 
-/* The row is `id name state`; opening it puts what else it can do underneath all three. */
-.job-open {
+/* The menu FLOATS. A list that reflowed under somebody's cursor is what this replaced, so the popup
+   is taken out of the flow entirely and the row it belongs to does not change size when it opens. */
+.job-menu {
+  position: relative;
+}
+
+.job-menu-open {
   padding: 0 6px;
   color: var(--dim);
   font: inherit;
@@ -308,22 +315,33 @@ body {
   cursor: pointer;
 }
 
-.job-open:hover {
+.job-menu-open:hover,
+.job-menu-open[aria-expanded='true'] {
   color: var(--ink);
   border-color: var(--edge);
 }
 
-.job-opened {
-  grid-column: 1 / -1;
+.job-menu-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-  padding: 4px 0 2px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 11em;
+  padding: 6px;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
 }
 
-.job-opened button,
-.job-opened input {
+.job-menu-popup button,
+.job-menu-popup input {
+  width: 100%;
+  text-align: left;
   padding: 4px 9px;
   color: var(--ink);
   font: inherit;
@@ -333,18 +351,28 @@ body {
   border-radius: 5px;
 }
 
-.job-opened button {
+.job-menu-popup button {
   cursor: pointer;
 }
 
 /* The one that cannot be undone says so before it is pressed, not only in the question it asks. */
-.job-opened button.remove {
+.job-menu-popup button.remove {
   color: var(--wrong);
 }
 
-.job-opened form {
+/* Renaming happens inside the popup rather than replacing it, so the field and its button stack with
+   everything else rather than turning the popup into a row halfway down. */
+.job-menu-popup form {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* A refusal is the shop's sentence, and it has to fit in a popup rather than widening one. */
+.job-menu-popup .refused {
+  max-width: 18em;
+  margin: 2px 0 0;
+  font-size: 11px;
 }
 
 /* The row is `id name state`; the buttons go under all three, for the job whose turn it is. */

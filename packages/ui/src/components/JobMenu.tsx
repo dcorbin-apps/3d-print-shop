@@ -8,23 +8,22 @@ export interface JobActions {
   onRemove: (id: number) => Promise<void>;
 }
 
-interface ExpandedJobProps {
+interface JobMenuProps {
   job: Job;
   actions: JobActions;
   /** Asked before anything a person cannot undo. Answers whether to go on. */
   confirm?: (question: string) => boolean;
 }
 
-// AIDEV-NOTE: this OPENS A JOB UP rather than being a menu over it. The difference is not cosmetic:
-// a menu is a list of commands that happens to be near a thing, where this is the job's own row
-// showing more of itself - which is why what it offers depends on what the job is doing, and why it
-// closes when somebody's attention goes elsewhere rather than waiting to be dismissed.
+// AIDEV-NOTE: a POPUP over the row rather than an opening of it. It floats, so a job being looked at
+// moves nothing else on the page - a list that reflowed under somebody's cursor was the reason this
+// stopped expanding the row. It still closes when attention goes elsewhere, which a popup should.
 //
 // What each act is offered FOR is decided here and refused again by the shop, which is the same
 // manners the `+` on the printer row keeps: withholding a button a caller cannot use is politeness,
 // and the shop refusing it is the guard. A pause is not offered on a print that has started because
 // a pause cannot stop one - saying otherwise would have somebody believe they had stopped a print.
-export function ExpandedJob({ job, actions, confirm = window.confirm.bind(window) }: ExpandedJobProps): React.JSX.Element {
+export function JobMenu({ job, actions, confirm = window.confirm.bind(window) }: JobMenuProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(job.displayName);
@@ -85,50 +84,60 @@ export function ExpandedJob({ job, actions, confirm = window.confirm.bind(window
     if (confirm(question)) void doing(() => actions.onRemove(job.id));
   };
 
-  if (!open) {
-    return (
-      <button type="button" className="job-open" aria-label={`Open job ${job.id}`} onClick={() => setOpen(true)}>
+  // AIDEV-NOTE: the trigger and the popup share one wrapper, and the wrapper is what the outside-click
+  // is measured against - so pressing the trigger to open is not immediately an outside press that
+  // closes it again. The wrapper is what the popup is positioned from, too.
+  return (
+    <div className="job-menu" ref={opened}>
+      <button
+        type="button"
+        className="job-menu-open"
+        aria-label={`Menu for job ${job.id}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
         …
       </button>
-    );
-  }
 
-  return (
-    <div className="job-opened" role="group" aria-label={`Job ${job.id}`} ref={opened}>
-      {renaming ? (
-        <form
-          onSubmit={(sending) => {
-            sending.preventDefault();
-            void doing(() => actions.onRename(job.id, name));
-          }}
-        >
-          <input aria-label={`A name for job ${job.id}`} value={name} onChange={(typing) => setName(typing.target.value)} autoFocus />
-          <button type="submit" disabled={busy}>
-            Rename
+      {open && (
+        <div className="job-menu-popup" role="menu" aria-label={`Job ${job.id}`}>
+          {renaming ? (
+            <form
+              onSubmit={(sending) => {
+                sending.preventDefault();
+                void doing(() => actions.onRename(job.id, name));
+              }}
+            >
+              <input aria-label={`A name for job ${job.id}`} value={name} onChange={(typing) => setName(typing.target.value)} autoFocus />
+              <button type="submit" disabled={busy}>
+                Rename
+              </button>
+            </form>
+          ) : (
+            <button type="button" disabled={busy} onClick={() => setRenaming(true)}>
+              Rename
+            </button>
+          )}
+
+          {queued && (
+            <button
+              type="button"
+              disabled={busy}
+              title={held ? 'Let this job be printed again when its filament is on' : 'Leave this job where it is until somebody says otherwise'}
+              onClick={() => void doing(() => actions.onHold(job.id, !held))}
+            >
+              {held ? 'Resume' : 'Pause'}
+            </button>
+          )}
+
+          <button type="button" className="remove" disabled={busy} onClick={remove}>
+            {printing ? 'Cancel' : 'Delete'}
           </button>
-        </form>
-      ) : (
-        <button type="button" disabled={busy} onClick={() => setRenaming(true)}>
-          Rename
-        </button>
+
+          {refused !== undefined && <p className="refused">{refused}</p>}
+        </div>
       )}
-
-      {queued && (
-        <button
-          type="button"
-          disabled={busy}
-          title={held ? 'Let this job be printed again when its filament is on' : 'Leave this job where it is until somebody says otherwise'}
-          onClick={() => void doing(() => actions.onHold(job.id, !held))}
-        >
-          {held ? 'Resume' : 'Pause'}
-        </button>
-      )}
-
-      <button type="button" className="remove" disabled={busy} onClick={remove}>
-        {printing ? 'Cancel' : 'Delete'}
-      </button>
-
-      {refused !== undefined && <p className="refused">{refused}</p>}
     </div>
   );
 }
