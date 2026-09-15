@@ -1,0 +1,21 @@
+// AIDEV-NOTE: the language-level answers, in ONE place. Every tsconfig here used to carry its own
+// copy of these nine, which meant a compiler option added at the root reached nothing and a decision
+// about the language had to be made four times - and would eventually be made three. Found by adding
+// `noUncheckedIndexedAccess` at the root, measuring no effect, and going to look.
+//
+// What does NOT belong here: `outDir` and `rootDir`, because a relative path in an extended file
+// resolves against THIS directory rather than against whoever extends it; and anything about what a
+// package IS - composite, declaration, noEmit, jsx - which is the package's own business.
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "lib": ["ES2020"],
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  }
+}

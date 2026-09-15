@@ -104,14 +104,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The build
 
-- [ ] The tsconfigs DUPLICATE their compiler options instead of extending one base. `tsconfig.json`
-  at the root, and each of `packages/*/tsconfig.json`, carry their own copy of `target`, `strict`,
-  `moduleResolution` and the rest - so a compiler option added at the root reaches NOTHING, which was
-  found the way these things are found: by adding one, measuring no effect, and looking. Anybody
-  deciding a language-level question here has to decide it four times and will eventually decide it
-  three. Make the packages extend the root, which is a small change and the prerequisite for the next
-  item.
-
 - [ ] MEASURED and not done: `noUncheckedIndexedAccess`. It types indexing honestly - `array[0]` and
   `record[key]` become `T | undefined` - which is precisely the class the guard in `secrets.ts`
   defends against and that `no-unnecessary-condition` wanted to delete for being "unnecessary". The
