@@ -45,13 +45,28 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   `could-not-start` followed by a backoff. The shop recovers, so nothing is lost but an upload and an
   operator's confidence.
 
-  The fix is to ask: OctoPrint answers `/api/printer` with the printer's own state, and its
-  `operational`/`closedOrError` flags are the fact missing here. `printIsInFlight` in `OctoPrint.ts`
-  already reads `state.flags` for a narrower question, so the shape exists. What is new is a
-  condition for it and a decision about whether an unconnected printer should be SCHEDULED on at all,
-  which is a stronger thing than displaying it. Related to "Report a printer's own state" under
-  **Beyond one printer**, and sharper: that one is about what would be nice to know, this one is
-  about the shop being wrong.
+  DECIDED: a printer the machine says is not operational is UNAVAILABLE, and unavailable means not
+  scheduled on - not merely shown differently. So this is a change to `canTake`/`printableNow` in
+  `selection.ts` first and to `stateOf` second, and the new condition belongs beside `unreachable` and
+  `outOfContact` rather than as a word on a screen.
+
+  DECIDED: it is kept current from OctoPrint's push stream rather than asked for once. The shop
+  already parses exactly this payload - `printIsInFlight` reads `state.flags` off the `current`
+  messages - so the fact is arriving on a socket that is already open and is being thrown away.
+  `/api/printer` is still worth asking on the way in, for the first answer before any message
+  arrives.
+
+  The tension to settle before any of it: reaching a machine is LAZY on purpose. `OctoPrintMachines.reach()`
+  opens the socket and reconnects indefinitely, but `printing.ts` says a machine is reached "only once
+  there is something for it to print", so an idle printer with an empty queue has no socket and the
+  shop hears nothing about it. Live availability wants the opposite - a socket per printer, always,
+  so that a machine going offline is known before there is work for it. That is a deliberate decision
+  being reversed, and the note in `printing.ts` says why it was made, so it is to be argued with
+  rather than stepped over. The middle answer, if the cost of always-on turns out to matter: reach
+  eagerly only for machines that could take something currently queued.
+
+  Related to "Report a printer's own state" under **Beyond one printer**, and sharper: that one is
+  about what would be nice to know, this one is about the shop being wrong and acting on it.
 
 - [ ] Positional filaments, when there is a printer with more than one extruder. Scheduling uses
   only a job's FIRST filament today, which is right for one extruder and wrong for several: the
