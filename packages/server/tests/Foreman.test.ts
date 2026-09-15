@@ -895,4 +895,99 @@ describe('the foreman', () => {
       expect(lines.join('\n')).toContain('ERROR could not start anything printer=mk4 why="no job 1"');
     });
   });
+
+  // AIDEV-NOTE: (UT) the machine's OWN account of itself, which is the only trouble here that the
+  // shop does not work out for itself. A printer answering perfectly well and saying its hardware is
+  // down used to read as idle, and idle is read as ready - so a plate went to it, the upload
+  // succeeded, and only the command to start was refused.
+  describe('a printer that says it cannot print', () => {
+    let tellTheForeman: (canPrint: boolean, why: string) => void;
+
+    const unavailable = (name: string) => async (): Promise<boolean> => (await shop.printerNamed(name)).unavailable !== undefined;
+    const available = (name: string) => async (): Promise<boolean> => (await shop.printerNamed(name)).unavailable === undefined;
+
+    beforeEach(() => {
+      mockReach.mockImplementation(async (_printer: RegisteredPrinter): Promise<Printer> => {
+        return {
+          send: mockSend,
+          awaitOutcome: mockAwaitOutcome,
+          saysWhatItCanDo: (told: (canPrint: boolean, why: string) => void): void => {
+            tellTheForeman = told;
+          },
+        };
+      });
+    });
+
+    it('is written down with the reason the machine gave, rather than one the shop invented', async () => {
+      await foreman.keepInTouch();
+
+      tellTheForeman(false, 'Offline after error');
+      await until(unavailable('mk4'));
+
+      expect((await shop.printerNamed('mk4')).unavailable?.reason).toBe('Offline after error');
+    });
+
+    it('is not started on, however much work is waiting for it', async () => {
+      await foreman.keepInTouch();
+      tellTheForeman(false, 'Offline after error');
+      await until(unavailable('mk4'));
+
+      const job = await submit();
+      await foreman.considerStarting();
+
+      expect(mockSend).not.toHaveBeenCalled();
+      expect(await jobIs(job, 'queued')()).toBe(true);
+    });
+
+    it('is started on again once it says it can, without anybody being asked', async () => {
+      await foreman.keepInTouch();
+      tellTheForeman(false, 'Offline after error');
+      await until(unavailable('mk4'));
+      const job = await submit();
+
+      tellTheForeman(true, 'Operational');
+      await until(available('mk4'));
+
+      await until(jobIs(job, 'printing'));
+      expect(mockSend).toHaveBeenCalled();
+    });
+
+    // An operator's word cannot make hardware answer, so `printer start` must not clear this one -
+    // it would put a plate on a machine that still cannot take it.
+    it('is not cleared by an operator resuming the printer', async () => {
+      await foreman.keepInTouch();
+      tellTheForeman(false, 'Offline after error');
+      await until(unavailable('mk4'));
+
+      await shop.resume(await shop.printerNamed('mk4'));
+
+      expect((await shop.printerNamed('mk4')).unavailable?.reason).toBe('Offline after error');
+    });
+  });
+
+  // The eager half: a machine with nothing to print is reached anyway, because a machine nobody has
+  // opened a line to is one whose own state cannot be known until there is work - which is too late.
+  describe('keeping in touch with every machine', () => {
+    it('reaches a printer with nothing queued for it', async () => {
+      await foreman.keepInTouch();
+
+      expect(mockReach).toHaveBeenCalledWith(expect.objectContaining({ name: 'mk4' }));
+    });
+
+    it('does not reach the same machine twice', async () => {
+      await foreman.keepInTouch();
+      await foreman.keepInTouch();
+
+      expect(mockReach).toHaveBeenCalledTimes(1);
+    });
+
+    // An operator's stop is about the room. Opening a line to it says nothing and changes nothing.
+    it('leaves a stopped printer alone', async () => {
+      await shop.pause(await shop.printerNamed('mk4'), 'the door is off');
+
+      await foreman.keepInTouch();
+
+      expect(mockReach).not.toHaveBeenCalled();
+    });
+  });
 });

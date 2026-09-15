@@ -64,11 +64,12 @@ interface StoredTrouble {
   reason: string;
   since: string;
 }
-type StoredStatus = Omit<PrinterStatus, 'paused' | 'unreachable' | 'refused' | 'outOfContact'> & {
+type StoredStatus = Omit<PrinterStatus, 'paused' | 'unreachable' | 'refused' | 'outOfContact' | 'unavailable'> & {
   paused?: StoredTrouble;
   unreachable?: StoredTrouble;
   refused?: StoredTrouble;
   outOfContact?: StoredTrouble;
+  unavailable?: StoredTrouble;
 };
 
 export class NoSuchJob extends Error {}
@@ -412,6 +413,21 @@ export class JobStore {
     await this.changeStatus(printer, ({ outOfContact: _outOfContact, ...status }) => status);
   }
 
+  // AIDEV-NOTE: deliberately NOT cleared by `resume`, unlike every other trouble here. An operator
+  // saying the machine is fit to print does not make its hardware answer - this is the machine's own
+  // account of itself, and the only thing entitled to withdraw it is the machine. Clearing it on a
+  // person's word would schedule a plate onto something that cannot take it, and the upload would
+  // succeed before the start refused.
+  /** The machine says it cannot print - its own no, given while answering perfectly well. */
+  async saidItCannotPrint(printer: RegisteredPrinter, reason: string): Promise<void> {
+    await this.changeStatus(printer, (status) => ({ ...status, unavailable: { reason, since: new Date() } }));
+  }
+
+  /** It says it can again. Nobody is told, because nobody was asked to do anything about it. */
+  async saidItCanPrint(printer: RegisteredPrinter): Promise<void> {
+    await this.changeStatus(printer, ({ unavailable: _unavailable, ...status }) => status);
+  }
+
   /**
    * What is on the machine now. Nothing else knows it: the printers here do not report their own
    * filament, so the shop asks the operator and believes the answer.
@@ -541,6 +557,7 @@ export class JobStore {
         unreachable: since(stored.unreachable),
         refused: since(stored.refused),
         outOfContact: since(stored.outOfContact),
+        unavailable: since(stored.unavailable),
       },
     };
   }

@@ -923,6 +923,42 @@ describe('JobStore', () => {
       });
     });
   });
+
+  // AIDEV-NOTE: (UT) the machine's own account of itself, which is the one trouble here the shop
+  // does not work out for itself - and the one an operator cannot lift.
+  describe('a machine that says it cannot print', () => {
+    beforeEach(async () => {
+      await shop.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://mk4' });
+    });
+
+    it('keeps what the machine said, and reads it back', async () => {
+      await shop.saidItCannotPrint(await shop.printerNamed('mk4'), 'Offline after error');
+
+      expect((await shop.printerNamed('mk4')).unavailable?.reason).toBe('Offline after error');
+    });
+
+    it('lets it go when the machine says it can again', async () => {
+      await shop.saidItCannotPrint(await shop.printerNamed('mk4'), 'Offline after error');
+
+      await shop.saidItCanPrint(await shop.printerNamed('mk4'));
+
+      expect((await shop.printerNamed('mk4')).unavailable).toBeUndefined();
+    });
+
+    // An operator's word cannot make hardware answer. Every other trouble here is lifted by `resume`
+    // and this one is not, because clearing it would send a plate to a machine that still cannot
+    // take it - and the upload would succeed before the start was refused.
+    it('is not lifted by an operator resuming the printer', async () => {
+      await shop.saidItCannotPrint(await shop.printerNamed('mk4'), 'Offline after error');
+      await shop.pause(await shop.printerNamed('mk4'), 'looking at it');
+
+      await shop.resume(await shop.printerNamed('mk4'));
+
+      const printer = await shop.printerNamed('mk4');
+      expect(printer.paused).toBeUndefined();
+      expect(printer.unavailable?.reason).toBe('Offline after error');
+    });
+  });
 });
 
 describe('the largest gcode a shop takes', () => {

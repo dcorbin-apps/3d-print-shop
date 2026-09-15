@@ -114,4 +114,34 @@ describe('what the shop is doing', () => {
       expect(summarise([], jobs)).toMatchObject({ queued: 2, awaitingApproval: 1 });
     });
   });
+
+  // AIDEV-NOTE: (UT) the machine's own no. This used to fall through to `idle`, and idle is read
+  // across a room as ready to print.
+  describe('a machine that says it cannot print', () => {
+    const offline = { reason: 'Offline after error', since: new Date('2026-09-15T12:00:00Z') };
+
+    it('is unavailable rather than idle', () => {
+      expect(stateOf(printer({ unavailable: offline }))).toEqual({ condition: 'unavailable', why: 'Offline after error' });
+    });
+
+    // Not "unreachable": the shop reached it perfectly well and it answered with a no. Saying
+    // unreachable sends somebody to look at the network instead of at the printer.
+    it('is not confused with a machine the shop cannot reach', () => {
+      const both = printer({ unavailable: offline, unreachable: { reason: 'nothing is listening', since: new Date() } });
+
+      expect(stateOf(both).condition).toBe('unavailable');
+    });
+
+    // A bed with a finished print on it still wants clearing, whatever the machine thinks of itself,
+    // and that is the thing a person can actually go and do.
+    it('gives way to a print waiting for a verdict', () => {
+      const both = printer({ unavailable: offline, holding: { job: 1, phase: 'awaiting-approval' } });
+
+      expect(stateOf(both).condition).toBe('awaiting-approval');
+    });
+
+    it('is counted as something needing somebody', () => {
+      expect(summarise([printer({ unavailable: offline })], []).needingSomebody).toBe(1);
+    });
+  });
 });

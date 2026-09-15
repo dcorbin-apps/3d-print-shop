@@ -7,7 +7,7 @@ import type { Job, RegisteredPrinter } from '@3d-print-shop/client/browser';
 
 /** What a machine is doing, in one word an operator can read across a room. */
 export type PrinterCondition =
-  'printing' | 'awaiting-approval' | 'stopped' | 'unreachable' | 'refused' | 'out-of-contact' | 'unreadable' | 'idle';
+  'printing' | 'awaiting-approval' | 'stopped' | 'unavailable' | 'unreachable' | 'refused' | 'out-of-contact' | 'unreadable' | 'idle';
 
 /** What is wrong, when something is - the reason a person was given or the shop found. */
 export interface PrinterState {
@@ -26,6 +26,11 @@ export function stateOf(printer: RegisteredPrinter): PrinterState {
   if (printer.paused) return { condition: 'stopped', why: printer.paused.reason };
   if (printer.refused) return { condition: 'refused', why: printer.refused.reason };
   if (printer.holding?.phase === 'awaiting-approval') return { condition: 'awaiting-approval' };
+  // The machine's own no, above the shop's reading of it: a printer answering http perfectly well
+  // and saying its hardware is down is not unreachable, and calling it that sends somebody looking
+  // at the network. Below awaiting-approval, because a bed with a print on it still wants clearing
+  // whatever the machine thinks of itself, and that is a thing a person can actually go and do.
+  if (printer.unavailable) return { condition: 'unavailable', why: printer.unavailable.reason };
   if (printer.unreachable) return { condition: 'unreachable', why: printer.unreachable.reason };
   if (printer.outOfContact) return { condition: 'out-of-contact', why: printer.outOfContact.reason };
   if (printer.holding) return { condition: 'printing' };
@@ -52,8 +57,9 @@ export function summarise(printers: RegisteredPrinter[], jobs: Job[]): ShopSumma
   return {
     printers: printers.length,
     printing: states.filter((state) => state.condition === 'printing').length,
-    needingSomebody: states.filter(({ condition }) => condition === 'stopped' || condition === 'refused' || condition === 'awaiting-approval')
-      .length,
+    needingSomebody: states.filter(
+      ({ condition }) => condition === 'stopped' || condition === 'refused' || condition === 'awaiting-approval' || condition === 'unavailable',
+    ).length,
     queued: jobs.filter((job) => job.state === 'queued').length,
     awaitingApproval: jobs.filter((job) => job.state === 'awaiting-approval').length,
   };

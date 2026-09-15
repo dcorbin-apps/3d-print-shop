@@ -61,6 +61,18 @@ export interface PrinterStatus {
    * backoff, and the machine's own status settles what happened while nobody was there.
    */
   outOfContact?: { reason: string; since: Date };
+  /**
+   * The MACHINE says it cannot print, with what it said and when.
+   *
+   * Its own account of itself, which is what makes it different from every other trouble here: the
+   * others are the shop's reading of a machine it cannot reach or an operator's word about the
+   * room. This one is the machine answering perfectly well and saying no - a printer whose own
+   * connection to its hardware is down is reachable over http and cannot print a thing.
+   *
+   * Nobody lifts it and no operator's `start` clears it. It is set and cleared by what the machine
+   * keeps saying, because anything else would be the shop overruling the only thing that knows.
+   */
+  unavailable?: { reason: string; since: Date };
   /** The job it has, or undefined when the bed is clear and it can take another. */
   holding?: Holding;
 }

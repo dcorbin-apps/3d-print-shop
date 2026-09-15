@@ -962,31 +962,83 @@ describe('OctoPrint', () => {
       await expect(promise).resolves.toBe('finished');
     });
   });
-});
 
-// AIDEV-NOTE: the reason a push socket never opened reaches an operator as `printer.paused.reason`,
-// so it has to say the same things a failed request says. A close with no error before it has nothing
-// to add, which is what a machine that answered and then hung up looks like.
-describe('why a push socket closed before it ever opened', () => {
-  const WHERE = 'http://octopi.local';
+  // AIDEV-NOTE: (UT) what a machine says about its OWN fitness, which arrives on the same status
+  // frames the print watcher reads and was being dropped by the early return in handleStatus.
+  describe('what the machine says about itself', () => {
+    let said: { canPrint: boolean; why: string }[];
 
-  it('says only that it closed when nothing said why', () => {
-    expect(whySocketFailed(null, WHERE)).toBe(`the push socket to ${WHERE} closed before it opened`);
+    const fitness = (flags: Record<string, boolean>, text = 'Operational'): unknown => ({ state: { text, flags } });
+
+    beforeEach(async () => {
+      said = [];
+      await connectAdapter();
+      adapter.saysWhatItCanDo((canPrint, why) => said.push({ canPrint, why }));
+    });
+
+    it('says it can print when the machine is operational', () => {
+      mockWs.onmessage!(JSON.stringify({ current: fitness({ operational: true, closedOrError: false }) }));
+
+      expect(said).toEqual([{ canPrint: true, why: 'Operational' }]);
+    });
+
+    it('says it cannot when the link to the hardware is closed or faulted', () => {
+      mockWs.onmessage!(JSON.stringify({ current: fitness({ operational: false, closedOrError: true }, 'Offline after error') }));
+
+      expect(said).toEqual([{ canPrint: false, why: 'Offline after error' }]);
+    });
+
+    // These arrive every second or two, and each one told would be a write to the printer's file.
+    it('says nothing when the answer has not changed', () => {
+      const frame = JSON.stringify({ current: fitness({ operational: true, closedOrError: false }) });
+
+      mockWs.onmessage!(frame);
+      mockWs.onmessage!(frame);
+      mockWs.onmessage!(frame);
+
+      expect(said).toHaveLength(1);
+    });
+
+    it('says so again when it changes back', () => {
+      mockWs.onmessage!(JSON.stringify({ current: fitness({ operational: true, closedOrError: false }) }));
+      mockWs.onmessage!(JSON.stringify({ current: fitness({ operational: false, closedOrError: true }, 'Offline') }));
+
+      expect(said.map(({ canPrint }) => canPrint)).toEqual([true, false]);
+    });
+
+    // A status it cannot read must never be the reason a machine is taken out of service - the same
+    // rule `printIsInFlight` keeps for the narrower question.
+    it('says nothing at all about a frame carrying no flags', () => {
+      mockWs.onmessage!(JSON.stringify({ current: { state: { text: 'Who knows' } } }));
+
+      expect(said).toEqual([]);
+    });
   });
 
-  it('says the same for a close that carried nothing at all', () => {
-    expect(whySocketFailed(undefined, WHERE)).toBe(`the push socket to ${WHERE} closed before it opened`);
-  });
+  // AIDEV-NOTE: the reason a push socket never opened reaches an operator as `printer.paused.reason`,
+  // so it has to say the same things a failed request says. A close with no error before it has nothing
+  // to add, which is what a machine that answered and then hung up looks like.
+  describe('why a push socket closed before it ever opened', () => {
+    const WHERE = 'http://octopi.local';
 
-  it('adds the reason when there was one, in the words a failed request uses', () => {
-    const refused = Object.assign(new Error('fetch failed'), { cause: Object.assign(new Error('x'), { code: 'ECONNREFUSED' }) });
+    it('says only that it closed when nothing said why', () => {
+      expect(whySocketFailed(null, WHERE)).toBe(`the push socket to ${WHERE} closed before it opened`);
+    });
 
-    expect(whySocketFailed(refused, WHERE)).toBe(
-      `the push socket to ${WHERE} closed before it opened: nothing is listening at ${WHERE} (ECONNREFUSED)`,
-    );
-  });
+    it('says the same for a close that carried nothing at all', () => {
+      expect(whySocketFailed(undefined, WHERE)).toBe(`the push socket to ${WHERE} closed before it opened`);
+    });
 
-  it('names the machine whatever went wrong', () => {
-    expect(whySocketFailed(new Error('something odd'), WHERE)).toContain(WHERE);
+    it('adds the reason when there was one, in the words a failed request uses', () => {
+      const refused = Object.assign(new Error('fetch failed'), { cause: Object.assign(new Error('x'), { code: 'ECONNREFUSED' }) });
+
+      expect(whySocketFailed(refused, WHERE)).toBe(
+        `the push socket to ${WHERE} closed before it opened: nothing is listening at ${WHERE} (ECONNREFUSED)`,
+      );
+    });
+
+    it('names the machine whatever went wrong', () => {
+      expect(whySocketFailed(new Error('something odd'), WHERE)).toContain(WHERE);
+    });
   });
 });

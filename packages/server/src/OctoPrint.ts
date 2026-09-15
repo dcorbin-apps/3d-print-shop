@@ -210,7 +210,7 @@ interface OctoPrintPushMessage {
 }
 
 interface OctoPrintStatusPayload {
-  state?: { flags?: PrinterStateFlags };
+  state?: { text?: string; flags?: PrinterStateFlags };
   job?: { file?: { path?: string } };
 }
 
@@ -222,6 +222,10 @@ interface PrinterStateFlags {
   paused?: boolean;
   pausing?: boolean;
   cancelling?: boolean;
+  // What the machine says about its own fitness. `operational` is the link to the hardware being up;
+  // `closedOrError` is that link being down or faulted, which is the case this was all written for.
+  operational?: boolean;
+  closedOrError?: boolean;
 }
 
 interface OctoPrintFileInfo {
@@ -262,6 +266,11 @@ export class OctoPrint implements Printer {
   private readonly arrivedCompletions = new Map<string, PrinterOutcome>();
   private socket: PushSocket | null = null;
   private connected = false;
+
+  // What the machine last said about its own fitness, and who to tell when that changes. Undefined
+  // is "it has not said yet", which is not the same as a no and must not be reported as one.
+  private canPrint: boolean | undefined = undefined;
+  private tellAboutFitness: ((canPrint: boolean, why: string) => void) | undefined = undefined;
   private disconnectRequested = false;
   private reconnectAttempt = 0;
   private lostContactAt: number | null = null;
@@ -577,6 +586,28 @@ export class OctoPrint implements Printer {
     if (status) this.handleStatus(status);
   }
 
+  // AIDEV-NOTE: reported on CHANGE and not on every frame, because these arrive every second or two
+  // and each one would otherwise be a write to the printer's status file. The first frame always
+  // counts as a change, since `canPrint` starts undefined - "it has not said yet" is not a no.
+  //
+  // A frame with no flags at all says nothing rather than saying no: an unreadable status must never
+  // be the reason a machine is taken out of service, which is the same rule `printIsInFlight` keeps
+  // for the narrower question.
+  private tellWhatItCanDo(status: OctoPrintStatusPayload): void {
+    const flags = status.state?.flags;
+    if (!flags) return;
+
+    const canPrint = flags.operational === true && flags.closedOrError !== true;
+    if (canPrint === this.canPrint) return;
+
+    this.canPrint = canPrint;
+    this.tellAboutFitness?.(canPrint, status.state?.text ?? (canPrint ? 'operational' : 'not operational'));
+  }
+
+  saysWhatItCanDo(told: (canPrint: boolean, why: string) => void): void {
+    this.tellAboutFitness = told;
+  }
+
   private handleCompletionEvent(type: string | undefined, path: string | undefined): void {
     if (!type || !path) return;
 
@@ -586,7 +617,12 @@ export class OctoPrint implements Printer {
     this.settleCompletion(path, status);
   }
 
+  // AIDEV-NOTE: every status frame, and BEFORE the reconciliation guard below - which returns early
+  // on all but the first frame after an outage. What a machine says about its own fitness arrives on
+  // the same messages and was being dropped on the floor by that early return.
   private handleStatus(status: OctoPrintStatusPayload): void {
+    this.tellWhatItCanDo(status);
+
     if (!this.reconcileOnNextStatus) return;
 
     this.sinceOutage = status;

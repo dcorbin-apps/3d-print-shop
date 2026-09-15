@@ -40,6 +40,9 @@ export class Foreman {
 
   private retrying: Promise<unknown> = Promise.resolve();
 
+  // The machines already telling this foreman how they are, so nothing is subscribed to twice.
+  private readonly listeningTo = new Set<string>();
+
   constructor(
     private readonly shop: JobStore,
     private readonly machines: Machines,
@@ -134,6 +137,9 @@ export class Foreman {
   }
 
   private async reachForEverythingLost(): Promise<void> {
+    // Before anything else: a machine registered since the last tick has nobody listening to it yet.
+    await this.keepInTouch();
+
     let anyAnswered = false;
 
     for (const printer of await this.shop.printers()) {
@@ -180,6 +186,8 @@ export class Foreman {
     for (const printer of await this.shop.printers()) {
       // Holding anything at all means the bed is not clear, verdict or no verdict.
       if (printer.unreadable || printer.paused || printer.unreachable || printer.refused || printer.holding) continue;
+      // The machine itself says it cannot print. Sending anyway costs a whole plate to be told no.
+      if (printer.unavailable) continue;
 
       await this.start(printer);
     }
@@ -267,9 +275,72 @@ export class Foreman {
 
   private async reach(printer: RegisteredPrinter): Promise<Printer> {
     try {
-      return await this.machines(printer);
+      const machine = await this.machines(printer);
+      this.listenForWhatItCanDo(printer.name, machine);
+
+      return machine;
     } catch (failure) {
       throw new CouldNotReach((failure as Error).message);
+    }
+  }
+
+  // AIDEV-NOTE: subscribed once per machine and never unsubscribed - `OctoPrintMachines` hands back
+  // the SAME client for an unchanged address and key, so re-subscribing on every reach would be
+  // harmless and pointless, and a client it replaces is disconnected and dropped with its listener.
+  private listenForWhatItCanDo(name: string, machine: Printer): void {
+    if (this.listeningTo.has(name)) return;
+
+    // Recorded on REACHING rather than on subscribing, because what this answers for `keepInTouch`
+    // is "is there a line open to this machine" - and a machine that cannot say how it is still has
+    // one. Keyed on the subscribe instead, a printer that never tells would be reached every tick.
+    this.listeningTo.add(name);
+    machine.saysWhatItCanDo?.((canPrint, why) => {
+      void this.writeDownWhatItSaid(name, canPrint, why).catch((failure: unknown) =>
+        this.log.error('could not write down what a printer said about itself', { printer: name, why: (failure as Error).message }),
+      );
+    });
+  }
+
+  private async writeDownWhatItSaid(name: string, canPrint: boolean, why: string): Promise<void> {
+    const printer = await this.shop.printerNamed(name);
+
+    if (canPrint) {
+      await this.shop.saidItCanPrint(printer);
+      this.log.info('a printer says it can print again', { printer: name, after: printer.unavailable?.reason });
+
+      // It just became somewhere a plate could go, and nothing else will notice.
+      await this.considerStarting();
+
+      return;
+    }
+
+    await this.shop.saidItCannotPrint(printer, why);
+    this.log.info('a printer says it cannot print', { printer: name, why });
+  }
+
+  // AIDEV-NOTE: EAGER, and the note in printing.ts about reaching a machine only when there is
+  // something to print no longer holds: a machine that is only reached when work arrives is one
+  // whose own state the shop cannot know until it is too late to act on it. What that note was
+  // guarding against is a connection per idle printer, which is the cost now being paid on purpose -
+  // it buys a shop that knows a printer went offline before it picks one to print on.
+  /** Open a line to every machine the shop has, so that each can say how it is. */
+  async keepInTouch(): Promise<void> {
+    for (const printer of await this.shop.printers()) {
+      if (this.listeningTo.has(printer.name)) continue;
+
+      // AIDEV-NOTE: everything already in trouble is somebody else's to reach. An operator's stop is
+      // about the room; a refusal waits for a person and must NOT be retried on a clock; and a
+      // machine that is unreachable or out of contact belongs to the retry path below, which owns
+      // the backoff. Reaching them here would hammer a machine the shop has agreed to leave alone,
+      // which is what it did when this was written without these clauses.
+      if (printer.paused || printer.refused || printer.unreadable) continue;
+      if (printer.unreachable || printer.outOfContact) continue;
+      if (this.now().getTime() < (this.waiting.get(printer.name)?.until ?? 0)) continue;
+
+      // A machine that will not answer is not written down as anything here - being unable to open a
+      // line before there is work is not a fault worth reporting, and the start path says so
+      // properly when it matters. What it does earn is the same wait as any other failed reach.
+      await this.reach(printer).catch(() => this.waitBeforeTrying(printer.name, (this.waiting.get(printer.name)?.attempt ?? 0) + 1));
     }
   }
 

@@ -17,6 +17,11 @@ export interface Printer {
   send(remotePath: string, gcode: Readable): Promise<string>;
   /** Answers when the print stops, however it stops. */
   awaitOutcome(remotePath: string): Promise<PrinterOutcome>;
+  // AIDEV-NOTE: optional because it is the only thing here a machine might not be able to say, and
+  // a test double that only sends and waits should not have to pretend to. A printer that never
+  // tells is one the shop goes on believing can print, which is what it believed before any of this.
+  /** Told what the machine says about its own fitness to print, and again whenever that changes. */
+  saysWhatItCanDo?(told: (canPrint: boolean, why: string) => void): void;
 }
 
 // AIDEV-NOTE: what tells "I could not get to that machine" apart from every other way a printer can

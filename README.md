@@ -181,6 +181,17 @@ session cookie the shop set, which the page cannot read and therefore cannot lea
 call it** below. The top bar says who the screen is logged in as, because a screen in a workshop is
 one anybody walks up to.
 
+**A machine that says it cannot print is not printed on.** A printer's own account of itself is a
+different thing from the shop's reading of it: one whose link to its hardware is down answers over
+http perfectly well and can print nothing. The shop keeps a line open to every machine it has - not
+only the ones there is work for - and what each says about its own fitness arrives on that line. A
+machine saying no is shown as **unavailable**, counted among the ones needing somebody, and passed
+over when work is handed out, so a plate is never sent to something that would refuse to start it.
+
+Nobody lifts that one. `printer start` clears an operator's stop, a refusal and an unreachable
+machine, and deliberately does not clear this: a person saying a machine is fit does not make its
+hardware answer, and the only thing entitled to withdraw it is the machine.
+
 **An admin gets a `+` at the end of the printer row**, which opens a form in the row itself and adds
 a machine while the shop runs - name, build volume, address and the API key. A caller who is not an
 admin is not offered it: the page asks the shop who it is talking to, over `GET /me`, rather than

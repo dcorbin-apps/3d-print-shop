@@ -202,6 +202,10 @@ export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Co
       const pickedUp = await foreman.resumeWatching();
       if (pickedUp.length > 0) log.info('prints picked up after a restart', { printers: pickedUp });
 
+      // A line to every machine, before any work is looked for - so a printer that cannot print says
+      // so before the shop picks one to print on, rather than after a plate has been sent to it.
+      await foreman.keepInTouch();
+
       lookForWork();
     });
 

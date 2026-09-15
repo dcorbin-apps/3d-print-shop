@@ -29,45 +29,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   and nothing a client or an operator asks answers "the shop is not well". The contract has no
   shop-level status at all: `printers()` is the closest thing, and a fault that touches every
   printer at once has nowhere to be seen
-- [ ] A printer OctoPrint calls offline is shown by the shop as idle, which is the shop stating
-  something false rather than merely saying nothing. `stateOf` in `packages/ui/src/shopSummary.ts`
-  ends `return { condition: 'idle' }`, and every condition above it - unreadable, stopped, refused,
-  awaiting-approval, unreachable, out-of-contact, printing - is something the SHOP knows from its own
-  bookkeeping. None of them is what the machine says about itself. So when the serial link between
-  OctoPrint and the printer is down, OctoPrint answers over http perfectly well, nothing above fires,
-  and the fallback prints the word `idle` on a machine that cannot take a job.
-
-  `idle` means "the shop knows of nothing wrong" and is READ as "ready to print". Those are not the
-  same claim and the gap between them is the whole bug.
-
-  It is not only cosmetic. The foreman will pick that machine, the upload will succeed - OctoPrint
-  takes files whether or not the printer is connected - and only the command to start will fail, as
-  `could-not-start` followed by a backoff. The shop recovers, so nothing is lost but an upload and an
-  operator's confidence.
-
-  DECIDED: a printer the machine says is not operational is UNAVAILABLE, and unavailable means not
-  scheduled on - not merely shown differently. So this is a change to `canTake`/`printableNow` in
-  `selection.ts` first and to `stateOf` second, and the new condition belongs beside `unreachable` and
-  `outOfContact` rather than as a word on a screen.
-
-  DECIDED: it is kept current from OctoPrint's push stream rather than asked for once. The shop
-  already parses exactly this payload - `printIsInFlight` reads `state.flags` off the `current`
-  messages - so the fact is arriving on a socket that is already open and is being thrown away.
-  `/api/printer` is still worth asking on the way in, for the first answer before any message
-  arrives.
-
-  The tension to settle before any of it: reaching a machine is LAZY on purpose. `OctoPrintMachines.reach()`
-  opens the socket and reconnects indefinitely, but `printing.ts` says a machine is reached "only once
-  there is something for it to print", so an idle printer with an empty queue has no socket and the
-  shop hears nothing about it. Live availability wants the opposite - a socket per printer, always,
-  so that a machine going offline is known before there is work for it. That is a deliberate decision
-  being reversed, and the note in `printing.ts` says why it was made, so it is to be argued with
-  rather than stepped over. The middle answer, if the cost of always-on turns out to matter: reach
-  eagerly only for machines that could take something currently queued.
-
-  Related to "Report a printer's own state" under **Beyond one printer**, and sharper: that one is
-  about what would be nice to know, this one is about the shop being wrong and acting on it.
-
 - [ ] Positional filaments, when there is a printer with more than one extruder. Scheduling uses
   only a job's FIRST filament today, which is right for one extruder and wrong for several: the
   index is the extruder the slicer assigned, so `[red, blue]` and `[blue, red]` are different
