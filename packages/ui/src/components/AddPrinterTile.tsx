@@ -30,8 +30,8 @@ export function AddPrinterTile({ onAdd }: AddPrinterTileProps): React.JSX.Elemen
     );
   }
 
-  const said = (field: keyof typeof typed) => (typing_: React.ChangeEvent<HTMLInputElement>) =>
-    setTyped((was) => ({ ...was, [field]: typing_.target.value }));
+  const said = (field: keyof typeof typed) => (typing: React.ChangeEvent<HTMLInputElement>) =>
+    setTyped((was) => ({ ...was, [field]: typing.target.value }));
 
   const close = (): void => {
     setTyping(false);

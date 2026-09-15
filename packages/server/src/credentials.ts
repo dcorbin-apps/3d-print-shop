@@ -391,7 +391,7 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Callers> {
       throw new UnusableCredentials(`${file} gives ${name} no credentials, and a credential is what a caller presents to be recognised`);
     }
 
-    const held_credentials: StoredCredential[] = [];
+    const heldCredentials: StoredCredential[] = [];
 
     for (const credential of credentials as unknown[]) {
       const { kind, hash } = (credential ?? {}) as { kind?: unknown; hash?: unknown };
@@ -405,7 +405,7 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Callers> {
 
       // A password is what a PERSON presents, and two of them would mean either might let somebody
       // in - which is one more way in than anybody meant to leave open.
-      if (kind === 'password' && held_credentials.some((already) => already.kind === 'password')) {
+      if (kind === 'password' && heldCredentials.some((already) => already.kind === 'password')) {
         throw new UnusableCredentials(`${file} gives ${name} two passwords, and a person has one`);
       }
 
@@ -420,7 +420,7 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Callers> {
         presenting.set(hash, name);
       }
 
-      held_credentials.push({ kind, hash });
+      heldCredentials.push({ kind, hash });
     }
 
     // AIDEV-NOTE: two callers on one id are one owner, and every job either submits belongs to both
@@ -432,7 +432,7 @@ export async function callersIn(etc: string = defaultEtc()): Promise<Callers> {
     }
 
     named.set(id, name);
-    held.push({ caller: { id, name, role }, credentials: held_credentials });
+    held.push({ caller: { id, name, role }, credentials: heldCredentials });
   }
 
   return new Callers(held);

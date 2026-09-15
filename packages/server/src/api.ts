@@ -134,7 +134,7 @@ export const SESSIONS_PATH = '/sessions';
 // classified needs admin, and forgetting makes the shop stricter rather than looser. The same
 // worry as the `changed` hook below (a list somebody forgets to add to), answered the other way:
 // there, a miss costs a wake-up; here, a miss would hand a submitting client the shutdown button.
-const OPEN_TO_EVERY_CALLER: ReadonlyArray<{ method: string; path: RegExp }> = [
+const OPEN_TO_EVERY_CALLER: readonly { method: string; path: RegExp }[] = [
   { method: 'POST', path: /^\/jobs$/ },
   { method: 'GET', path: /^\/jobs$/ },
   { method: 'GET', path: /^\/jobs\/[^/]+$/ },
@@ -875,10 +875,12 @@ export function addressIn(address: string): string {
     return refuse('it is not a URL - it needs a scheme, as in http://octopi.local');
   }
 
-  if (reached.protocol !== 'http:' && reached.protocol !== 'https:')
+  if (reached.protocol !== 'http:' && reached.protocol !== 'https:') {
     refuse(`this shop speaks http and https, not ${reached.protocol.replace(':', '')}`);
-  if (reached.username !== '' || reached.password !== '')
+  }
+  if (reached.username !== '' || reached.password !== '') {
     refuse('it carries a username and password, and a printer is reached with its API key');
+  }
   if (reached.search !== '' || reached.hash !== '') refuse('a printer is a host and a path, with nothing after them');
 
   // Every request appends its own path, so a trailing slash here would double the separator.

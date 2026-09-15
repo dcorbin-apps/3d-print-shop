@@ -30,10 +30,7 @@ describe('the shape octo-sim answers over HTTP', () => {
       `--${BOUNDARY}\r\nContent-Disposition: form-data; ${disposition}\r\n\r\n${value}\r\n`;
 
     return Buffer.from(
-      part(`name="file"; filename="${filename}"`, 'G1 X0 Y0\n') +
-        part('name="path"', folder) +
-        part('name="print"', 'true') +
-        `--${BOUNDARY}--\r\n`,
+      `${part(`name="file"; filename="${filename}"`, 'G1 X0 Y0\n')}${part('name="path"', folder)}${part('name="print"', 'true')}--${BOUNDARY}--\r\n`,
     );
   }
 

@@ -195,7 +195,10 @@ export async function refusal(response: Response): Promise<string> {
 // reason this is a client rather than a cast: a caller handed `submittedAt` typed as a Date and
 // holding a string finds out at the first comparison, somewhere else entirely.
 type WireJob = Omit<Job, 'submittedAt'> & { submittedAt: string };
-type WireTrouble = { reason: string; since: string };
+interface WireTrouble {
+  reason: string;
+  since: string;
+}
 type WirePrinter = Omit<RegisteredPrinter, 'paused' | 'unreachable' | 'refused' | 'outOfContact'> & {
   paused?: WireTrouble;
   unreachable?: WireTrouble;

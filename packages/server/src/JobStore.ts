@@ -60,7 +60,10 @@ const PRINTER_FILE = 'printer.json';
 const STATUS_FILE = 'status.json';
 
 type StoredJob = Omit<JobRecord, 'submittedAt'> & { submittedAt: string };
-type StoredTrouble = { reason: string; since: string };
+interface StoredTrouble {
+  reason: string;
+  since: string;
+}
 type StoredStatus = Omit<PrinterStatus, 'paused' | 'unreachable' | 'refused' | 'outOfContact'> & {
   paused?: StoredTrouble;
   unreachable?: StoredTrouble;
