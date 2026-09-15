@@ -15,6 +15,24 @@ export default tseslint.config(
   // repository before it went on: all but eight of them already passed, because the code had these
   // habits and nothing was enforcing them. That is the point - an opinion the codebase holds rather
   // than one each file re-decides. `recommended` above is a CORRECTNESS set and enables none of this.
+  // AIDEV-NOTE: the rules below this line need TYPE information, which is why the parser is given a
+  // project service here rather than parsing each file alone. It costs the lint run about three
+  // seconds over the whole repository - measured, not guessed - and buys the only rules in this
+  // config that can see across a function boundary.
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      // AIDEV-NOTE: both were measured at ZERO violations before being switched on, which says the
+      // habit was already universal here - every deliberate fire-and-forget is already spelled `void`.
+      // That is exactly when to enable a rule: it costs nothing today and catches the one somebody
+      // forgets later, which is a print that never starts and no error anywhere saying why.
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+    },
+  },
   {
     files: ['**/*.ts', '**/*.tsx'],
     rules: {
