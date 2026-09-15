@@ -46,7 +46,7 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   mid-request changes which printers there are. A cache that outlives a request is a second answer to
   that, which is what this store is built not to have. `packages/server/src/JobStore.ts`
 
-- [ ] The borrowed protocol has been driven by a real slicer end to end, and two things are left.
+- [ ] The borrowed protocol has been driven by a real slicer end to end, and one thing is left.
 
   What was proved, on 2026-09-15, against PrusaSlicer 2.9.6 on macOS: a physical printer of host type
   OctoPrint, pointed at `http://localhost:7373/octoprint/`, tests green and sends. It probes
@@ -69,10 +69,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
     together: the dialect in `slicedPlate.ts`, its spellings beside the ones already there, and a
     real plate from it in tests/assumptions. None of this is guesswork now, and none of it should be
     allowed to become guesswork again
-  * DECIDE WHAT AN UPLOAD-AND-PRINT SHOULD SEE. The flag means start now; the shop takes the plate
-    and queues it, and the answer says `queued` rather than claiming it started. That is honest and
-    it is not visible - the button says it printed. Nothing is wrong yet, and the first person to
-    press it will find out whether that matters
 
   What is DONE and needs no revisiting: it is a face over the same `submit`, under `/octoprint`,
   out of the page fallback; the token is read from the other protocol's header under that prefix and
@@ -83,6 +79,12 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   and a job waiting for it would wait for ever. And only ONE dialect is read: a plate says what wrote
   it on its first line, and anything the shop has not measured against a real file is refused by
   quoting that line rather than by guessing at its spellings.
+
+  And upload-and-print is SETTLED, by pressing it: the shop queues the plate rather than starting it,
+  the answer says `queued`, and what the slicer showed for that was reported as a positive result
+  with no complaint. Exactly what it displayed was not written down, so if somebody later finds it
+  misleading this is where to start rather than a contradiction of it - but nothing is to be built
+  for it on a guess, which is what the open item here would have been.
 
 - [ ] FUTURE, and deliberately held. The borrowed protocol writes a plate TWICE - once into the spool
   while it reads what the plate says about itself, and again into the job directory when it submits.
