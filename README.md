@@ -8,6 +8,12 @@ It knows nothing about what it is printing. A client hands it a gcode file and s
 needs and how much room it takes; the shop schedules on that and nothing else. No client has
 special standing, including the one it was written for.
 
+**One thing reads a plate, and it is deliberately not the shop.** Callers that cannot speak the
+shop's own contract reach it through a borrowed protocol under `/octoprint`, and that face has no
+field to carry what a job needs - so it reads the plate's own comments to find out. The reading
+lives in the face. What reaches the store is a description like any other, and the store has no idea
+where it came from. See **A protocol it borrowed** below.
+
 See [design/3d-print-shop.md](design/3d-print-shop.md) for why it is shaped this way,
 [design/testing.md](design/testing.md) for how it is tested,
 [design/security.md](design/security.md) for what stops a request that is not really somebody's, and
@@ -398,6 +404,48 @@ kit's gcode is exactly the size that makes the difference.
 
 The shop refuses a submission no printer it has could ever take - a build volume that fits nowhere -
 before it reads a byte of the upload.
+
+## A protocol it borrowed
+
+Not everything that can produce a plate can be taught a new API. So the shop also answers a protocol
+it did not design, under a prefix of its own, for callers that already know how to send a plate
+somewhere:
+
+```
+POST http://localhost:7373/octoprint/api/files/local
+X-Api-Key: <the same token as everything else>
+
+multipart/form-data with a `file` part
+```
+
+Point anything that can upload to an OctoPrint at `http://<the shop>:7373/octoprint` and it should
+find it. `GET /octoprint/api/version` is what such a caller asks before it sends anything.
+
+**It is a face, not a second contract.** It translates into the same `submit` the contract has
+always had, and the store cannot tell one from the other.
+
+**It reads the plate, because the protocol has nowhere to say what a job needs.** That upload carries
+a file, a path and two flags, and nothing the shop schedules on. So the face reads the comments a
+slicing tool writes into the plate itself: the filament, the estimate, and the bed it was sliced for.
+Only the filament is required, because only the filament is required of any job - a plate whose
+comments do not name one is refused, and the refusal says so.
+
+The bed is taken as the room the job needs, which reads like an over-estimate of the object and is
+the right number: a plate's coordinates include the prime line, the skirt and the wipe tower, all
+placed against the bed it was sliced for. The object's own extent is the unsafe number, and is
+deliberately not what is read.
+
+**Where it stops pretending.** `POST /octoprint/api/job` is refused, and says why: those commands
+mean start now and stop now against a machine somebody is standing at, and this is a queue that
+decides for itself when a job may run. An upload asking to print at once is taken and queued like
+any other - the answer says the job is queued rather than claiming it started.
+
+**The prefix is not decoration.** At the root, a caller probing `/api/version` would be handed the
+page with a 200, which tells whoever set it up nothing at all. Under the prefix that subtree is out
+of the page fallback and can answer honestly, including answering no.
+
+Whether a given tool's host field will join a URL with a path onto `api/files/local` correctly is
+the one part of this that has not been proved against a real one. See PLAN.md.
 
 ## Working on it
 

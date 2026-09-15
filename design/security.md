@@ -20,6 +20,16 @@ plain digest on a password would make the file a wordlist away from being a set 
 The session is a cookie rather than something the page keeps, and the page never sees it. A script
 that can read a credential is a script that can send one somewhere else.
 
+**There is a second spelling of the token, and it reaches one place.** The borrowed protocol under
+`/octoprint` puts a credential in a header of its own, and the callers that speak it will not be
+taught to send another - so that header is read, and it is read under that prefix and nowhere else.
+It is the same token, looked up the same way, worth exactly what it was worth before: what is scoped
+is the spelling, not the authority. `tokenPresented` in `api.ts` is the whole of it, and a token
+offered that way at one of the shop's own routes is a caller the shop does not know.
+
+The prefix is doing security work here as well as routing work. Everything under it is answered by
+one face, so the question "where may this spelling be used" has a place to be answered once.
+
 ## What stops another site acting as somebody
 
 Three rules, and none of them is a spare copy of another.

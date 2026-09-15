@@ -1,0 +1,141 @@
+import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
+import { mkdir, readdir, rm } from 'node:fs/promises';
+import * as path from 'node:path';
+import { OCTOPRINT_PREFIX } from '@3d-print-shop/client';
+import { createApi } from '../src/api';
+import { Callers } from '../src/credentials';
+import { JobStore } from '../src/JobStore';
+import { digestOf } from '../src/secrets';
+import { aDataDirectory, parentOf } from './aDataDirectory';
+import { MULTIPART, drive, multipart } from './inProcess';
+import type { Job } from '../src/Job';
+import type { DataLayout } from '../src/dataLayout';
+
+// AIDEV-NOTE: (UT) the borrowed protocol over the real router and the real store. What is being
+// asked here is the TRANSLATION - a plate arrives with nothing but itself to go on, and a job comes
+// out the other side - and the two refusals that keep it honest. What a plate actually contains is
+// slicedPlate.test.ts; this only cares that whatever it says reaches a job.
+describe('the shop wearing a protocol it borrowed', () => {
+  let where: DataLayout;
+  let spool: string;
+  let shop: JobStore;
+  let asked: ReturnType<typeof drive>;
+
+  const ADMIN = 'dave-token';
+  const USER = 'slicer-token';
+  const MK4 = { x: 250, y: 210, z: 220 };
+
+  const callers = new Callers([
+    { caller: { id: 'dave', name: 'dave', role: 'admin' }, credentials: [{ kind: 'token', hash: digestOf(ADMIN) }] },
+    { caller: { id: 'slicer', name: 'slicer', role: 'user' }, credentials: [{ kind: 'token', hash: digestOf(USER) }] },
+  ]);
+
+  const A_PLATE = ['; filament_type = PLA-SpaceGray', '; estimated printing time (normal mode) = 1h 30m', 'G1 X100.000 Y100.000'].join('\n');
+
+  const upload = (plate: string, filename = 'tray.gcode', key = ADMIN): ReturnType<typeof asked> =>
+    asked('POST', `${OCTOPRINT_PREFIX}/api/files/local`, {
+      headers: { 'x-api-key': key },
+      body: multipart([
+        { name: 'file', value: plate, filename },
+        { name: 'print', value: 'true' },
+      ]),
+      contentType: MULTIPART,
+    });
+
+  beforeEach(async () => {
+    where = await aDataDirectory('print-shop-octoprint-');
+    spool = path.join(parentOf(where), 'spool');
+    await mkdir(spool, { recursive: true, mode: 0o700 });
+
+    shop = new JobStore(where);
+    await shop.addPrinter({ name: 'mk4', buildVolume: MK4, api: 'octoprint', address: 'http://octopi.local' });
+
+    asked = drive(createApi(shop, { callers: () => callers, spool }));
+  });
+
+  afterEach(async () => {
+    await rm(parentOf(where), { recursive: true, force: true });
+  });
+
+  it('says what it is, because a caller asks that before it will send anything', async () => {
+    const answer = await asked('GET', `${OCTOPRINT_PREFIX}/api/version`, { headers: { 'x-api-key': ADMIN } });
+
+    expect(answer.status).toBe(200);
+    expect(answer.body).toMatchObject({ api: expect.any(String), server: expect.any(String) });
+  });
+
+  it('takes a plate and queues it, with what the plate said it needs', async () => {
+    const answer = await upload(A_PLATE);
+
+    expect(answer.status).toBe(201);
+    const [job] = await shop.all();
+    expect(job).toMatchObject({ filaments: ['PLA-SpaceGray'], estimatedPrintSeconds: 5400, state: 'queued', owner: 'dave' });
+  });
+
+  it('names the job after the file that arrived', async () => {
+    await upload(A_PLATE, 'player-box.gcode');
+
+    expect((await shop.all())[0].displayName).toBe('player-box.gcode');
+  });
+
+  it('takes the bed the plate was sliced for as the room it needs', async () => {
+    await upload(`${A_PLATE}\n; bed_shape = 0x0,200x0,200x180,0x180\n; max_print_height = 190\n`);
+
+    expect((await shop.all())[0].requiredBuildVolume).toEqual({ x: 200, y: 180, z: 190 });
+  });
+
+  it('refuses a plate that does not say what filament it needs', async () => {
+    const answer = await upload('G1 X100.000 Y100.000\n');
+
+    expect(answer.status).toBe(400);
+    expect(answer.text).toContain('filament');
+    expect(await shop.all()).toEqual([]);
+  });
+
+  // The point past which it stops pretending: these mean start now, and this shop decides that.
+  it('refuses to be told to print', async () => {
+    const answer = await asked('POST', `${OCTOPRINT_PREFIX}/api/job`, { headers: { 'x-api-key': ADMIN }, json: { command: 'start' } });
+
+    expect(answer.status).toBe(409);
+  });
+
+  it('lets somebody who is not an admin send one', async () => {
+    const answer = await upload(A_PLATE, 'tray.gcode', USER);
+
+    expect(answer.status).toBe(201);
+    expect((await shop.all())[0].owner).toBe('slicer');
+  });
+
+  it('does not know a caller who presents nothing', async () => {
+    const answer = await asked('GET', `${OCTOPRINT_PREFIX}/api/version`);
+
+    expect(answer.status).toBe(401);
+  });
+
+  // The spelling is the borrowed protocol's, and it reaches the borrowed protocol's routes only.
+  it("does not take that header at the shop's own routes", async () => {
+    const answer = await asked('GET', '/jobs', { headers: { 'x-api-key': ADMIN } });
+
+    expect(answer.status).toBe(401);
+  });
+
+  it('leaves nothing parked once the plate has been taken in', async () => {
+    await upload(A_PLATE);
+
+    expect(await readdir(spool)).toEqual([]);
+  });
+
+  it('leaves nothing parked when the plate is refused', async () => {
+    await upload('G1 X100.000 Y100.000\n');
+
+    expect(await readdir(spool)).toEqual([]);
+  });
+
+  it('hands back where the plate can be asked after, under the prefix it arrived at', async () => {
+    const answer = await upload(A_PLATE, 'tray.gcode');
+    const said = answer.body as { files: { local: { refs: { resource: string } } }; job: { id: number } };
+
+    expect(said.files.local.refs.resource).toContain(`${OCTOPRINT_PREFIX}/api/files/local/tray.gcode`);
+    expect(said.job.id).toBe(((await shop.all())[0] as Job).id);
+  });
+});

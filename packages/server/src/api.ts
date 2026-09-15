@@ -3,8 +3,9 @@ import express from 'express';
 import type { Express, NextFunction, Request, Response } from 'express';
 import type { Server } from 'node:http';
 import * as path from 'node:path';
-import { SHOP_ROUTES } from '@3d-print-shop/client';
+import { OCTOPRINT_PREFIX, SHOP_ROUTES } from '@3d-print-shop/client';
 import type { Verdict } from '@3d-print-shop/client';
+import { serveAsAnOctoPrint } from './asAnOctoPrint.js';
 import { InvalidSubmission, validateDetails } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
 import { NoSuchJob, NoSuchPrinter, DataUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
@@ -152,6 +153,12 @@ const OPEN_TO_EVERY_CALLER: ReadonlyArray<{ method: string; path: RegExp }> = [
   // ever change the caller making the request. Changing somebody else's is an operator's, at a
   // terminal, and has no route at all.
   { method: 'PUT', path: /^\/me\/password$/ },
+  // AIDEV-NOTE: built from the prefix rather than written out, so that moving the borrowed protocol
+  // cannot leave this list pointing at where it used to be - which would refuse every caller of it
+  // who is not an admin, and refuse them with a message about roles that names nothing they did.
+  { method: 'GET', path: new RegExp(`^${OCTOPRINT_PREFIX}/api/(version|server|settings)$`) },
+  { method: 'POST', path: new RegExp(`^${OCTOPRINT_PREFIX}/api/files/local$`) },
+  { method: 'POST', path: new RegExp(`^${OCTOPRINT_PREFIX}/api/job$`) },
 ];
 
 // AIDEV-NOTE: matched against the request the way EXPRESS routed it, not the way it was typed.
@@ -235,6 +242,16 @@ export function tokenIn(header: string | undefined): string | undefined {
   return said?.[1];
 }
 
+// AIDEV-NOTE: the borrowed protocol spells a credential differently - its callers put it in a header
+// of its own, and will not be taught to send another. It is the SAME token and not a second kind of
+// credential; what is scoped is the spelling, which is accepted under the borrowed prefix and
+// nowhere else. A caller sending one at the shop's own routes is a caller the shop does not know.
+export function tokenPresented(urlPath: string, authorization: string | undefined, apiKey: string | undefined): string | undefined {
+  const borrowed = urlPath === OCTOPRINT_PREFIX || urlPath.startsWith(`${OCTOPRINT_PREFIX}/`);
+
+  return tokenIn(authorization) ?? (borrowed ? apiKey : undefined);
+}
+
 /** What the shop tells whoever is running it. */
 export interface ShopHooks {
   /** Told after every change, so something can decide whether a print could start. */
@@ -272,6 +289,13 @@ export interface ShopHooks {
   // files at a path; whoever installed it knows which files those are.
   /** A directory of files to serve beside the API, for a browser that has to get the page somewhere. */
   page?: string;
+  // AIDEV-NOTE: a DIRECTORY for a plate that has arrived and has not been taken in yet, and the one
+  // thing the borrowed protocol needs that the shop's own route does not. It belongs where a claim
+  // belongs - somewhere a reboot empties - because a plate parked here is not work the shop has
+  // accepted. Absent is a shop that does not answer that protocol, which is what one with nowhere to
+  // park should be.
+  /** Where an in-flight upload is parked while the shop reads what it says about itself. */
+  spool?: string;
   /** Where the running service writes down what it did. Silent unless somebody supplies one. */
   log?: Log;
 }
@@ -431,7 +455,8 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
   api.use((request, _response, next) => {
     const session = cookieIn(request.header('cookie'), SESSION_COOKIE);
     const whose = session === undefined ? undefined : sessions.whose(session);
-    const caller = whose === undefined ? callers().presenting(tokenIn(request.header('authorization')) ?? '') : callers().named(whose)?.caller;
+    const presented = tokenPresented(request.path, request.header('authorization'), request.header('x-api-key'));
+    const caller = whose === undefined ? callers().presenting(presented ?? '') : callers().named(whose)?.caller;
 
     if (caller === undefined) throw new NotAKnownCaller('this shop does not know that token');
 
@@ -480,6 +505,12 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
     response.status(202).json({ stopping: true });
     response.on('finish', () => hooks.shutDown?.());
   });
+
+  // AIDEV-NOTE: served only when there is somewhere to park a plate while it is read, the way the
+  // page and the two credential writers are. A plate has to be spooled whole before anything can be
+  // known about it, so a shop with nowhere to put one does not answer this protocol at all rather
+  // than answering it and failing at the end of every upload.
+  if (hooks.spool !== undefined) serveAsAnOctoPrint(api, OCTOPRINT_PREFIX, { shop, spool: hooks.spool, log });
 
   api.post('/jobs', async (request, response) => {
     const job = await submission(shop, request, request.caller.id, maxDescriptionBytes);

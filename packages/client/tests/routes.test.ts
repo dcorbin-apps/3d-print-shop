@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { HttpShop, SHOP_ROUTES } from '../src';
+import { BORROWED_ROUTES, HttpShop, SHOP_ROUTES } from '../src';
 
 // AIDEV-NOTE: what this exists to catch is a route added to `HttpShop` and not to `SHOP_ROUTES` -
 // which is not a broken test anywhere, it is a dev server answering with index.html and a page
@@ -61,12 +61,13 @@ describe('every path this client asks the shop for', () => {
   });
 
   // The other way round: a route nothing asks for is one somebody left behind, and a dev server
-  // would go on forwarding a path the shop no longer has.
-  it('covers every route the shop is known to answer', async () => {
+  // would go on forwarding a path the shop no longer has. The borrowed ones are the exception and
+  // are named rather than excused - they exist for callers that never reach for this client at all.
+  it('covers every route the shop is known to answer, but for the ones not meant for this client', async () => {
     await everythingItCanBeAsked();
 
     const unasked = SHOP_ROUTES.filter((route) => !asked().some((path) => path === route || path.startsWith(`${route}/`) || path.startsWith(`${route}?`)));
 
-    expect(unasked).toEqual([]);
+    expect(unasked).toEqual(BORROWED_ROUTES);
   });
 });

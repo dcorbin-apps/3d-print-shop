@@ -46,73 +46,28 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   mid-request changes which printers there are. A cache that outlives a request is a second answer to
   that, which is what this store is built not to have. `packages/server/src/JobStore.ts`
 
-- [ ] Present an OctoPrint-shaped API for job submission, so anything that already knows how to send
-  to an OctoPrint can send to the shop instead without being written against the shop at all.
+- [ ] The borrowed protocol is built and is untried against anything that actually speaks it. Three
+  things are left, and the first is the only one that could make the rest wrong.
 
-  It is a FACE, not a second contract. `POST /jobs` stays the one way in; this translates into the
-  same `submit` and reaches the store through it. A route of its own into the store would be the
-  second copy that drifts.
+  * PROVE THE JOIN. Whether a tool's host field, given `http://shop:7373/octoprint`, puts
+    `api/files/local` on the end of it correctly is the one assumption the whole prefix rests on, and
+    it has been reasoned about rather than measured. If some tool cannot do a subpath at all, the
+    fallback is a listener of its own on another port - which is a second socket to secure and
+    another thing in the data lock, so it is worth knowing before anybody pays for it
+  * PIN A REAL PLATE. `slicedPlate.ts` reads a TABLE of spellings - `filament_type`, `bed_shape`,
+    `estimated printing time (normal mode)` and the rest - and that table was written from memory of
+    somebody else's file format. One real plate in tests/assumptions would turn it from recall into
+    something pinned, and adding a spelling is then a string in a list. Until that exists, a plate
+    refused for naming no filament may be the parser's fault and not the plate's
+  * DECIDE WHAT AN UPLOAD-AND-PRINT SHOULD SEE. The flag means start now; the shop takes the plate
+    and queues it, and the answer says `queued` rather than claiming it started. That is honest and
+    it is not visible - the button says it printed. Nothing is wrong yet, and the first person to
+    press it will find out whether that matters
 
-  It goes under a PREFIX of its own rather than at the root, and the reason is in `servePageFrom`:
-  any GET that `isTheShops` does not recognise gets `index.html` back. A caller probing `/api/version`
-  at the root would be handed the page with a 200 - which is exactly the failure the note on
-  `SHOP_ROUTES` was written about, and it tells whoever set it up nothing. Under a prefix listed in
-  `SHOP_ROUTES` that subtree is out of the fallback and can answer honestly, including answering no
-  honestly. The shop's OWN routes stay at the root, which is a separate decision and is untouched:
-  this is the imitation being quarantined under a name, at the cost of one more entry in the list
-  that the dev proxy and `everyPathHttpShopAsksFor` already keep straight.
-
-  The prefix is also where the credential difference lives - that subtree reads the other protocol's
-  header and nowhere else does - so security.md gets a region to name rather than an exception
-  scattered through the middleware.
-
-  Two things that will bite. The upload's answer embeds URLs of its own, and they have to carry the
-  prefix or a caller following one lands on the page; the shop already builds from what reached it
-  rather than from a name it was configured with, so the pattern is there. And accept the subtree
-  with and without a trailing slash, because how the caller joins its host to a path is not the
-  shop's to decide. Prove the join works against a real one before building on it - that, and not
-  the prefix itself, is the part that has historically broken.
-
-  The hard part is not the multipart - `packages/octoprint-sim/src/octoPrintServer.ts` has served
-  that protocol from the other side all along. It is that `POST /api/files/local` carries a file, a
-  path and two flags, and NOTHING the shop schedules on: no filament, no build volume, no estimate.
-  So the item is really "where do a job's requirements come from when the protocol has no room for
-  them", and there are three answers worth weighing before any of them is built:
-
-  * read them out of the gcode's own header comments. This is the shop reading what it prints, which
-    is a real change to what it is - but it is NOT a departure. The best-built system in this space
-    does exactly this: it parses the header itself and serves `filament_type`, `estimated_time` and
-    the rest as a file's metadata, and its whole client population relies on it. Whoever weighs this
-    should weigh it as the normal answer rather than the daring one.
-
-    What the header gives, field by field, because two of these are not obvious. `filaments` and
-    `estimatedPrintSeconds` come out of it cleanly. `requiredBuildVolume` comes from the BED IT WAS
-    SLICED FOR, which reads like an over-estimate and is in fact the right number: a plate's absolute
-    coordinates include the prime line, the skirt and the wipe tower, all placed against that bed, so
-    a small object sliced on a big machine really does need the big machine. The object's own
-    bounding box is the UNSAFE number here, and the one not to reach for. The cost of using the bed
-    is only that a small plate is not offered to a small printer that would have taken it - which is
-    nothing until there are two printers of different sizes. And `printer` must NOT be filled from
-    the header: what is in there is a profile name in the slicer's namespace, not a machine an
-    operator registered here, and that field means PIN IT TO THAT ONE - absent is what lets the shop
-    schedule at all
-  * carry them in the upload's `path`. The path is the uploader's to choose and is TEMPLATED at their
-    end, so somebody can put the material in it themselves and the shop learns what a job needs
-    without reading a byte of what it prints. Ugly, and the only option that keeps the shop ignorant
-  * take none, and let a person say at the shop what the job needs before it can be scheduled. The
-    boring one, and probably the honest first version
-
-  Three more things whoever picks this up will meet:
-
-  * it is not one route. A caller asks `GET /api/version`, and often `/api/server` or `/api/settings`,
-    to satisfy itself it is talking to an OctoPrint before it uploads anything
-  * the credential is spelled differently. That protocol puts it in `X-Api-Key`; the shop reads
-    `Authorization: Bearer` (`packages/client/src/HttpShop.ts:162`). The same token in the other
-    protocol's spelling is the whole of it - not a new kind of credential - but security.md has to
-    say so
-  * the shop is not an OctoPrint and should not pretend past the point it can hold. `print=true` means
-    START NOW, and the shop's answer is "when the filament is on"; `POST /api/job` has no meaning
-    against a queue at all. What to say back to those, honestly, is the design work
+  What is DONE and needs no revisiting: it is a face over the same `submit`, under `/octoprint`,
+  out of the page fallback; the token is read from the other protocol's header under that prefix and
+  nowhere else; commanding a queue is refused with a reason; and what a job needs is read from the
+  plate's own comments, in the face and never in the store.
 
 ### Installation
 

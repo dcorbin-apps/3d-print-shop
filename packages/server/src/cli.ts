@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Command, InvalidArgumentError } from 'commander';
+import { mkdir } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
+import * as path from 'node:path';
 import { HttpShop, SHOP_URL_ENV, defaultShopUrl, defaultToken } from '@3d-print-shop/client';
 import type { Role, Shop } from '@3d-print-shop/client';
 import { DEFAULT_PORT, serve } from './api.js';
@@ -8,10 +10,7 @@ import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
 import { MAX_GCODE_ENV } from './JobStore.js';
-import {
-  ETC_ENV,
-  defaultEtc,
-} from './credentials.js';
+import { ETC_ENV, defaultEtc } from './credentials.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 import { addSomebody, askForANewPassword, changePassword, giveAToken, listCallers, migrateTheCallers } from './callerAdmin.js';
 import { initialiseShop } from './shopAdmin.js';
@@ -78,7 +77,7 @@ export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Co
     .option(
       '--max-gcode <megabytes>',
       `the largest gcode it will take, and the room it keeps spare for one (or ${MAX_GCODE_ENV})`,
-      readMegabytes
+      readMegabytes,
     )
     .option('--etc <path>', `where its credentials are kept (or ${ETC_ENV}; defaults to ${defaultEtc()})`)
     // AIDEV-NOTE: a directory, and the server is told nothing else about it. It is the built page,
@@ -125,6 +124,13 @@ export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Co
         callers = await keepPassword(id, password);
       };
 
+      // AIDEV-NOTE: under the RUNTIME directory, because a plate parked here is not work the shop has
+      // taken on - no record has been written for it - so a crash must leave nothing behind that a
+      // rescan would find. Made here for the same reason the runtime directory is made at all: it is
+      // the one kind the shop creates rather than refuses, because a reboot is meant to empty it.
+      const spool = path.join(where.run, 'spool');
+      await mkdir(spool, { recursive: true, mode: 0o700 });
+
       const shopServer = await serve(
         store,
         options.port,
@@ -137,11 +143,12 @@ export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Co
           keyGiven: keepTheKey,
           passwordChanged: keepTheirNewPassword,
           page: options.page,
+          spool,
           log,
         },
         // Not defaulted here: `serve` holds the default, and a second copy of an address is a second
         // thing to change. Undefined is "wherever serve says", which is loopback.
-        options.listen
+        options.listen,
       );
 
       const stopEverything = stoppingTheShop({
@@ -203,9 +210,7 @@ export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Co
     .description('Set a fresh machine up with one admin, so there is somebody this shop may answer')
     .argument('[name]', 'what to call them, and the id every job of theirs is owned by', 'admin')
     .option('--etc <path>', `where its credentials are kept (or ${ETC_ENV}; defaults to ${defaultEtc()})`)
-    .action(async (name: string, options: { etc?: string }) =>
-      say(await initialiseShop(options.etc ?? defaultEtc(), name, await askForOne()))
-    );
+    .action(async (name: string, options: { etc?: string }) => say(await initialiseShop(options.etc ?? defaultEtc(), name, await askForOne())));
 
   // AIDEV-NOTE: these write the credentials file rather than asking a running shop, and they are the
   // only operator commands that do. A shop cannot be asked to give somebody a way in that it does
@@ -221,32 +226,32 @@ export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Co
       .argument('<id>', 'what every job of theirs is owned by, and what they log in as')
       .argument('[name]', 'what a log and the page call them')
       .option('--role <role>', 'admin or user', readRole, 'user')
-      .option('--machine', 'a program rather than a person: issue a token instead of asking for a password')
+      .option('--machine', 'a program rather than a person: issue a token instead of asking for a password'),
   ).action(async (id: string, name: string | undefined, options: { role: Role; machine?: boolean; etc?: string }) =>
-    say(await addSomebody(options.etc ?? defaultEtc(), id, name ?? id, options.role, options.machine === true))
+    say(await addSomebody(options.etc ?? defaultEtc(), id, name ?? id, options.role, options.machine === true)),
   );
 
   whereCredentialsAre(caller.command('password').description('Set what somebody logs in with').argument('<id>', 'which caller')).action(
-    async (id: string, options: { etc?: string }) => say(await changePassword(options.etc ?? defaultEtc(), id))
+    async (id: string, options: { etc?: string }) => say(await changePassword(options.etc ?? defaultEtc(), id)),
   );
 
-  whereCredentialsAre(
-    caller.command('token').description('Issue another token, for another machine').argument('<id>', 'which caller')
-  ).action(async (id: string, options: { etc?: string }) => say(await giveAToken(options.etc ?? defaultEtc(), id)));
+  whereCredentialsAre(caller.command('token').description('Issue another token, for another machine').argument('<id>', 'which caller')).action(
+    async (id: string, options: { etc?: string }) => say(await giveAToken(options.etc ?? defaultEtc(), id)),
+  );
 
   whereCredentialsAre(caller.command('list').description('Who this shop answers, and what each of them has')).action(
-    async (options: { etc?: string }) => say(await listCallers(options.etc ?? defaultEtc()))
+    async (options: { etc?: string }) => say(await listCallers(options.etc ?? defaultEtc())),
   );
 
-  whereCredentialsAre(
-    caller.command('migrate').description('Hash the tokens in a credentials file that still holds them in the clear')
-  ).action(async (options: { etc?: string }) => say(await migrateTheCallers(options.etc ?? defaultEtc())));
+  whereCredentialsAre(caller.command('migrate').description('Hash the tokens in a credentials file that still holds them in the clear')).action(
+    async (options: { etc?: string }) => say(await migrateTheCallers(options.etc ?? defaultEtc())),
+  );
 
   const reachingTheShop = (command: Command): Command =>
     command.option('--shop-url <url>', `where the shop answers (or ${SHOP_URL_ENV}; defaults to ${defaultShopUrl()})`);
 
   const shutdown = reachingTheShop(
-    program.command('shutdown').description('Ask the shop to stop - prints already running are picked up again next time')
+    program.command('shutdown').description('Ask the shop to stop - prints already running are picked up again next time'),
   );
   shutdown.action(async () => say(await shutDownShop(shop(shutdown.opts()))));
 
@@ -281,9 +286,7 @@ export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Co
     .argument('<id>', 'which job', readJobId)
     .action(async (id: number) => say(await judgeJob(shop(job.opts()), id, 'abandoned')));
 
-  const printer = program
-    .command('printer')
-    .description('The printers this shop prints on');
+  const printer = program.command('printer').description('The printers this shop prints on');
   reachingTheShop(printer);
 
   printer
@@ -296,7 +299,7 @@ export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Co
     // the service reads it from the environment - see design/3d-print-shop.md.
     .option('--api <protocol>', 'what it speaks', 'octoprint')
     .action(async (name: string, volume: string, address: string, options: { api: PrinterApi }) =>
-      say(await addPrinter(shop(printer.opts()), name, volume, address, options.api))
+      say(await addPrinter(shop(printer.opts()), name, volume, address, options.api)),
     );
 
   printer
