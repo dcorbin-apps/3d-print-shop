@@ -3,7 +3,8 @@
   "compilerOptions": {
     "types": ["node", "jest", "@jest/globals"],
     "rootDir": "../..",
-    "noEmit": true
+    "noEmit": true,
+    "noUncheckedIndexedAccess": false
   },
   "include": ["./**/*", "../src/**/*"]
 }

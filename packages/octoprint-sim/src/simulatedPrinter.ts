@@ -27,10 +27,10 @@ export function parseAuthFrame(raw: string): { name: string; session: string } |
     const message = JSON.parse(raw) as { auth?: unknown };
     if (typeof message.auth !== 'string') return undefined;
 
-    const parts = message.auth.split(':');
-    if (parts.length !== 2 || parts[0] === '' || parts[1] === '') return undefined;
+    const [name, session, ...rest] = message.auth.split(':');
+    if (rest.length > 0 || name === undefined || session === undefined || name === '' || session === '') return undefined;
 
-    return { name: parts[0], session: parts[1] };
+    return { name, session };
   } catch {
     return undefined;
   }

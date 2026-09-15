@@ -26,7 +26,7 @@ export async function askSecretlyTwice(
     return [await askSecretly(asking, input, output), await askSecretly(again, input, output)];
   }
 
-  const [said, confirmed] = await readLines(input);
+  const [said = '', confirmed = ''] = await readLines(input);
 
   return [said, confirmed];
 }
@@ -88,7 +88,7 @@ function readWithoutEcho(input: Readable, output: Writable): Promise<string> {
 }
 
 async function readALine(input: Readable): Promise<string> {
-  return (await readLines(input))[0];
+  return (await readLines(input))[0] ?? '';
 }
 
 // Read whole rather than a line at a time: what is on the other end is a pipe or a file, which ends,

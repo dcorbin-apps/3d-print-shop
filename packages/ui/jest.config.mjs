@@ -23,12 +23,7 @@ export default {
       'ts-jest',
       {
         useESM: true,
-        tsconfig: {
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          esModuleInterop: true,
-          jsx: 'react-jsx',
-        },
+        tsconfig: '<rootDir>/tests/tsconfig.json',
       },
     ],
   },

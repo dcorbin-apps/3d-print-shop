@@ -43,5 +43,5 @@ export function stillHere(printers: RegisteredPrinter[], remembered: string | un
   if (printers.length === 0) return undefined;
   if (remembered !== undefined && printers.some((printer) => printer.name === remembered)) return remembered;
 
-  return printers[0].name;
+  return printers[0]?.name;
 }

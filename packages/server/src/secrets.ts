@@ -88,7 +88,7 @@ export async function hashPassword(password: string): Promise<string> {
  */
 export async function isThePassword(password: string, hash: string): Promise<boolean> {
   const [named, n, r, p, salt, expected] = hash.split('$');
-  if (named !== 'scrypt' || expected === undefined) return false;
+  if (named !== 'scrypt' || salt === undefined || expected === undefined) return false;
 
   const cost = { N: Number(n), r: Number(r), p: Number(p), maxmem: COST.maxmem };
   if (![cost.N, cost.r, cost.p].every((said) => Number.isInteger(said) && said > 0)) return false;

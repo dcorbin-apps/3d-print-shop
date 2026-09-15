@@ -14,7 +14,14 @@ export type { FilamentDemand } from '@3d-print-shop/client';
 // filaments are then positional: the index is the extruder the slicer assigned. Until then, keeping
 // one rule is worth more than anticipating that one.
 export function startsWith(job: Job): string {
-  return job.filaments[0];
+  const [first] = job.filaments;
+
+  // AIDEV-NOTE: a job that names no filament is refused at submission and a record is written once,
+  // so this cannot be one the shop took in. Grouped under the empty name rather than thrown from:
+  // this runs inside a sweep over EVERY job, where one unprintable record must not take the answer
+  // away from all the others - and the empty name matches nothing loaded, so it cannot print by
+  // accident either.
+  return first ?? '';
 }
 
 // AIDEV-NOTE: derived on every ask, never stored. What can print depends on what is loaded RIGHT

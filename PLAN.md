@@ -104,14 +104,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The build
 
-- [ ] MEASURED and not done: `noUncheckedIndexedAccess`. It types indexing honestly - `array[0]` and
-  `record[key]` become `T | undefined` - which is precisely the class the guard in `secrets.ts`
-  defends against and that `no-unnecessary-condition` wanted to delete for being "unnecessary". The
-  cost over the repository is about 51 places: 8 in the server's source, 13 in the ui's, 2 in the
-  simulator's, 28 in the server's tests. The source ones are worth having. The TEST ones mostly end
-  as `!` on an index, which does not remove the lie - it just writes it down somewhere else - so this
-  is worth doing only with a decision made in advance about what the tests are allowed to say.
-
 ### Installation
 
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this

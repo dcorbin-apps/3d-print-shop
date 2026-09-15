@@ -16,7 +16,10 @@ export function byFilament(jobs: Job[]): FilamentGroup[] {
   const grouped = new Map<string, Job[]>();
 
   for (const job of jobs) {
-    const filament = job.filaments[0];
+    // A job that names no filament is refused where jobs are taken in, so this is the shop's own
+    // invariant read back - grouped under the empty name rather than dropped, so nothing vanishes
+    // from a screen somebody is counting on.
+    const [filament = ''] = job.filaments;
     grouped.set(filament, [...(grouped.get(filament) ?? []), job]);
   }
 

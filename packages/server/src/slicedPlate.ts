@@ -89,11 +89,11 @@ function settingsIn(text: string): Map<string, string> {
   const said = new Map<string, string>();
 
   for (const line of text.split('\n')) {
-    const match = SETTING.exec(line);
+    const [, name, value] = SETTING.exec(line) ?? [];
     // AIDEV-NOTE: the FIRST wins. A plate carries the same setting at the head and again in the
     // trailing block, and this is handed both ends at once - so a rule about which is needed, and
     // "the one nearest the top" is the one that does not depend on how much tail was read.
-    if (match !== null && !said.has(match[1])) said.set(match[1], match[2]);
+    if (name !== undefined && value !== undefined && !said.has(name)) said.set(name, value);
   }
 
   return said;
@@ -134,7 +134,11 @@ function estimateIn(said: Map<string, string>): number | undefined {
   let seconds = 0;
   let found = false;
   for (const [, amount, unit] of value.matchAll(SPANS)) {
-    seconds += Number(amount) * PER_UNIT[unit];
+    // The pattern can only have matched one of the units below, but nothing says so but the pattern.
+    const per = unit === undefined ? undefined : PER_UNIT[unit];
+    if (amount === undefined || per === undefined) continue;
+
+    seconds += Number(amount) * per;
     found = true;
   }
 
