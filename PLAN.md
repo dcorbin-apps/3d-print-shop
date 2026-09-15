@@ -138,37 +138,6 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The page
 
-- [ ] Each job wants a menu of its own: **pause/resume**, **delete**, and **rename** to change the
-  display name. Delete is straightforward and the other two are not, because two of the three ask for
-  something the store is built not to do.
-
-  DELETE does not exist anywhere yet, in any form. `Shop` has `removePrinter` and nothing for a job;
-  a job leaves only by a verdict, and a verdict can only be given on one awaiting approval. So a
-  QUEUED job cannot be got rid of at all today - it waits for a filament nobody intends to load,
-  for ever. That alone is worth fixing. It needs a route, a method on the contract, the gcode going
-  with it, and the same ownership rule the verdicts use: the owner, or any admin.
-
-  PAUSE/RESUME and RENAME both collide with "a job record is written once and never rewritten".
-  `asJob` derives a job's state ENTIRELY from which printer is holding it - no holder means queued,
-  and nothing is written to say so - so a job held back by a person is a fact about a job that no
-  printer holds, which is exactly the kind of thing this store has nowhere to put. Rename is the same
-  collision in plainer clothes: `displayName` is on the record.
-
-  Three ways out, and the third is the one that fits:
-
-  * relax the rule to "written once, except what a person may change". Honest about what is being
-    asked, and it is the rule the whole store is built on - everything that moves belongs to a
-    printer, and this would be the first exception
-  * do neither, and let a job be deleted and re-submitted instead. Cheap, and it loses the queue
-    position and the id
-  * keep the record immutable and put what a person later says about a job in a SECOND file beside it
-    in the job directory. The record stays the submission, exactly as written, and the file next to
-    it holds the name somebody changed it to and whether they have held it back. There is already a
-    precedent to copy rather than invent: a printer's directory is its record and its status as two
-    files, for this same reason
-
-  Whichever is chosen, the menu is the easy half. The store's answer is the design.
-
 ### Beyond one printer
 
 - [ ] Multi-printer routing — the store and the foreman already carry several, and `printableNow`

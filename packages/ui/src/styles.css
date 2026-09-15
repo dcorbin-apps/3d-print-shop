@@ -199,6 +199,11 @@ body {
   color: var(--wrong);
 }
 
+/* The machine's own no. Coloured like the things a person has to go and see to, because it is one. */
+.condition.unavailable {
+  color: var(--wants-somebody);
+}
+
 .why,
 .loaded {
   margin: 0;
@@ -282,6 +287,64 @@ body {
 
 .job.printing .state {
   color: var(--live);
+}
+
+/* A job somebody has set aside reads as set aside, rather than as one the shop forgot about. */
+.job.held .name,
+.job.held .state {
+  color: var(--dim);
+  font-style: italic;
+}
+
+/* The row is `id name state`; the menu sits in the third column, where the state already is. */
+.job-menu-open {
+  padding: 0 6px;
+  color: var(--dim);
+  font: inherit;
+  line-height: 1;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.job-menu-open:hover {
+  color: var(--ink);
+  border-color: var(--edge);
+}
+
+.job-menu {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0 2px;
+}
+
+.job-menu button,
+.job-menu input {
+  padding: 4px 9px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+}
+
+.job-menu button {
+  cursor: pointer;
+}
+
+/* The one that cannot be undone says so before it is pressed, not only in the question it asks. */
+.job-menu button.remove {
+  color: var(--wrong);
+}
+
+.job-menu form {
+  display: flex;
+  gap: 6px;
 }
 
 /* The row is `id name state`; the buttons go under all three, for the job whose turn it is. */

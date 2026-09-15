@@ -1,5 +1,7 @@
 import type { Job, RegisteredPrinter, Verdict } from '@3d-print-shop/client/browser';
 import { asPrintingTime, byFilament } from '../byFilament.js';
+import { JobMenu } from './JobMenu.js';
+import type { JobActions } from './JobMenu.js';
 import { Verdicts } from './Verdicts.js';
 
 interface JobsByFilamentProps {
@@ -9,9 +11,11 @@ interface JobsByFilamentProps {
   selected?: RegisteredPrinter;
   /** What frees the bed. Absent, a finished print is reported here and judged somewhere else. */
   onVerdict?: (id: number, verdict: Verdict) => Promise<void>;
+  /** What a person may do to a job. Absent, the list reports and offers nothing. */
+  actions?: JobActions;
 }
 
-export function JobsByFilament({ jobs, totalJobs, selected, onVerdict }: JobsByFilamentProps): React.JSX.Element {
+export function JobsByFilament({ jobs, totalJobs, selected, onVerdict, actions }: JobsByFilamentProps): React.JSX.Element {
   const groups = byFilament(jobs);
   const others = totalJobs - jobs.length;
 
@@ -33,10 +37,11 @@ export function JobsByFilament({ jobs, totalJobs, selected, onVerdict }: JobsByF
 
           <ul>
             {group.jobs.map((job) => (
-              <li key={job.id} className={`job ${job.state}`}>
+              <li key={job.id} className={`job ${job.state}${job.heldBack === undefined ? '' : ' held'}`}>
                 <span className="id">{job.id}</span>
                 <span className="name">{job.displayName}</span>
                 <span className="state">{whereItIs(job)}</span>
+                {actions !== undefined && <JobMenu job={job} actions={actions} />}
                 {job.state === 'awaiting-approval' && onVerdict !== undefined && (
                   <Verdicts job={job.id} onVerdict={(verdict) => onVerdict(job.id, verdict)} />
                 )}
@@ -53,7 +58,7 @@ export function JobsByFilament({ jobs, totalJobs, selected, onVerdict }: JobsByF
 }
 
 function whereItIs(job: Job): string {
-  if (job.state === 'queued') return 'queued';
+  if (job.state === 'queued') return job.heldBack === undefined ? 'queued' : 'paused';
   if (job.state === 'printing') return `printing on ${job.heldBy}`;
 
   return `${job.lastPrinterOutcome} on ${job.heldBy} - waiting for a verdict`;

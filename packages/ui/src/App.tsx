@@ -38,6 +38,23 @@ export function App(): React.JSX.Element {
     askAgain();
   };
 
+  // Each of these changes what the queue will do next, so the page asks again rather than waiting
+  // out a tick - the same reasoning as a verdict.
+  const actions = {
+    onRename: async (id: number, displayName: string): Promise<void> => {
+      await shop.rename(id, displayName);
+      askAgain();
+    },
+    onHold: async (id: number, held: boolean): Promise<void> => {
+      await (held ? shop.hold(id) : shop.letThrough(id));
+      askAgain();
+    },
+    onRemove: async (id: number): Promise<void> => {
+      await shop.remove(id);
+      askAgain();
+    },
+  };
+
   const selected = stillHere(printers, chosen);
 
   // AIDEV-NOTE: written when it SETTLES rather than when it is clicked, so that a printer removed
@@ -71,7 +88,13 @@ export function App(): React.JSX.Element {
         onChangePassword={(current, password) => shop.changeMyPassword(current, password)}
       />
       <PrinterGallery printers={printers} selected={selected} onSelect={setChosen} onAdd={caller?.role === 'admin' ? addPrinter : undefined} />
-      <JobsByFilament jobs={jobs} totalJobs={totalJobs} selected={printers.find((printer) => printer.name === selected)} onVerdict={judge} />
+      <JobsByFilament
+        jobs={jobs}
+        totalJobs={totalJobs}
+        selected={printers.find((printer) => printer.name === selected)}
+        onVerdict={judge}
+        actions={actions}
+      />
 
       {!answered && <p className="asking">asking the shop...</p>}
     </div>
