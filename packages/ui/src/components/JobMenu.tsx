@@ -15,6 +15,10 @@ interface JobMenuProps {
   confirm?: (question: string) => boolean;
 }
 
+// AIDEV-NOTE: acts with CONSEQUENCES, and only those. Renaming was here and is not any more - it is
+// editing the thing you are looking at, so it happens on the name itself; see JobName. What is left
+// is what somebody should have to reach for deliberately.
+//
 // AIDEV-NOTE: a POPUP over the row rather than an opening of it. It floats, so a job being looked at
 // moves nothing else on the page - a list that reflowed under somebody's cursor was the reason this
 // stopped expanding the row. It still closes when attention goes elsewhere, which a popup should.
@@ -25,8 +29,6 @@ interface JobMenuProps {
 // a pause cannot stop one - saying otherwise would have somebody believe they had stopped a print.
 export function JobMenu({ job, actions, confirm = window.confirm.bind(window) }: JobMenuProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(job.displayName);
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | undefined>(undefined);
   const opened = useRef<HTMLDivElement | null>(null);
@@ -59,7 +61,6 @@ export function JobMenu({ job, actions, confirm = window.confirm.bind(window) }:
     try {
       await what();
       setOpen(false);
-      setRenaming(false);
     } catch (failure) {
       setRefused((failure as Error).message);
     } finally {
@@ -102,24 +103,6 @@ export function JobMenu({ job, actions, confirm = window.confirm.bind(window) }:
 
       {open && (
         <div className="job-menu-popup" role="menu" aria-label={`Job ${job.id}`}>
-          {renaming ? (
-            <form
-              onSubmit={(sending) => {
-                sending.preventDefault();
-                void doing(() => actions.onRename(job.id, name));
-              }}
-            >
-              <input aria-label={`A name for job ${job.id}`} value={name} onChange={(typing) => setName(typing.target.value)} autoFocus />
-              <button type="submit" disabled={busy}>
-                Rename
-              </button>
-            </form>
-          ) : (
-            <button type="button" disabled={busy} onClick={() => setRenaming(true)}>
-              Rename
-            </button>
-          )}
-
           {queued && (
             <button
               type="button"

@@ -64,16 +64,6 @@ describe('what can be done with a job', () => {
 
       await waitFor(() => expect(onRemove).toHaveBeenCalledWith(7));
     });
-
-    it('can be called something else', async () => {
-      open();
-      press('Rename');
-
-      fireEvent.change(screen.getByLabelText('A name for job 7'), { target: { value: 'Clamp Dock' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
-
-      await waitFor(() => expect(onRename).toHaveBeenCalledWith(7, 'Clamp Dock'));
-    });
   });
 
   describe('a job that is printing', () => {
@@ -142,7 +132,7 @@ describe('what can be done with a job', () => {
     it('stays open while its own buttons are being used', () => {
       open();
 
-      fireEvent.mouseDown(screen.getByRole('button', { name: 'Rename' }));
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Pause' }));
 
       expect(popup()).not.toBeNull();
     });

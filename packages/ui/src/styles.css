@@ -278,6 +278,28 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The name is editable in place, so it has to be the same size and in the same spot either way -
+   a row that jumped when somebody double-clicked it would be the reflow this page just stopped doing. */
+.job .name[title] {
+  cursor: text;
+}
+
+.job input.name.editing {
+  width: 100%;
+  padding: 0;
+  color: var(--ink);
+  font: inherit;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--wants-somebody);
+  outline: none;
+}
+
+.job .name .refused {
+  margin-left: 6px;
+  font-size: 11px;
+}
+
 .job .state {
   font-size: 11px;
   color: var(--dim);
