@@ -46,14 +46,21 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   mid-request changes which printers there are. A cache that outlives a request is a second answer to
   that, which is what this store is built not to have. `packages/server/src/JobStore.ts`
 
-- [ ] The borrowed protocol is built and is untried against anything that actually speaks it. Three
-  things are left, and the first is the only one that could make the rest wrong.
+- [ ] The borrowed protocol has been driven by a real slicer end to end, and two things are left.
 
-  * PROVE THE JOIN. Whether a tool's host field, given `http://shop:7373/octoprint`, puts
-    `api/files/local` on the end of it correctly is the one assumption the whole prefix rests on, and
-    it has been reasoned about rather than measured. If some tool cannot do a subpath at all, the
-    fallback is a listener of its own on another port - which is a second socket to secure and
-    another thing in the data lock, so it is worth knowing before anybody pays for it
+  What was proved, on 2026-09-15, against PrusaSlicer 2.9.6 on macOS: a physical printer of host type
+  OctoPrint, pointed at `http://localhost:7373/octoprint/`, tests green and sends. It probes
+  `GET /octoprint/api/version` and posts to `/octoprint/api/files/local` 27ms later, so the subpath
+  join - the assumption the whole prefix rested on - holds, and the token it was given in the
+  borrowed protocol's own header resolved to a caller. The plate it sent was read for its filament,
+  its estimate and its bed exactly as the fixture is. No second listener on a port of its own is
+  needed, and that idea can be dropped rather than kept warm.
+
+  One snag, and it was not the shop's: a URL pasted with a stray character fails as libcurl's
+  `CURLE_URL_MALFORMAT` before a socket is opened, so NOTHING reaches the shop and its log is empty.
+  Anybody debugging this should look at the log first - an empty one means the slicer never sent, and
+  no amount of reading this code will explain it.
+
   * A SECOND DIALECT, when there is a second tool to support. One real plate is kept as
     `packages/server/tests/assumptions/aRealPlate.gcode` - named past the `*.gcode` rule in
     .gitignore, because a fixture is not print work - and pinned by whatAPlateSays.test.ts, so every

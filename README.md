@@ -452,8 +452,10 @@ any other - the answer says the job is queued rather than claiming it started.
 page with a 200, which tells whoever set it up nothing at all. Under the prefix that subtree is out
 of the page fallback and can answer honestly, including answering no.
 
-Whether a given tool's host field will join a URL with a path onto `api/files/local` correctly is
-the one part of this that has not been proved against a real one. See PLAN.md.
+This has been driven end to end by a real slicer: a physical printer of host type OctoPrint pointed
+at `http://localhost:7373/octoprint/` tests green, probes the version route, and sends a plate the
+shop reads and queues. If a slicer reports a connection error and the shop's log shows nothing at
+all, the URL was rejected before a socket was opened - look at what was typed, not at the shop.
 
 ## Working on it
 
