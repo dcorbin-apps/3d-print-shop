@@ -31,6 +31,22 @@ export default tseslint.config(
       // forgets later, which is a print that never starts and no error anywhere saying why.
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
+
+      // AIDEV-NOTE: `no-unnecessary-condition` and `strict-boolean-expressions` are the other two
+      // type-checked rules worth wanting, and both are OFF deliberately. Do not complete the set.
+      //
+      // `no-unnecessary-condition` was measured at nine violations here and every one of them was a
+      // guard the code needs and the TYPE denies - `(failure as {cause?: unknown})?.cause` where the
+      // cast is a claim about an `unknown` from a catch, `expected === undefined` after splitting a
+      // hash that a mangled file really can cut short, `request.caller?.name` where the augmentation
+      // says non-optional and the guard's refusal says otherwise. Switching it on means deleting six
+      // real runtime guards, one of them the thing standing between a corrupted credentials file and
+      // a way in. The honest fix for that class is `noUncheckedIndexedAccess` in the tsconfigs, which
+      // is measured and written up in PLAN.md rather than done here.
+      //
+      // `strict-boolean-expressions` is in no typescript-eslint preset, deliberately - it is too
+      // opinionated for one. Of its ten here, six are a genuine tightening and four are ordinary JSX
+      // (`{selected?.loaded.includes(f) && <span/>}`) that it would have written as `=== true`.
     },
   },
   {

@@ -102,6 +102,24 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   second write again with extra steps. Moving the spool under the jobs root is the part that has to
   be decided, because it puts scratch inside the directory that holds real work.
 
+### The build
+
+- [ ] The tsconfigs DUPLICATE their compiler options instead of extending one base. `tsconfig.json`
+  at the root, and each of `packages/*/tsconfig.json`, carry their own copy of `target`, `strict`,
+  `moduleResolution` and the rest - so a compiler option added at the root reaches NOTHING, which was
+  found the way these things are found: by adding one, measuring no effect, and looking. Anybody
+  deciding a language-level question here has to decide it four times and will eventually decide it
+  three. Make the packages extend the root, which is a small change and the prerequisite for the next
+  item.
+
+- [ ] MEASURED and not done: `noUncheckedIndexedAccess`. It types indexing honestly - `array[0]` and
+  `record[key]` become `T | undefined` - which is precisely the class the guard in `secrets.ts`
+  defends against and that `no-unnecessary-condition` wanted to delete for being "unnecessary". The
+  cost over the repository is about 51 places: 8 in the server's source, 13 in the ui's, 2 in the
+  simulator's, 28 in the server's tests. The source ones are worth having. The TEST ones mostly end
+  as `!` on an index, which does not remove the lie - it just writes it down somewhere else - so this
+  is worth doing only with a decision made in advance about what the tests are allowed to say.
+
 ### Installation
 
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this
