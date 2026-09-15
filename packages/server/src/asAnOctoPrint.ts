@@ -11,7 +11,7 @@ import { TooMuchToTake, WrongState } from './JobStore.js';
 import type { JobStore } from './JobStore.js';
 import { silent } from './log.js';
 import type { Log } from './log.js';
-import { slicedPlate } from './slicedPlate.js';
+import { READS, slicedPlate } from './slicedPlate.js';
 
 /** What the face needs: a shop to submit into, and somewhere to put a plate while it reads it. */
 export interface AnOctoPrint {
@@ -128,9 +128,21 @@ function takeAPlate(what: AnOctoPrint, request: Request, owner: string): Promise
 async function submitWhatArrived(shop: JobStore, parked: string, filename: string, owner: string): Promise<Job> {
   const plate = slicedPlate(await endsOf(parked));
 
+  // AIDEV-NOTE: two refusals and not one, because they are two different things to have got wrong and
+  // a person can act only on the one that is true. A plate the shop cannot READ may well say what it
+  // needs, in a spelling nobody here has measured - telling somebody it named no filament would send
+  // them hunting through their own settings for a fault that is this shop's.
+  if (!plate.read) {
+    const what = plate.generatedBy === undefined ? 'does not say what wrote it' : `says it was written by ${plate.generatedBy}`;
+
+    throw new InvalidSubmission(
+      `this plate ${what}, and the shop reads only what ${READS} writes - submit it through the shop's own route and say what it needs`,
+    );
+  }
+
   if (plate.filaments.length === 0) {
     throw new InvalidSubmission(
-      "this plate does not say what filament it needs, so the shop cannot know when it could run - slice it with a tool that writes its settings into the file, or submit it through the shop's own route and say",
+      "this plate names no filament, so the shop cannot know when it could ever run - submit it through the shop's own route and say what it needs",
     );
   }
 

@@ -54,13 +54,14 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
     it has been reasoned about rather than measured. If some tool cannot do a subpath at all, the
     fallback is a listener of its own on another port - which is a second socket to secure and
     another thing in the data lock, so it is worth knowing before anybody pays for it
-  * PIN A PLATE FROM A SECOND TOOL. One real plate is now kept as
+  * A SECOND DIALECT, when there is a second tool to support. One real plate is kept as
     `packages/server/tests/assumptions/aRealPlate.gcode` - named past the `*.gcode` rule in
-    .gitignore, because it is a fixture and not print work - and pinned by whatAPlateSays.test.ts, so the spellings `slicedPlate.ts` looks for are measured
-    rather than remembered - but measured against ONE tool. The other spellings in that table
-    (`printable_area`, `printable_height`, `total estimated time`) are still recall, and a plate from
-    anything else would say whether they are right. Until then a plate refused for naming no filament
-    may be the parser's fault rather than the plate's, and only for a tool nobody has tried
+    .gitignore, because a fixture is not print work - and pinned by whatAPlateSays.test.ts, so every
+    spelling `slicedPlate.ts` looks for is measured rather than remembered. The unmeasured ones
+    belonging to other tools came out when the dialect gate went in. Adding a tool is three things
+    together: the dialect in `slicedPlate.ts`, its spellings beside the ones already there, and a
+    real plate from it in tests/assumptions. None of this is guesswork now, and none of it should be
+    allowed to become guesswork again
   * DECIDE WHAT AN UPLOAD-AND-PRINT SHOULD SEE. The flag means start now; the shop takes the plate
     and queues it, and the answer says `queued` rather than claiming it started. That is honest and
     it is not visible - the button says it printed. Nothing is wrong yet, and the first person to
@@ -72,7 +73,9 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   plate's own comments, in the face and never in the store. A real plate keeps its settings within
   17K of its last byte against a 64K window, and names the settings profile it was sliced with beside
   the material - which is deliberately not read, because it is a name in somebody else's namespace
-  and a job waiting for it would wait for ever.
+  and a job waiting for it would wait for ever. And only ONE dialect is read: a plate says what wrote
+  it on its first line, and anything the shop has not measured against a real file is refused by
+  quoting that line rather than by guessing at its spellings.
 
 - [ ] FUTURE, and deliberately held. The borrowed protocol writes a plate TWICE - once into the spool
   while it reads what the plate says about itself, and again into the job directory when it submits.

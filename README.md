@@ -430,6 +430,14 @@ slicing tool writes into the plate itself: the filament, the estimate, and the b
 Only the filament is required, because only the filament is required of any job - a plate whose
 comments do not name one is refused, and the refusal says so.
 
+**It reads one dialect, and turns away every other plate rather than guessing.** A plate says on its
+first line what wrote it, and the shop reads the settings only out of the one whose spellings have
+been measured against a real file - `PrusaSlicer 2`, up to but not including a major version nobody
+here has seen. Anything else is refused by quoting what the plate said wrote it, because a plate the
+shop cannot read may well name its filament in a spelling nobody has measured, and telling somebody
+it named none would send them hunting a fault that is the shop's. Widening this means a real plate
+from the other tool, in tests/assumptions, and its spellings beside the ones already there.
+
 The bed is taken as the room the job needs, which reads like an over-estimate of the object and is
 the right number: a plate's coordinates include the prime line, the skirt and the wipe tower, all
 placed against the bed it was sliced for. The object's own extent is the unsafe number, and is
