@@ -51,6 +51,11 @@ export function JobMenu({ job, actions, confirm = window.confirm.bind(window) }:
   // person's intent rather than the shop's rules. Deleting a queued job throws away gcode nobody can
   // get back; cancelling takes a print off a bed hours in. The shop would do either without asking,
   // which is right - it is not the shop's business to doubt a request it has authenticated.
+  //
+  // BOTH ask, including the queued one, and whether that second question earns its keep is being
+  // found out by living with it rather than argued about. A queued delete is cheap to regret and
+  // frequent, which is the shape of a prompt people learn to dismiss without reading - and a prompt
+  // dismissed without reading is worse than none, because the cancel above relies on being read.
   const remove = (): void => {
     const question = printing
       ? `Stop printing ${job.displayName} on ${job.heldBy ?? 'the machine'}? The print is abandoned where it is, and the bed will need clearing.`
