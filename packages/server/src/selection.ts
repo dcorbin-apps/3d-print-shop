@@ -28,11 +28,15 @@ export function startsWith(job: Job): string {
 // NOW, which changes while the shop is running - so an order decided when a job arrived would be
 // stale before it was used. This is why nothing here writes anything.
 export function printableNow(jobs: Job[], printer: RegisteredPrinter): Job[] {
-  return jobs
-    .filter((job) => job.state === 'queued')
-    .filter((job) => canTake(printer, job))
-    .filter((job) => printer.loaded.includes(startsWith(job)))
-    .sort((a, b) => a.id - b.id);
+  return (
+    jobs
+      .filter((job) => job.state === 'queued')
+      // Somebody said to leave this one. It is queued in every other respect and stays where it is.
+      .filter((job) => job.heldBack === undefined)
+      .filter((job) => canTake(printer, job))
+      .filter((job) => printer.loaded.includes(startsWith(job)))
+      .sort((a, b) => a.id - b.id)
+  );
 }
 
 /**

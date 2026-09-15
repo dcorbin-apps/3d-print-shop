@@ -224,4 +224,25 @@ describe('choosing what to print', () => {
       });
     });
   });
+
+  // AIDEV-NOTE: (UT) a held job is queued in every other respect - nothing holds it, its gcode is
+  // where it was - and the ONLY thing different about it is that the shop was told to leave it. So
+  // this is the one place that has to know, and it is what a pause in the queue actually means.
+  describe('a job somebody held back', () => {
+    const held = { heldBack: new Date('2026-09-15T12:00:00Z') };
+
+    it('is not offered, even with its filament loaded and a printer free', () => {
+      expect(ids(printableNow([job(1, ['PLA-Red'], held)], printer(['PLA-Red'])))).toEqual([]);
+    });
+
+    it('does not keep the jobs behind it waiting', () => {
+      const jobs = [job(1, ['PLA-Red'], held), job(2, ['PLA-Red'])];
+
+      expect(ids(printableNow(jobs, printer(['PLA-Red'])))).toEqual([2]);
+    });
+
+    it('is offered again once it is let through', () => {
+      expect(ids(printableNow([job(1, ['PLA-Red'])], printer(['PLA-Red'])))).toEqual([1]);
+    });
+  });
 });

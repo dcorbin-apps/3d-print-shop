@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'n
 import * as path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { InvalidSubmission, generatedDisplayName } from './Job.js';
+import { InvalidSubmission, generatedDisplayName, validateDisplayName } from './Job.js';
 import type { BuildVolume, Job, JobDetails, JobRecord, PrinterOutcome } from './Job.js';
 import { canTake, whereToWatch } from './Printer.js';
 import type { Holding, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
@@ -55,11 +55,27 @@ const FILE_MODE = 0o600;
 const PRINTERS_DIR = 'printers';
 const NEXT_ID_FILE = 'next-id';
 const RECORD_FILE = 'job.json';
+
+// AIDEV-NOTE: the SECOND file in a job's directory, and the reason the first one never changes. A
+// record is the submission as it arrived and is written once; this is what a person has said about
+// that job SINCE - a name they preferred, a hold they put on it. Kept apart rather than merged into
+// the record for the same reason a printer is a record and a status: what was said once and what
+// moves are two different things, and mixing them is how a written-once file starts being rewritten.
+//
+// Absent is the ordinary case and means nobody has said anything, so nothing is written until
+// somebody does and a job directory without one is complete.
+const CHANGED_FILE = 'changed.json';
 const GCODE_FILE = 'print.gcode';
 const PRINTER_FILE = 'printer.json';
 const STATUS_FILE = 'status.json';
 
 type StoredJob = Omit<JobRecord, 'submittedAt'> & { submittedAt: string };
+
+/** What somebody has said about a job since it arrived. Every field absent is the ordinary case. */
+interface StoredChanges {
+  displayName?: string;
+  heldBack?: string;
+}
 interface StoredTrouble {
   reason: string;
   since: string;
@@ -203,9 +219,10 @@ export class JobStore {
     const entries = await readdir(this.where.jobs).catch(() => [] as string[]);
     const records = await Promise.all(entries.map((entry) => this.readRecord(Number(entry))));
 
+    const changes = await Promise.all(records.map(async (record) => (record ? this.readChanges(record.id) : {})));
+
     return records
-      .filter((record): record is JobRecord => record !== undefined)
-      .map((record) => asJob(record, printers))
+      .flatMap((record, at) => (record === undefined ? [] : [asJob(record, printers, changes[at])]))
       .sort((one, another) => one.id - another.id);
   }
 
@@ -213,7 +230,7 @@ export class JobStore {
     await this.requireDataRoot();
 
     const record = await this.readRecord(id);
-    return record && asJob(record, await this.printers());
+    return record && asJob(record, await this.printers(), await this.readChanges(id));
   }
 
   /**
@@ -436,6 +453,80 @@ export class JobStore {
     await this.changeStatus(printer, (status) => ({ ...status, loaded: filaments }));
 
     return this.printerNamed(printer.name);
+  }
+
+  // AIDEV-NOTE: a job's name is the one thing about it a person may correct, and correcting it must
+  // not rewrite the submission. What was asked for stays in the record; what it is called now lives
+  // beside it. Allowed at any state, because a name is a label and labelling a print that is already
+  // running changes nothing about the print.
+  /** Call a job something else. What was submitted is untouched. */
+  async rename(id: number, displayName: string): Promise<Job> {
+    validateDisplayName(displayName);
+    await this.require(id);
+    await this.changeWhatWasSaid(id, (said) => ({ ...said, displayName }));
+
+    return this.require(id);
+  }
+
+  // AIDEV-NOTE: refused on a job a printer is holding, and not because it would be hard - because it
+  // would be a lie. A hold keeps a job from being STARTED, and a print already on a bed has started;
+  // accepting it would leave somebody believing they had stopped something they had not. What stops
+  // a running print is cancelling it.
+  /** Hold a job back, so the shop passes it over until somebody says otherwise. */
+  async holdBack(id: number): Promise<Job> {
+    await this.requireNothingIsHolding(id, 'held back');
+    await this.changeWhatWasSaid(id, (said) => ({ ...said, heldBack: new Date().toISOString() }));
+
+    return this.require(id);
+  }
+
+  /** Let a held job through again. It is queued like any other from that moment. */
+  async letThrough(id: number): Promise<Job> {
+    await this.changeWhatWasSaid(id, ({ heldBack: _heldBack, ...said }) => said);
+
+    return this.require(id);
+  }
+
+  // AIDEV-NOTE: a queued job only. One on a bed leaves by a VERDICT, which is a person saying what
+  // came off the machine - and deleting it instead would leave a printer holding a job that is not
+  // there, which is the failure `leaveTheShop` orders its two steps to avoid. Stopping a running
+  // print is cancelling it, and what the bed is then owed is still a verdict.
+  /** Forget a queued job entirely - the record, what was said about it, and the gcode. */
+  async forget(id: number): Promise<void> {
+    await this.requireNothingIsHolding(id, 'deleted');
+
+    await rm(this.jobDir(id), { recursive: true, force: true });
+  }
+
+  private async requireNothingIsHolding(id: number, what: string): Promise<Job> {
+    const job = await this.require(id);
+    if (job.state !== 'queued') {
+      throw new WrongState(`job ${id} is ${job.state} on ${job.heldBy ?? 'a printer'}, so it cannot be ${what}`);
+    }
+
+    return job;
+  }
+
+  private async readChanges(id: number): Promise<StoredChanges> {
+    const contents = await readFile(path.join(this.jobDir(id), CHANGED_FILE), 'utf-8').catch(() => undefined);
+    if (contents === undefined) return {};
+
+    try {
+      return JSON.parse(contents) as StoredChanges;
+    } catch {
+      // Answered as nothing having been said, which is what it was before anybody said it. A job
+      // whose name somebody changed is not worth withholding from every answer over.
+      this.sayOnce(path.join(this.jobDir(id), CHANGED_FILE), 'what was said about a job will not parse, so it is read as nothing', { job: id });
+
+      return {};
+    }
+  }
+
+  private async changeWhatWasSaid(id: number, change: (said: StoredChanges) => StoredChanges): Promise<void> {
+    await this.require(id);
+
+    const said = change(await this.readChanges(id));
+    await writeAtomically(path.join(this.jobDir(id), CHANGED_FILE), asJson(said));
   }
 
   private async leaveTheShop(id: number): Promise<void> {
@@ -701,11 +792,22 @@ export class JobStore {
 // AIDEV-NOTE: a job's state is READ from the printers, never from the job. Held by one, it is
 // printing or awaiting a verdict; held by none, it is queued. There is nowhere for a second answer
 // to be written, so there is nothing to reconcile.
-function asJob(record: JobRecord, printers: RegisteredPrinter[]): Job {
+function asJob(record: JobRecord, printers: RegisteredPrinter[], changed: StoredChanges = {}): Job {
+  // What a person said about the name wins over what arrived with the job: renaming is the whole
+  // point of saying it, and the record keeps what was submitted for anybody who wants it.
+  const said = { ...record, displayName: changed.displayName ?? record.displayName };
   const holder = printers.find((printer) => printer.holding?.job === record.id);
-  if (!holder?.holding) return { ...record, state: 'queued' };
 
-  return { ...record, state: holder.holding.phase, heldBy: holder.name, lastPrinterOutcome: holder.holding.outcome };
+  // AIDEV-NOTE: a hold is only ever reported on a job nothing is holding. A print already on a bed
+  // is not stopped by somebody having pressed pause on the queue, and saying "held" about it would
+  // read as though it were - so the hold is kept on disk and simply not shown while it prints.
+  if (!holder?.holding) return { ...said, state: 'queued', heldBack: whenHeld(changed) };
+
+  return { ...said, state: holder.holding.phase, heldBy: holder.name, lastPrinterOutcome: holder.holding.outcome };
+}
+
+function whenHeld(changed: StoredChanges): Date | undefined {
+  return changed.heldBack === undefined ? undefined : new Date(changed.heldBack);
 }
 
 // AIDEV-NOTE: piped rather than buffered - a kit's gcode runs to tens of megabytes, and pipeline()

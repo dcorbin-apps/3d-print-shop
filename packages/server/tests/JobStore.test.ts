@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
+import { InvalidSubmission } from '../src/Job';
 import type { BuildVolume, Job, JobDetails, PrinterOutcome } from '../src/Job';
 import type { RegisteredPrinter } from '../src/Printer';
 import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, DataUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
@@ -920,6 +921,100 @@ describe('JobStore', () => {
         await store.printers();
 
         expect(lines.filter((line) => line.includes('status.json'))).toHaveLength(1);
+      });
+    });
+  });
+
+  // AIDEV-NOTE: (UT) what a person says about a job AFTER it arrived, which is kept beside the
+  // record rather than in it. The record is the submission and is written once; these tests are as
+  // much about that staying true as about the operations themselves.
+  describe('what somebody says about a job later', () => {
+    let id: number;
+
+    beforeEach(async () => {
+      await shop.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://mk4' });
+      id = (await shop.submit({ filaments: ['PLA-Red'], displayName: 'Player Box' }, Readable.from(['G1 X0 Y0\n']), 'u-dave')).id;
+    });
+
+    const recordOnDisk = async (): Promise<Record<string, unknown>> =>
+      JSON.parse(await fs.readFile(path.join(where.jobs, String(id), 'job.json'), 'utf-8')) as Record<string, unknown>;
+
+    describe('calling it something else', () => {
+      it('is what the job is called from then on', async () => {
+        await shop.rename(id, 'Clamp Dock');
+
+        expect((await shop.find(id))?.displayName).toBe('Clamp Dock');
+      });
+
+      // The whole reason a second file exists. If this ever fails, the store has started rewriting
+      // the one thing it promises never to rewrite.
+      it('leaves the submitted record exactly as it was', async () => {
+        const before = await recordOnDisk();
+
+        await shop.rename(id, 'Clamp Dock');
+
+        expect(await recordOnDisk()).toEqual(before);
+        expect((await recordOnDisk()).displayName).toBe('Player Box');
+      });
+
+      it('refuses a name the shop would have refused at submission', async () => {
+        await expect(shop.rename(id, 'x'.repeat(256))).rejects.toThrow(InvalidSubmission);
+      });
+
+      it('survives being read back from disk rather than from memory', async () => {
+        await shop.rename(id, 'Clamp Dock');
+
+        expect((await new JobStore(where).find(id))?.displayName).toBe('Clamp Dock');
+      });
+    });
+
+    describe('holding it back', () => {
+      it('says when it was held', async () => {
+        await shop.holdBack(id);
+
+        expect((await shop.find(id))?.heldBack).toBeInstanceOf(Date);
+      });
+
+      it('is still queued, because nothing is holding it', async () => {
+        await shop.holdBack(id);
+
+        expect((await shop.find(id))?.state).toBe('queued');
+      });
+
+      it('is let through again when somebody says so', async () => {
+        await shop.holdBack(id);
+
+        await shop.letThrough(id);
+
+        expect((await shop.find(id))?.heldBack).toBeUndefined();
+      });
+
+      // Refused rather than accepted quietly: a hold keeps a job from STARTING, and this one has
+      // started. Taking it would leave somebody believing they had stopped a print.
+      it('is refused on a job a printer is holding', async () => {
+        await shop.startPrinting(await shop.printerNamed('mk4'), id);
+
+        await expect(shop.holdBack(id)).rejects.toThrow(WrongState);
+      });
+    });
+
+    describe('forgetting it', () => {
+      it('takes the record, the gcode and what was said about it', async () => {
+        await shop.rename(id, 'Clamp Dock');
+
+        await shop.forget(id);
+
+        expect(await shop.find(id)).toBeUndefined();
+        await expect(fs.readdir(path.join(where.jobs, String(id)))).rejects.toThrow();
+      });
+
+      // A job on a bed leaves by a verdict. Deleting it would leave a printer holding a job that is
+      // not there - a machine that looks busy for ever.
+      it('is refused on a job a printer is holding', async () => {
+        await shop.startPrinting(await shop.printerNamed('mk4'), id);
+
+        await expect(shop.forget(id)).rejects.toThrow(WrongState);
+        expect(await shop.find(id)).toBeDefined();
       });
     });
   });

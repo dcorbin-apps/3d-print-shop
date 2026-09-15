@@ -106,6 +106,14 @@ export interface Job extends JobDetails {
   submittedAt: Date;
   gcodeBytes: number;
   state: JobState;
+  /**
+   * A person held this job back, and when. It stays queued and is passed over when work is handed
+   * out, until somebody lets it through again.
+   *
+   * Not a state of its own: a held job IS queued - nothing is holding it, its bed is nobody's and
+   * its gcode is where it was. What is different is only that the shop has been told to leave it.
+   */
+  heldBack?: Date;
   /** The printer holding it, when one is. */
   heldBy?: string;
   /** What the printer said when it stopped, which is not a verdict. */

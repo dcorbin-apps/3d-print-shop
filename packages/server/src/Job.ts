@@ -9,7 +9,7 @@ export type { BuildVolume, Job, JobDetails, JobPhase, JobState, PrinterOutcome }
 // than being updated. Everything that CHANGES while a job is in the shop belongs to the printer
 // holding it, because a printer is the only thing whose state actually moves. See
 // design/3d-print-shop.md's "What changes, and what does not".
-export type JobRecord = Omit<Job, 'state' | 'heldBy' | 'lastPrinterOutcome'>;
+export type JobRecord = Omit<Job, 'state' | 'heldBy' | 'lastPrinterOutcome' | 'heldBack'>;
 
 // AIDEV-NOTE: submission order, and only used when a client offers no name of its own. It is
 // deliberately not derived from anything about the job: a name built from the filament or the file
@@ -99,7 +99,7 @@ const MAX_DISPLAY_NAME = 255;
 // on a display name - it is interpolated into the operator's list, logged, and rendered - so what a
 // non-string breaks is whatever is READING it, which is the one place the shop cannot answer for.
 // Counted in UTF-16 units, as `MAX_REMOTE_PATH` is, so an emoji in a name costs two.
-function validateDisplayName(displayName: unknown): void {
+export function validateDisplayName(displayName: unknown): void {
   if (typeof displayName !== 'string') {
     throw new InvalidSubmission(`${JSON.stringify(displayName)} is not a name for a job - a name is text`);
   }
