@@ -113,6 +113,20 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### Installation
 
+- [ ] The installer makes the WRONG DIRECTORIES on macOS, so an install there refuses to start. It
+  sets `JOBS=/var/spool/3d-print-shop/jobs` and `STATE=/var/lib/3d-print-shop` unconditionally, where
+  `systemLayout()` on darwin answers `/Library/Application Support/3d-print-shop/{jobs,state}` - and
+  the plist passes neither `--data` nor `PRINT_SHOP_DATA`, so the service resolves its own layout and
+  looks somewhere the installer never made. The shop then refuses to start on a missing directory,
+  which is the right refusal about the wrong thing.
+
+  The fix is small - the two paths become platform-dependent the way `SHOP_USER` already is - and the
+  reason it has never been noticed is worth keeping in mind: CI is Linux only, and the one Mac this
+  has ever run on runs the shop from a checkout with `--data ./dev`, which resolves neither. A test
+  that asserts the installer's directories against `systemLayout()` for both platforms would have
+  caught it without a Mac to install on.
+
+
 - [ ] Publish `@3d-print-shop/*` to a registry. Until then a client depends on a checkout of this
   repository sitting beside it — the client it was written for reaches it as
   `portal:../3d-print-shop/packages/client`, which cannot survive a fresh clone that has no shop
