@@ -36,3 +36,10 @@ runs one way. Naming one is how the dependency starts, so nothing here names one
   explaining how often it happens.
 * `yarn test` passing once says little about a race. A suspected flake is run repeatedly - ten
   full runs or more - and the repeat is what says it is fixed.
+* ts-jest caches a compiled test by its OWN contents, so changing a type a test depends on leaves
+  that test green until something makes it recompile. After changing anything shared - an interface
+  on the contract, a function's signature - run `npx jest --clearCache` before believing the suite.
+  CI is a fresh checkout and has no such cache, so the local green is the one that lies.
+* A unit test opens no socket and launches no process. What the kernel or node does with one is an
+  assumption test; what the SHOP decides is a unit test, and deciding is observable without binding
+  anything - hand in the thing that would have bound it.

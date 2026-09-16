@@ -63,6 +63,10 @@ describe('minding the printers', () => {
     job: jest.fn<Shop['job']>(),
     submit: jest.fn<Shop['submit']>(),
     verdict: jest.fn<Shop['verdict']>(),
+    rename: jest.fn<Shop['rename']>(),
+    hold: jest.fn<Shop['hold']>(),
+    letThrough: jest.fn<Shop['letThrough']>(),
+    remove: jest.fn<Shop['remove']>(),
     changeMyPassword: jest.fn<Shop['changeMyPassword']>(),
   };
 

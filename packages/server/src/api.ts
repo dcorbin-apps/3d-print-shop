@@ -811,9 +811,24 @@ function isTheShops(asked: string): boolean {
   return SHOP_ROUTES.some((route) => asked === route || asked.startsWith(`${route}/`));
 }
 
-export function serve(shop: JobStore, port: number, hooks: ShopHooks, address: string = LOOPBACK): Promise<Server> {
+// AIDEV-NOTE: handed in so that WHERE a shop listens can be asked without opening a port. What this
+// function decides is one thing - the address when nobody named one - and binding a socket to
+// observe that decision made three unit tests that needed a kernel to answer them. The default is
+// the real one, so nothing outside a test passes this.
+/** How a shop starts listening. */
+export type StartListening = (api: Express, port: number, address: string, ready: () => void) => Server;
+
+const onARealSocket: StartListening = (api, port, address, ready) => api.listen(port, address, ready);
+
+export function serve(
+  shop: JobStore,
+  port: number,
+  hooks: ShopHooks,
+  address: string = LOOPBACK,
+  listen: StartListening = onARealSocket,
+): Promise<Server> {
   return new Promise((resolve, reject) => {
-    const server = createApi(shop, hooks).listen(port, address, () => resolve(server));
+    const server = listen(createApi(shop, hooks), port, address, () => resolve(server));
     server.on('error', reject);
   });
 }
