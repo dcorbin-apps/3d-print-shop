@@ -39,11 +39,30 @@ case "$HERE" in
   *) MODE=checkout ;;
 esac
 
+# AIDEV-NOTE: npm does NOT hoist a global install's dependencies up into the scope directory - it
+# nests them under the installed package's own node_modules, so the server is at
+# `installer/node_modules/@3d-print-shop/server` and NOT at `installer/../server`. A local install
+# hoists and gives the second shape, so both are real layouts and both are looked for. Measured
+# against npm 11 on Linux, after a global install refused itself by looking only where nothing was.
+packagedAt() {
+  local relative=$1 candidate
+
+  for candidate in "$HERE/node_modules/@3d-print-shop/$relative" "$HERE/../$relative"; do
+    if [ -e "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+
+  # Neither. The nested one is named, because it is where npm would have put it had it put it anywhere.
+  echo "$HERE/node_modules/@3d-print-shop/$relative"
+}
+
 if [ "$MODE" = package ]; then
-  BUILT="$HERE/../server/dist/main.js"
+  BUILT=$(packagedAt server/dist/main.js)
   SERVER=$BUILT
   MANIFEST="$HERE/package.json"
-  BUILT_PAGE="$HERE/../ui/dist"
+  BUILT_PAGE=$(packagedAt ui/dist)
   PAGE=$BUILT_PAGE
 else
   REPO=$(cd "$HERE/../.." && pwd)
