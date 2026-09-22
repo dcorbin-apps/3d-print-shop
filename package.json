@@ -17,7 +17,8 @@
     "ut": "./scripts/test.sh --testPathIgnorePatterns /tests/acceptance/ /tests/assumptions/",
     "at": "./scripts/test.sh tests/acceptance",
     "assumptions": "./scripts/test.sh tests/assumptions",
-    "test": "./scripts/test.sh --testPathIgnorePatterns /tests/assumptions/"
+    "test": "./scripts/test.sh --testPathIgnorePatterns /tests/assumptions/",
+    "release": "./scripts/release.sh"
   },
   "keywords": [],
   "author": "dcorbin",
