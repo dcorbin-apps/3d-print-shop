@@ -411,6 +411,11 @@ madeServiceUserOnLinux() {
 wroteUnit() {
   local node=$1
 
+  # AIDEV-NOTE: RuntimeDirectory because the shop claims /var/run/3d-print-shop at every start, as the
+  # service user, and /run is root's - so it could never make it, and the first real install on Linux
+  # would have failed there. systemd makes it owned by User= before each start and removes it at
+  # stop, which is exactly the "meant to be emptied" the claim relies on.
+  #
   # Restart=on-failure rather than always, for the reason the plist keeps KeepAlive conditional:
   # `3d-print-shop shutdown` is somebody asking it to stop. stdout is the shop's log and journald is
   # what captures it, so there is no file here to rotate.
@@ -426,6 +431,8 @@ ExecReload=/bin/kill -HUP \$MAINPID
 User=$SHOP_USER
 Group=$SHOP_GROUP
 WorkingDirectory=$STATE
+RuntimeDirectory=3d-print-shop
+RuntimeDirectoryMode=0700
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGTERM

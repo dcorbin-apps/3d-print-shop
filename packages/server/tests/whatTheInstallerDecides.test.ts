@@ -115,6 +115,18 @@ describe('what the installer decides before it does anything', () => {
       expect(asked(aTreeWith('nested', { engines: '>=22.3 <23' }), { then: 'requiredNode' }).stdout.trim()).toBe('22.3');
     });
 
+    // AIDEV-NOTE: the SHIPPED manifests, not a fixture's. Every fixture writes its own engines, so the
+    // server's package.json having none at all was invisible until the first install read it on a
+    // Pi. A package install reads the server's and a checkout install reads the root's, and a machine
+    // should be held to the same node whichever way it was set up.
+    it('holds a package install to the same floor as a checkout, from the manifests that actually ship', () => {
+      const shipped = (relative: string): string => path.resolve(path.dirname(expect.getState().testPath ?? ''), relative);
+      const floorIn = (manifest: string): string => asked(aTreeWith('nested'), { then: `MANIFEST="${manifest}"; requiredNode` }).stdout.trim();
+
+      expect(floorIn(shipped('../package.json'))).toMatch(/^\d+\.\d+/);
+      expect(floorIn(shipped('../package.json'))).toBe(floorIn(shipped('../../../package.json')));
+    });
+
     // A floor that came back empty would let every node past, which is the guard silently not being one.
     it('refuses a manifest that declares no floor at all', () => {
       const refused = asked(aTreeWith('nested', { engines: '' }), { then: 'requiredNode' });
@@ -321,6 +333,15 @@ describe('what the installer decides before it does anything', () => {
       expect(unit).toContain('/server/dist/main.js serve --page ');
       expect(unit).toContain('User=printshop');
       expect(unit).toContain('Restart=on-failure');
+    });
+
+    // AIDEV-NOTE: the shop claims /var/run/3d-print-shop at every start, AS the service user, and /run
+    // belongs to root - so without systemd making it, the service cannot come up at all.
+    it('has systemd make the runtime directory the service claims, since it cannot make one under /run', () => {
+      const unit = rendered('Linux', 'UNIT=$(mktemp)', 'wroteUnit').stdout;
+
+      expect(unit).toContain('RuntimeDirectory=3d-print-shop\n');
+      expect(unit).toContain('RuntimeDirectoryMode=0700');
     });
 
     it('names the same three in the launchd plist', () => {
