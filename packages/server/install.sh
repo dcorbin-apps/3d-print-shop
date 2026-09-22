@@ -28,7 +28,24 @@ ERR_LOG=/var/log/3d-print-shop.err.log
 # `git checkout` of another branch is not a live change to the running service.
 INSTALL_DIR=/usr/local/lib/3d-print-shop
 
-HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# AIDEV-NOTE: followed through every LINK to the file itself, because npm installs a bin as a
+# symlink - /usr/bin/3d-print-shop-install -> ../lib/node_modules/@3d-print-shop/server/install.sh -
+# and `cd "$(dirname ...)" && pwd` gives the directory of the link, not of the script. That read
+# /usr/bin as a checkout rooted at /, and refused the first install anybody ran by typing the name.
+# A loop over `readlink` rather than `readlink -f`, which older macOS does not have.
+whereThisReallyIs() {
+  local source=${BASH_SOURCE[0]} directory
+
+  while [ -L "$source" ]; do
+    directory=$(cd "$(dirname "$source")" && pwd)
+    source=$(readlink "$source")
+    case "$source" in /*) ;; *) source="$directory/$source" ;; esac
+  done
+
+  cd "$(dirname "$source")" && pwd
+}
+
+HERE=$(whereThisReallyIs)
 
 # AIDEV-NOTE: two ways this file is reached, and the difference is who put the code somewhere the
 # service can read. Exploded by npm it sits INSIDE the server package, whose own dist is the thing

@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import * as path from 'node:path';
-import { aNodeSaying, aTreeWith, anEmptyEtc, anEtcWithCallers, asked } from './anInstaller.js';
+import { aLinkTo, aNodeSaying, aTreeWith, anEmptyEtc, anEtcWithCallers, asked } from './anInstaller.js';
 import type { Answer } from './anInstaller.js';
 
 // AIDEV-NOTE: (UT) every one of these. The script is SOURCED rather than run, so what is measured is
@@ -19,6 +19,27 @@ describe('what the installer decides before it does anything', () => {
 
       expect(said[0]).toBe(path.join(tree.here, 'dist/main.js'));
       expect(said[1]).toBe(said[0]);
+    });
+
+    // AIDEV-NOTE: the way anybody actually runs it. npm installs the bin as a relative SYMLINK, and
+    // the script used to take the link's directory for its own - /usr/bin, read as a checkout rooted
+    // at /, which refused the first install ever typed by name. Every test before this sourced the
+    // file directly, so none of them could see it.
+    it('finds itself through the link npm puts on PATH, rather than where the link sits', () => {
+      const tree = aTreeWith('hoisted');
+      const said = asked(tree, { through: aLinkTo(tree), then: 'echo "$MODE"; echo "$BUILT"' })
+        .stdout.trim()
+        .split('\n');
+
+      expect(said[0]).toBe('package');
+      expect(said[1]).toBe(path.join(tree.here, 'dist/main.js'));
+    });
+
+    it('follows a link to a link all the way to the script', () => {
+      const tree = aTreeWith('hoisted');
+      const twice = aLinkTo(tree, 'local/bin', aLinkTo(tree));
+
+      expect(asked(tree, { through: twice, then: 'echo "$HERE"' }).stdout.trim()).toBe(tree.here);
     });
 
     it('resolves to a build that is really on the disk, and not merely to a plausible path', () => {

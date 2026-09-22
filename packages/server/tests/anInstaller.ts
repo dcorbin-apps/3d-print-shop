@@ -1,6 +1,6 @@
 import { expect } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync, copyFileSync, chmodSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, copyFileSync, chmodSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -64,6 +64,22 @@ export function aTreeWith(layout: Layout, { engines = '>=24.16 <25', withoutTheB
   return { here, root };
 }
 
+/**
+ * A link to the script from a directory on PATH, the way npm installs a bin: RELATIVE, from a
+ * sibling of the tree - `bin/3d-print-shop-install -> ../node_modules/@3d-print-shop/server/install.sh`.
+ * Named `from` another link instead, it is a link to a link, which is what a second bin directory
+ * pointing at the first one looks like.
+ */
+export function aLinkTo({ here, root }: Fixture, named = 'bin', from?: string): string {
+  const bin = path.join(root, named);
+  const link = path.join(bin, '3d-print-shop-install');
+
+  mkdirSync(bin, { recursive: true });
+  symlinkSync(path.relative(bin, from ?? path.join(here, 'install.sh')), link);
+
+  return link;
+}
+
 /** An executable that answers `-v` the way a node of that version would, and nothing else. */
 export function aNodeSaying(version: string, at: string): string {
   mkdirSync(path.dirname(at), { recursive: true });
@@ -100,6 +116,8 @@ export interface Asked {
   env?: Record<string, string>;
   /** Run after the script is sourced, by which point every decision is made and nothing is written. */
   then: string;
+  /** The path the script is reached by, when it is not its own - a link, as npm puts one on PATH. */
+  through?: string;
 }
 
 // AIDEV-NOTE: SOURCED, so nothing installs - the guard at the foot of install.sh holds `main` back
@@ -110,10 +128,10 @@ export interface Asked {
 // AIDEV-NOTE: `spawnSync` and not `execFileSync`, because what is written to stderr matters even
 // when the command SUCCEEDS - a step that works while complaining into a log is still wrong, and
 // execFileSync hands stderr back only on a throw.
-export function asked({ here }: Fixture, { platform, env, then }: Asked): Answer {
+export function asked({ here }: Fixture, { platform, env, then, through }: Asked): Answer {
   const preamble = platform === undefined ? '' : `uname() { [ "$1" = "-s" ] && echo ${platform} || command uname "$@"; };\n`;
 
-  const ran = spawnSync('bash', ['-c', `${preamble}source "${here}/install.sh"\n${then}`], {
+  const ran = spawnSync('bash', ['-c', `${preamble}source "${through ?? `${here}/install.sh`}"\n${then}`], {
     encoding: 'utf-8',
     env: { ...process.env, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
