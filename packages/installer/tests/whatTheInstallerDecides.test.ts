@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import * as path from 'node:path';
-import { aNodeSaying, aTreeWith, asked } from './anInstaller.js';
+import { aNodeSaying, aTreeWith, anEmptyEtc, anEtcWithCallers, asked } from './anInstaller.js';
 import type { Answer } from './anInstaller.js';
 
 // AIDEV-NOTE: (UT) every one of these. The script is SOURCED rather than run, so what is measured is
@@ -152,6 +152,118 @@ describe('what the installer decides before it does anything', () => {
 
       expect(answer.status).toBe(0);
       expect(answer.stdout.trim()).toBe('');
+    });
+  });
+
+  // AIDEV-NOTE: (UT) a shop with no callers refuses to start, so the installer either makes one or
+  // stops - and which it does turns on whether there is anybody at a terminal to ask. `sudo` is
+  // shadowed rather than allowed to run: the claim is which command it decided on and who it decided
+  // to run it as, and reading that does not need a system user or a password typed into anything.
+  describe('the first admin, without which it will not start', () => {
+    const noticingSudo = 'sudo() { echo "sudo $*"; }';
+    const aTerminal = 'atATerminal() { true; }';
+    const noTerminal = 'atATerminal() { false; }';
+
+    // What npm's postinstall hands it, and the reason the prompt is behind a gate at all.
+    it('finds no terminal when stdin is not one', () => {
+      expect(asked(aTreeWith('nested'), { then: 'atATerminal && echo terminal || echo none' }).stdout.trim()).toBe('none');
+    });
+
+    it('asks nobody anything when the shop has callers already, and goes straight on to starting it', () => {
+      const tree = aTreeWith('nested');
+      const answer = asked(tree, {
+        then: `ETC=${anEtcWithCallers(tree)}; ${aTerminal}; ${noticingSudo}; gotItsFirstAdmin /usr/bin/node && echo start`,
+      });
+
+      expect(answer.stdout.trim()).toBe('start');
+    });
+
+    it('makes one as the user the service runs as, because the credentials directory is theirs', () => {
+      const tree = aTreeWith('nested');
+      const answer = asked(tree, {
+        platform: 'Linux',
+        env: { SUDO_USER: 'dcorbin' },
+        then: `ETC=${anEmptyEtc(tree)}; ${aTerminal}; ${noticingSudo}; gotItsFirstAdmin /usr/bin/node && echo start`,
+      });
+
+      expect(answer.stdout).toContain('sudo -u printshop /usr/bin/node ');
+      expect(answer.stdout).toContain('/server/dist/main.js init dcorbin');
+      expect(answer.stdout).toContain('start');
+    });
+
+    it('calls them whoever ran the sudo, and admin where nobody did', () => {
+      const tree = aTreeWith('nested');
+      const made = (who: string): string =>
+        asked(tree, { env: { SUDO_USER: who }, then: `ETC=${anEmptyEtc(tree)}; ${aTerminal}; ${noticingSudo}; madeTheFirstAdmin /usr/bin/node` })
+          .stdout;
+
+      expect(made('dcorbin')).toContain('init dcorbin');
+      expect(made('')).toContain('init admin');
+    });
+
+    // The machine that calls this shop need not be the machine it was installed on, so the token is
+    // placed by hand - and the moment it is on the screen is the only moment it can be read.
+    it('says where the token goes once it has shown it, and never writes it anywhere itself', () => {
+      const tree = aTreeWith('nested');
+      const answer = asked(tree, { then: `ETC=${anEmptyEtc(tree)}; ${aTerminal}; ${noticingSudo}; madeTheFirstAdmin /usr/bin/node` });
+
+      expect(answer.stdout).toContain('~/.config/3d-print-shop/token');
+      expect(answer.stdout).toContain('That token is the only copy');
+    });
+
+    // AIDEV-NOTE: npm owns stdin, so a prompt there waits for an answer nobody can give - inside an
+    // install whose output nobody is watching. Stopping with the two commands is the whole reason.
+    it('stops and says what is left to type when there is nobody to ask', () => {
+      const tree = aTreeWith('nested');
+      const answer = asked(tree, { then: `ETC=${anEmptyEtc(tree)}; ${noTerminal}; gotItsFirstAdmin /usr/bin/node || echo stopped` });
+
+      expect(answer.stdout).toContain('Installed, and not started');
+      expect(answer.stdout).toContain('init <your-name>');
+      expect(answer.stdout).toContain('stopped');
+    });
+
+    it('stops rather than starting a shop whose admin was not made after all', () => {
+      const tree = aTreeWith('nested');
+      const answer = asked(tree, {
+        then: `ETC=${anEmptyEtc(tree)}; ${aTerminal}; sudo() { return 1; }; gotItsFirstAdmin /usr/bin/node || echo stopped`,
+      });
+
+      expect(answer.stdout).toContain('Installed, and not started');
+      expect(answer.stdout).toContain('stopped');
+      expect(answer.stdout).not.toContain('That token is the only copy');
+    });
+
+    // AIDEV-NOTE: `install` is not reachable by sourcing on its own - every step of it wants root or
+    // writes outside a tmpdir - so the steps are shadowed and what is left is the only thing these
+    // two are about: whether it goes on to start a service. Nothing else guarded that wiring; a
+    // mutation that dropped the refusal entirely stayed green until these were written.
+    const withoutTheStepsThatWantRoot = [
+      'requireRoot() { :; }',
+      'requireBuild() { :; }',
+      'requirePage() { :; }',
+      'requiredNode() { echo 24.16; }',
+      'findNode() { echo /usr/bin/node; }',
+      'madeServiceUserOnLinux() { :; }',
+      'madeDirectory() { :; }',
+      'stopIt() { :; }',
+      'wroteUnit() { :; }',
+      'startIt() { echo STARTED; }',
+    ].join('; ');
+
+    it('starts the service once the shop has somebody it may answer', () => {
+      const tree = aTreeWith('nested');
+      const answer = asked(tree, { platform: 'Linux', then: `ETC=${anEtcWithCallers(tree)}; ${withoutTheStepsThatWantRoot}; install` });
+
+      expect(answer.stdout).toContain('STARTED');
+      expect(answer.stdout).toContain('Installed and running');
+    });
+
+    it('starts nothing at all where it stopped short of an admin, rather than leaving one restarting for ever', () => {
+      const tree = aTreeWith('nested');
+      const answer = asked(tree, { platform: 'Linux', then: `ETC=${anEmptyEtc(tree)}; ${withoutTheStepsThatWantRoot}; ${noTerminal}; install` });
+
+      expect(answer.stdout).toContain('Installed, and not started');
+      expect(answer.stdout).not.toContain('STARTED');
     });
   });
 

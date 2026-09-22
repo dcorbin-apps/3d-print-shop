@@ -79,16 +79,22 @@ be emptied by a boot, so the shop makes it every time.
   made.
 - **not run as root.** It writes under `/var`, `/etc` and `/usr/local`.
 
-## It installs without starting, once
+## It asks for the first admin, or stops
 
 A shop with no callers refuses to start, because every route names its caller and a shop nobody may
-call has nothing to answer. So the first install stops short and prints the exact commands: make the
-first admin as the service user, keep the token where the client looks for it, then run the install
-again to start it.
+call has nothing to answer. Started with none, the supervisor would restart it every few seconds for
+as long as the machine was up - a log nobody can read, and a fault that reads like a bug.
 
-That is deliberate rather than tidy. Started with no callers, the supervisor would restart it every
-few seconds for as long as the machine was up - a log nobody can read, and a fault that reads like a
-bug.
+So a first install makes one. It asks what to call them, defaulting to whoever ran the `sudo`, and
+hands off to `init` as the service user - which asks for the password and says the token once. Then
+it starts.
+
+Run where there is no terminal to ask at - npm's `postinstall` owns stdin, and a prompt there waits
+on an answer nobody can give - it stops short instead and prints the two commands to run by hand.
+
+The token is never written anywhere by the installer. It is shown once, and the machine that calls
+this shop need not be the one it is installed on, so placing it in `~/.config/3d-print-shop/token`
+stays a person's step on whichever machine that is.
 
 ## Known: macOS is not currently installable
 

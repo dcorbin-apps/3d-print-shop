@@ -457,6 +457,87 @@ reading() {
   fi
 }
 
+# ---------------------------------------------------------------------------- its first admin
+
+# AIDEV-NOTE: a function rather than `[ -t 0 ]` written where it is asked, because there are two
+# callers of `install` and only one of them has a person at a keyboard. npm's postinstall owns
+# stdin, and `init` asks for a password - so asking there is a prompt nobody can see, waiting on an
+# answer nobody can give. It is also the seam the tests read the other branch through.
+atATerminal() { [ -t 0 ]; }
+
+# AIDEV-NOTE: run as the SERVICE user, because $ETC is 0700 and theirs - a credentials file written
+# by root is one the shop cannot read. `init` asks for the password itself and says the token once,
+# so neither ever passes through this script, which is what keeps the rule at the top of this file
+# true: nothing here writes a credential.
+madeTheFirstAdmin() {
+  local node=$1 name='' fallback=${SUDO_USER:-admin}
+
+  read -r -p "what to call the first admin, and own every job of theirs [$fallback]: " name || true
+  sudo -u "$SHOP_USER" "$node" "$SERVER" init "${name:-$fallback}" || return 1
+
+  # AIDEV-NOTE: said here rather than left to the running message, because the machine that calls
+  # this shop need not be the machine it is installed on - so the token is put somewhere by hand,
+  # and this is the last moment anybody can read it.
+  cat <<KEEPING
+
+That token is the only copy. Wherever the client runs - this machine or another - it goes in the
+file the client looks in, as whoever will be running it:
+
+  mkdir -p ~/.config/3d-print-shop && chmod 700 ~/.config/3d-print-shop
+  printf %s '<the token>' > ~/.config/3d-print-shop/token
+  chmod 600 ~/.config/3d-print-shop/token
+KEEPING
+}
+
+whatIsLeftToDo() {
+  local node=$1
+
+  cat <<NEXT
+
+Installed, and not started: this shop has no callers yet, and one with none refuses to start.
+
+Give it its first admin, as the user it runs as - the token is said once and kept nowhere else:
+
+  sudo -u $SHOP_USER $node $SERVER init <your-name>
+
+Then keep that token where the client looks for it, as whoever will be running it:
+
+  mkdir -p ~/.config/3d-print-shop && chmod 700 ~/.config/3d-print-shop
+  printf %s '<the token>' > ~/.config/3d-print-shop/token
+  chmod 600 ~/.config/3d-print-shop/token
+
+Each printer's API key goes in $ETC/printer-keys.json as {"mk4": "..."}, 0600 and owned by
+$SHOP_USER. Then run this again to start it:
+
+  sudo $(asTyped install)
+NEXT
+}
+
+# AIDEV-NOTE: a shop with no callers refuses to start, and a supervisor would then restart it every
+# few seconds for as long as the machine was up - a log nobody can read and a fault that reads like
+# a bug. So it is given one HERE, while there is somebody to ask; and where there is nobody, the
+# install stops and says the two commands rather than starting something that cannot come up.
+gotItsFirstAdmin() {
+  local node=$1
+
+  if [ -f "$ETC/callers.json" ]; then return 0; fi
+
+  if ! atATerminal; then
+    whatIsLeftToDo "$node"
+    return 1
+  fi
+
+  say ''
+  say 'This shop has no callers yet, and one with none refuses to start - so, its first admin. The'
+  say 'password is what they log in to the page with; the token is for a program that calls it.'
+  say ''
+
+  if madeTheFirstAdmin "$node"; then return 0; fi
+
+  whatIsLeftToDo "$node"
+  return 1
+}
+
 # ---------------------------------------------------------------------------- what it does
 
 install() {
@@ -496,31 +577,7 @@ install() {
     wroteUnit "$node"
   fi
 
-  # AIDEV-NOTE: NOT started where there are no callers yet. Every route names its caller, so a shop
-  # with none refuses to start - and a supervisor would then restart it every few seconds for as
-  # long as the machine was up, which is a log nobody can read and a fault that reads like a bug.
-  if [ ! -f "$ETC/callers.json" ]; then
-    cat <<NEXT
-
-Installed, and not started: this shop has no callers yet, and one with none refuses to start.
-
-Give it its first admin, as the user it runs as - the token is said once and kept nowhere else:
-
-  sudo -u $SHOP_USER $node $SERVER init <your-name>
-
-Then keep that token where the client looks for it, as yourself:
-
-  mkdir -p ~/.config/3d-print-shop && chmod 700 ~/.config/3d-print-shop
-  printf %s '<the token>' > ~/.config/3d-print-shop/token
-  chmod 600 ~/.config/3d-print-shop/token
-
-Each printer's API key goes in $ETC/printer-keys.json as {"mk4": "..."}, 0600 and owned by
-$SHOP_USER. Then run this again to start it:
-
-  sudo $(asTyped install)
-NEXT
-    return 0
-  fi
+  gotItsFirstAdmin "$node" || return 0
 
   startIt
 

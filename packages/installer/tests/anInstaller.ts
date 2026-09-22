@@ -52,6 +52,21 @@ export function aTreeWith(layout: Layout, engines = '>=24.16 <25'): Fixture {
   return { here, root };
 }
 
+/** An `$ETC` holding a credentials file, which is what a shop somebody has already run `init` on has. */
+export function anEtcWithCallers({ root }: Fixture): string {
+  const etc = path.join(root, 'etc-with-callers');
+
+  mkdirSync(etc, { recursive: true });
+  writeFileSync(path.join(etc, 'callers.json'), '{}');
+
+  return etc;
+}
+
+/** An `$ETC` with nothing in it, which is a machine the shop has never been initialised on. */
+export function anEmptyEtc({ root }: Fixture): string {
+  return path.join(root, 'etc-with-nothing');
+}
+
 /** An executable that answers `-v` the way a node of that version would, and nothing else. */
 export function aNodeSaying(version: string, at: string): string {
   mkdirSync(path.dirname(at), { recursive: true });
