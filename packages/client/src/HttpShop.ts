@@ -42,6 +42,10 @@ export class HttpShop implements Shop {
     return (await this.answered('GET', '/me')) as Caller;
   }
 
+  async version(): Promise<string | undefined> {
+    return ((await this.answered('GET', '/version')) as { version?: string }).version;
+  }
+
   // AIDEV-NOTE: nothing is answered with but the caller. The session is a cookie the shop set, which
   // this never sees and could not read if it tried - that is the whole reason it is a cookie rather
   // than something a page keeps: a script that can read a credential is a script that can send one

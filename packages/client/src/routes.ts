@@ -14,7 +14,7 @@ export const OCTOPRINT_PREFIX = '/octoprint';
 // about ROUTING - every path the shop answers - and one left out of it is one the page fallback
 // would hand index.html to.
 /** The first segment of every path this shop answers, for whoever has to route to it. */
-export const SHOP_ROUTES = ['/jobs', '/printers', '/filaments', '/sessions', '/me', '/shutdown', OCTOPRINT_PREFIX] as const;
+export const SHOP_ROUTES = ['/jobs', '/printers', '/filaments', '/sessions', '/me', '/version', '/shutdown', OCTOPRINT_PREFIX] as const;
 
 // AIDEV-NOTE: named rather than left to be noticed, because `covers every route the shop is known to
 // answer` is otherwise right to fail on them: a route nothing in this contract asks for really is

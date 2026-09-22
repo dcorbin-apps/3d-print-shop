@@ -149,6 +149,8 @@ const OPEN_TO_EVERY_CALLER: readonly { method: string; path: RegExp }[] = [
   { method: 'GET', path: /^\/printers$/ },
   // Themselves, and nobody else. See the route.
   { method: 'GET', path: /^\/me$/ },
+  // Every client that shows a person anything wants this, and a user's page drifts like an admin's.
+  { method: 'GET', path: /^\/version$/ },
   // AIDEV-NOTE: leaving is everybody's, for the reason changing your own password is - the route ends
   // the session in the request's OWN cookie and can reach nobody else's. It was missing from this
   // list, so a caller who was not an admin could log in and then not log out, and every acceptance
@@ -308,6 +310,11 @@ export interface ShopHooks {
   cancelPrint?: (printer: string) => Promise<void>;
   /** Where the running service writes down what it did. Silent unless somebody supplies one. */
   log?: Log;
+  // AIDEV-NOTE: handed in rather than read here, because what release this is belongs to the thing
+  // that was INSTALLED - the package's manifest, found from the entry point - and not to a module a
+  // test imports from source, where there is no installed package to ask.
+  /** Which release this shop is, for a client checking it matches its own. */
+  version?: string;
 }
 
 declare module 'express-serve-static-core' {
@@ -545,6 +552,10 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
   // and letting the refusal teach them, which is a UI that hands an operator a button and says no.
   api.get('/me', (request, response) => {
     response.json(request.caller);
+  });
+
+  api.get('/version', (_request, response) => {
+    response.json({ version: hooks.version });
   });
 
   // AIDEV-NOTE: a caller's own, and only their own - the id is taken from who the request turned out

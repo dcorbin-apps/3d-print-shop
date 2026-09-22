@@ -23,10 +23,9 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for why it is shaped this
 
 | Package | What it is |
 |---|---|
-| `@3d-print-shop/server` | The service, and the operator's command line. |
+| `@3d-print-shop/server` | The service, the operator's command line, and the setup script that makes a machine ready to run it. |
 | `@3d-print-shop/client` | The contract - the wire types, the `Shop` interface, and `HttpShop`, which speaks it. What a client depends on. |
 | `@3d-print-shop/octoprint-sim` | A stand-in OctoPrint, enough of the real protocol to prove the shop talks to one. |
-| `@3d-print-shop/installer` | One shell script: the user, the directories and the daemon a machine needs before it can run any of the above. |
 | `@3d-print-shop/ui` | A single page in a browser: what the shop is doing, the printers with their cameras, and the work grouped by what it needs loaded. |
 
 The server depends on the client, not the other way about: the contract is one thing, written once,
@@ -85,20 +84,37 @@ directory, so a second shop over the same ones is refused and a crash leaves not
 
 ```
 yarn install && yarn build
-sudo packages/installer/install.sh
+sudo packages/server/install.sh
 ```
 
-`@3d-print-shop/installer` is a package of its own, whose whole content is that script. It is
-separate from the server because installing a daemon is not something that should happen to somebody
-who merely depends on the shop's code, and because `npm i -g @3d-print-shop/installer` reads as
-"install the service" where `npm i @3d-print-shop/server` reads as "give me the library". Installed
-that way it runs itself: its `postinstall` calls the same script, which finds the server npm put
-beside it and installs the service around it, with nothing copied because npm has already put the
-code where the service can read it.
+From a registry it is two commands, and the second one is the one that does everything:
 
-That is not usable until these packages are published - see PLAN.md - and it needs an npm whose
-global directory is outside a home directory, for the same reason the node does. Both are refused
-with the reason rather than installed into a daemon that could never start.
+```
+sudo npm install -g @3d-print-shop/server @3d-print-shop/ui
+sudo 3d-print-shop-install
+```
+
+**The install is a command somebody types, not something that happens to them.** `npm install -g`
+puts two binaries on PATH - `3d-print-shop`, the operator's command line, and
+`3d-print-shop-install` - and stops there. It used to run itself from a `postinstall` hook, which
+was wrong twice over: npm holds stdin and swallows stdout of a dependency's postinstall, so an
+install that stopped short to ask for its first admin looked like an install that did nothing; and
+`--ignore-scripts`, a container build or a CI runner would each have silently got no service at all.
+Run by hand the script owns its terminal, so it can ask and be heard, and nothing is copied because
+npm has already put the code where the service can read it.
+
+**The page is named, not depended on.** The server does not depend on `@3d-print-shop/ui`: the page
+is a client of the shop, and the dependency runs one way. Named together they land side by side in
+npm's global directory, which is where the setup script looks for the page, and it refuses without
+one, naming the package to install at the server's own version.
+
+Because nothing pins the two together, the page checks instead: it asks the shop which release it is
+and says so, at the top of the page, when that is not its own. A browser still holding a page from
+before an upgrade is fixed by a reload; a page package left behind by one is fixed by installing both
+again together.
+
+It needs an npm whose global directory is outside a home directory, for the same reason the node
+does. That is refused with the reason rather than installed into a daemon that could never start.
 
 It works out which machine it is on and does the same thing either way: a system user (`_printshop`
 on macOS, `printshop` on Linux) that can be logged in as by nobody; the directories it keeps things
@@ -119,7 +135,7 @@ The shop is **copied** rather than run out of the checkout, for that same reason
 means a `git checkout` of another branch is not a live change to a running service. So after a build:
 
 ```
-yarn build && sudo packages/installer/install.sh update
+yarn build && sudo packages/server/install.sh update
 ```
 
 **The first admin is yours to make**, because the token it answers with exists nowhere else. The
@@ -133,10 +149,10 @@ Day to day:
 | | macOS | Linux |
 |---|---|---|
 | its log | `tail -f /var/log/3d-print-shop.log` | `journalctl -u 3d-print-shop -f` |
-| after a build | `sudo packages/installer/install.sh update` | same |
+| after a build | `sudo packages/server/install.sh update` | same |
 | after editing a credential | `sudo launchctl kill HUP system/com.dcorbin.3d-print-shop` | `sudo systemctl reload 3d-print-shop` |
 
-`sudo packages/installer/install.sh uninstall` stops it and removes the service and the installed copy. It
+`sudo packages/server/install.sh uninstall` stops it and removes the service and the installed copy. It
 leaves the data, the credentials and the user alone: uninstalling a service is not the same act as
 throwing away the work it was holding, and one of those cannot be undone.
 

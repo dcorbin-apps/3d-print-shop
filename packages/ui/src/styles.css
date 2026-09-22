@@ -109,6 +109,13 @@ body {
   color: var(--wrong);
 }
 
+.drift {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--wrong);
+  border-bottom: 1px solid var(--wrong);
+}
+
 /* --------------------------------------------------------------------------- the printer gallery */
 
 .gallery {

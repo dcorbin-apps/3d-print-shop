@@ -113,6 +113,12 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### Installation
 
+- [ ] Deprecate `@3d-print-shop/installer` on npm, once a server release carrying
+  `3d-print-shop-install` resolves - not before, or the message points at a package that cannot yet
+  do what it says. It needs an npm login with 2FA:
+
+  `npm deprecate @3d-print-shop/installer "Moved into @3d-print-shop/server: sudo npm i -g @3d-print-shop/server @3d-print-shop/ui, then sudo 3d-print-shop-install"`
+
 - [ ] The installer makes the WRONG DIRECTORIES on macOS, so an install there refuses to start. It
   sets `JOBS=/var/spool/3d-print-shop/jobs` and `STATE=/var/lib/3d-print-shop` unconditionally, where
   `systemLayout()` on darwin answers `/Library/Application Support/3d-print-shop/{jobs,state}` - and

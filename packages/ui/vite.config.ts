@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { SHOP_ROUTES } from '@3d-print-shop/client/browser';
@@ -11,8 +12,12 @@ import { SHOP_ROUTES } from '@3d-print-shop/client/browser';
 // character at line 1 column 1" - which names neither the route nor the reason.
 const SHOP = process.env.PRINT_SHOP_URL ?? 'http://localhost:7373';
 
+// What release this page is, stamped into the bundle so it can tell when the shop serving it is another.
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+
 export default defineConfig({
   plugins: [react()],
+  define: { PAGE_VERSION: JSON.stringify(version) },
   server: {
     proxy: Object.fromEntries(SHOP_ROUTES.map((route) => [route, { target: SHOP, changeOrigin: false }])),
   },

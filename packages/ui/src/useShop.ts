@@ -19,6 +19,8 @@ export interface ShopView {
   askAgain: () => void;
   /** What went wrong asking, when something did. The last good answer is still shown beneath it. */
   trouble?: string;
+  /** Which release the shop says it is, for checking against the page's own. */
+  shopVersion?: string;
   /** False only until the first answer arrives, so an empty shop is not shown as a loading one. */
   answered: boolean;
 }
@@ -47,9 +49,19 @@ export function useShop(url = '', every = POLL_MS): ShopView {
   // screen whose token no longer earns them.
   const ask = useCallback(async (): Promise<void> => {
     try {
-      const [caller, printers, held] = await Promise.all([shop.whoAmI(), shop.printers(), shop.jobs()]);
+      // AIDEV-NOTE: the version's failure is its OWN, and never the poll's. A shop from before this
+      // was asked has no such route, and letting that fail everything would put a page that is merely
+      // newer than its shop into permanent trouble - which is the drift this exists to report, turned
+      // into a page that cannot show anything at all. Asked every tick rather than once, because a
+      // shop upgraded and restarted under an open page is exactly when the two stop matching.
+      const [caller, printers, held, shopVersion] = await Promise.all([
+        shop.whoAmI(),
+        shop.printers(),
+        shop.jobs(),
+        shop.version().catch(() => undefined),
+      ]);
 
-      setView({ caller, printers, jobs: held.accessibleJobs, totalJobs: held.totalJobs, answered: true, strangers: false });
+      setView({ caller, printers, jobs: held.accessibleJobs, totalJobs: held.totalJobs, shopVersion, answered: true, strangers: false });
     } catch (failure) {
       // AIDEV-NOTE: being a stranger is not trouble - it is the ordinary state of a browser nobody
       // has logged in on, and of one whose session has expired while it sat there. Both want a

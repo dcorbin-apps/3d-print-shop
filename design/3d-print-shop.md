@@ -618,20 +618,32 @@ reaches the API through `@3d-print-shop/client` exactly as a slicer would, and a
 resolved the page's files through the ui package would be the server depending on one of its
 clients. The dependency runs one way, and pointing it at a path is what keeps it that way.
 
-**How the page reaches a machine.** It is a package of its own, `@3d-print-shop/ui`, and the thing
-that depends on it is the INSTALLER - which is already what knows about both halves, because wiring
-a service together is what it is for. The server never learns the page exists; it is handed a path.
+**How the page reaches a machine.** It is a package of its own, `@3d-print-shop/ui`, and NOTHING
+depends on it. The person installing names it beside the server - `npm i -g @3d-print-shop/server
+@3d-print-shop/ui` - and the setup script, which ships inside the server package, finds it where npm
+put it and hands the server its path. The server never learns the page exists.
+
+It used to be a dependency of a separate installer package, which was what knew about both halves.
+That package went when setting a machine up stopped being an npm postinstall hook and became a
+command somebody types, and the command went into the server package. Depending on the page from
+THERE would have been the server's manifest naming one of its own clients - so the page is named on
+the install line instead, which also leaves room for a machine that wants the server and some other
+client and no page at all.
 
 The other two ways were weighed and cost more than they bought. Building the page into the server
 gives one artifact that can never skew, and pays for it by making the server's build depend on a
 client, which is the direction that may never run - the runtime rule would survive and the invariant
-would not. Having the installer fetch it keeps both packages clean and puts a network fetch into a
+would not. Having the setup script fetch it keeps both packages clean and puts a network fetch into a
 script that has never had one, which buys offline failures and a checksum nobody has written, in the
 one tool whose whole doctrine is that it refuses rather than guesses.
 
-What the chosen way costs is a package nobody imports - its only reader is a shell script copying
-`dist` - and a version that has to be pinned exactly, so a page and an API cannot drift apart on one
-machine.
+What the chosen way costs is that nothing PINS the two releases together: somebody can update the
+server and not the page. So drift is made visible rather than impossible. The shop answers
+`GET /version` with the release it is, and the page - which knows its own, stamped in at build -
+says so at the top when they differ. The check is on the page's side because that is the direction
+the dependency runs: a client may know about the shop, and the shop learns nothing about the page.
+It is asked on every poll, because an upgrade and restart under an open page is exactly when the two
+stop matching.
 
 And it is served without a credential, because the page nobody has logged in to yet is the page they
 log in ON. There is nothing in it worth protecting - a bundle and a stylesheet - and requiring one

@@ -6,6 +6,7 @@ import { PrinterGallery, stillHere } from './components/PrinterGallery.js';
 import { TopBar } from './components/TopBar.js';
 import { summarise } from './shopSummary.js';
 import { useShop } from './useShop.js';
+import { drifted } from './versionDrift.js';
 
 export const SELECTED_KEY = 'print-shop-selected-printer';
 
@@ -16,8 +17,13 @@ function remembered(key: string): string | undefined {
 // AIDEV-NOTE: one component, and the login is a state of it rather than a door in front of it -
 // because a session expires while somebody is watching a print, and what should happen then is a
 // login where the page was, not a page that breaks.
-export function App(): React.JSX.Element {
-  const { printers, jobs, totalJobs, caller, shop, askAgain, trouble, answered, strangers } = useShop();
+export interface AppProps {
+  /** Which release this page was built from. Handed in by the entry point, which is what the build stamps. */
+  pageVersion?: string;
+}
+
+export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
+  const { printers, jobs, totalJobs, caller, shop, askAgain, trouble, answered, strangers, shopVersion } = useShop();
   const [chosen, setChosen] = useState(() => remembered(SELECTED_KEY));
 
   // AIDEV-NOTE: asked for again rather than added to what is on the screen - the shop is the one
@@ -56,6 +62,7 @@ export function App(): React.JSX.Element {
   };
 
   const selected = stillHere(printers, chosen);
+  const drift = drifted(pageVersion, shopVersion);
 
   // AIDEV-NOTE: written when it SETTLES rather than when it is clicked, so that a printer removed
   // while nobody was looking - which falls back to the first - is what comes back on a reload. The
@@ -87,6 +94,11 @@ export function App(): React.JSX.Element {
         onOut={() => void shop.logOut().then(askAgain)}
         onChangePassword={(current, password) => shop.changeMyPassword(current, password)}
       />
+      {drift !== undefined && (
+        <p className="drift" role="alert">
+          {drift}
+        </p>
+      )}
       <PrinterGallery printers={printers} selected={selected} onSelect={setChosen} onAdd={caller?.role === 'admin' ? addPrinter : undefined} />
       <JobsByFilament
         jobs={jobs}

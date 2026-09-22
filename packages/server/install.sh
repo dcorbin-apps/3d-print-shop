@@ -31,19 +31,20 @@ INSTALL_DIR=/usr/local/lib/3d-print-shop
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # AIDEV-NOTE: two ways this file is reached, and the difference is who put the code somewhere the
-# service can read. Exploded by npm, the server is a sibling in the same scope and npm has already
-# resolved everything it needs - so there is nothing to copy and copying would be a second, staler
-# tree. In a checkout there is a build, sitting where a daemon cannot get at it.
+# service can read. Exploded by npm it sits INSIDE the server package, whose own dist is the thing
+# to run and whose node_modules npm has already resolved - so there is nothing to copy and copying
+# would be a second, staler tree. In a checkout there is a build, sitting where a daemon cannot get
+# at it.
 case "$HERE" in
-  */node_modules/@3d-print-shop/installer) MODE=package ;;
+  */node_modules/@3d-print-shop/server) MODE=package ;;
   *) MODE=checkout ;;
 esac
 
 # AIDEV-NOTE: npm does NOT hoist a global install's dependencies up into the scope directory - it
-# nests them under the installed package's own node_modules, so the server is at
-# `installer/node_modules/@3d-print-shop/server` and NOT at `installer/../server`. A local install
-# hoists and gives the second shape, so both are real layouts and both are looked for. Measured
-# against npm 11 on Linux, after a global install refused itself by looking only where nothing was.
+# nests them under the installed package's own node_modules, so the page is at
+# `server/node_modules/@3d-print-shop/ui` and NOT at `server/../ui`. A local install hoists and gives
+# the second shape, so both are real layouts and both are looked for. Measured against npm on Linux,
+# after a global install refused itself by looking only where nothing was.
 packagedAt() {
   local relative=$1 candidate
 
@@ -59,7 +60,10 @@ packagedAt() {
 }
 
 if [ "$MODE" = package ]; then
-  BUILT=$(packagedAt server/dist/main.js)
+  # AIDEV-NOTE: the server is not looked for, because this file ships INSIDE it - `$HERE` is the
+  # package, and its `dist` is the only build that can be the right one. Only the page is hunted,
+  # because that is a separate package and npm may have put it in either of two places.
+  BUILT="$HERE/dist/main.js"
   SERVER=$BUILT
   MANIFEST="$HERE/package.json"
   BUILT_PAGE=$(packagedAt ui/dist)
@@ -128,8 +132,13 @@ requireRoot() {
 requirePage() {
   [ -d "$BUILT_PAGE" ] && return 0
 
+  # AIDEV-NOTE: the page is its own package and the server does NOT depend on it - the page is a
+  # client of the shop, and the dependency runs one way. So it is installed beside the server by
+  # name, and at the server's own version: the two are released together, and a page from another
+  # release is one the page itself will complain about.
   if [ "$MODE" = package ]; then
-    refuse "$BUILT_PAGE is not there - @3d-print-shop/ui is not installed beside this"
+    refuse "$BUILT_PAGE is not there - the page is a package of its own, installed beside this one:
+sudo npm i -g @3d-print-shop/ui@$(packageVersion)"
   fi
 
   refuse "$BUILT_PAGE is not there - run 'yarn install && yarn build' in $REPO first, which builds it"
@@ -138,7 +147,8 @@ requirePage() {
 requireBuild() {
   if [ ! -f "$BUILT" ]; then
     if [ "$MODE" = package ]; then
-      refuse "$BUILT is not there - @3d-print-shop/server is not installed beside this"
+      refuse "$BUILT is not there - this package was installed without its build. Install it again:
+sudo npm i -g @3d-print-shop/server@$(packageVersion)"
     fi
 
     refuse "$BUILT is not there - run 'yarn install && yarn build' in $REPO first"
@@ -157,6 +167,11 @@ distribution's package), so that npm puts its global packages outside one too"
         ;;
     esac
   fi
+}
+
+# The release in play, from the same manifest the node floor is read out of.
+packageVersion() {
+  sed -n 's/^ *"version" *: *"\([^"]*\)".*/\1/p' "$MANIFEST" | head -1
 }
 
 # The floor whichever manifest is in play already declares, so this script says it nowhere: the
@@ -459,26 +474,11 @@ reading() {
 
 # ---------------------------------------------------------------------------- its first admin
 
-# AIDEV-NOTE: npm hides a DEPENDENCY's postinstall output and hands it a pipe for stdin - and this
-# package is never the root one, so that is every install of it. Everything said from in there is
-# invisible and nothing asked can be answered, which is how an install that stopped short to ask for
-# its first admin looked, from the outside, like an install that did nothing at all. The controlling
-# terminal is untouched by any of that and can simply be taken, and taking it fixes both halves at
-# once: what is said arrives, and what is asked can be answered.
-#
-# Measured against npm 10 on Linux, where a dependency's postinstall has `[ -t 0 ]` false, its stdout
-# swallowed, and /dev/tty open to it. Where there is no controlling terminal at all - CI, a container
-# build, a machine provisioning itself - nothing is taken and `atATerminal` reads that correctly.
-tookTheTerminal() {
-  if ! (exec 3<>/dev/tty) 2>/dev/null; then return 1; fi
-
-  exec </dev/tty >/dev/tty 2>&1
-}
-
-# AIDEV-NOTE: a function rather than `[ -t 0 ]` written where it is asked, because there are two
-# callers of `install` and only one of them has a person at a keyboard. npm's postinstall owns
-# stdin, and `init` asks for a password - so asking there is a prompt nobody can see, waiting on an
-# answer nobody can give. It is also the seam the tests read the other branch through.
+# AIDEV-NOTE: a function rather than `[ -t 0 ]` written where it is asked, because it is the seam
+# the tests read the other branch through - the one where nobody is at a keyboard, which no suite
+# could otherwise reach. This used to have to fight npm for the terminal, because the install ran
+# from a postinstall hook where npm held stdin and swallowed stdout. It does not any more: this is a
+# command somebody types, so the terminal is simply theirs. See PLAN.md for why that moved.
 atATerminal() { [ -t 0 ]; }
 
 # AIDEV-NOTE: run as the SERVICE user, because $ETC is 0700 and theirs - a credentials file written
@@ -603,7 +603,7 @@ Installed and running, on http://localhost:7373 - loopback, which is where a tok
 the clear belongs.
 
   its log        $(reading)
-  a new build    $(if [ "$MODE" = package ]; then printf 'sudo npm i -g @3d-print-shop/installer'; else printf 'sudo %s update' "$0"; fi)
+  a new build    $(if [ "$MODE" = package ]; then printf 'sudo npm i -g @3d-print-shop/server @3d-print-shop/ui'; else printf 'sudo %s update' "$0"; fi)
   a credential   edit a file in $ETC, then $(reloading)
 RUNNING
 }
@@ -612,7 +612,7 @@ update() {
   requireRoot update
   requireBuild
   requirePage
-  [ "$MODE" = checkout ] || refuse 'an installed package is updated by installing it again: sudo npm i -g @3d-print-shop/installer'
+  [ "$MODE" = checkout ] || refuse 'an installed package is updated by installing it again: sudo npm i -g @3d-print-shop/server @3d-print-shop/ui'
   isInstalled || refuse "there is no service to update - run 'sudo $(asTyped install)' first"
 
   stopIt
@@ -666,27 +666,6 @@ KEPT
 # on is testable at all.
 main() {
 case "${1:-install}" in
-  # AIDEV-NOTE: what npm's postinstall calls, and it is a separate word from `install` because yarn
-  # runs it on every install in the CHECKOUT too, where nobody asked for a daemon and there is
-  # nothing to explode. It also must not fail: a postinstall that exits non-zero fails the whole npm
-  # install, so a person who has not used sudo is told what to type rather than shouted at.
-  #
-  # npm drops to the owner of its prefix when it is run as root, so being root here is not something
-  # to count on even under sudo.
-  from-npm)
-    [ "$MODE" = package ] || exit 0
-
-    # Before anything is said, because npm is holding the pen until this is done.
-    tookTheTerminal || true
-
-    if [ "$(id -u)" != 0 ]; then
-      say "3d-print-shop is unpacked. It makes a system user, a data directory and a daemon, so the install
-itself is one more command: sudo 3d-print-shop-install"
-      exit 0
-    fi
-
-    install
-    ;;
   install | --install) install ;;
   update | --update) update ;;
   uninstall | --uninstall) uninstall ;;

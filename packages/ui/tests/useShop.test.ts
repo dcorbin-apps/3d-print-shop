@@ -53,6 +53,25 @@ describe('what the page keeps asking the shop', () => {
     expect(result.current.answered).toBe(false);
   });
 
+  // AIDEV-NOTE: a shop from before `/version` existed has no such route, and a page that is merely
+  // newer than its shop must still show the shop. The version's failure is its own, never the poll's.
+  it('goes on showing the shop when the shop cannot say which release it is', async () => {
+    fetching.mockImplementation((input) => {
+      const path = String(input);
+      if (path.endsWith('/version')) return Promise.resolve(answering({ error: 'no such route' }, 404));
+      if (path.endsWith('/me')) return Promise.resolve(answering(DAVE));
+      if (path.endsWith('/printers')) return Promise.resolve(answering([MK4]));
+
+      return Promise.resolve(answering({ accessibleJobs: [A_JOB], totalJobs: 1 }));
+    });
+
+    const { result } = renderHook(() => useShop('', QUICKLY));
+
+    await waitFor(() => expect(result.current.printers.map((printer) => printer.name)).toEqual(['mk4']));
+    expect(result.current.trouble).toBeUndefined();
+    expect(result.current.shopVersion).toBeUndefined();
+  });
+
   it('says who the shop takes this browser to be', async () => {
     answersEverything();
 

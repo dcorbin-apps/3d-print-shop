@@ -20,6 +20,14 @@ export interface Shop {
   /** Who the shop takes this caller to be, by what they presented. */
   whoAmI(): Promise<Caller>;
 
+  // AIDEV-NOTE: so a client can tell when it and the shop came from different releases. The page is
+  // installed as a package of its own beside the server, and nothing stops one being updated without
+  // the other - so the page asks for this and says so when it differs from its own. The check lives
+  // on the CLIENT's side because that is the direction the dependency runs: a client may know about
+  // the shop, and the shop learns nothing about the page. Absent from a shop not told which it is.
+  /** Which release of the shop is answering. */
+  version(): Promise<string | undefined>;
+
   // AIDEV-NOTE: a person logs in; a program presents a token and never touches these. Two kinds of
   // credential for two kinds of caller, both hanging off one identity - a slicer and the person who
   // owns it are the same owner, and the jobs either submits belong to the same id.

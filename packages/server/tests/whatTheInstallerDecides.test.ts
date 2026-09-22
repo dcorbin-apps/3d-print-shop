@@ -9,49 +9,67 @@ import type { Answer } from './anInstaller.js';
 // here; sourcing one is not launching a subject any more than importing a module is.
 describe('what the installer decides before it does anything', () => {
   describe('where the code it is installing actually is', () => {
-    // AIDEV-NOTE: the case that sent a global install into refusing itself. npm nests a global
-    // install's dependencies under the package rather than hoisting them into the scope directory.
-    it('finds a server npm nested under the package, which is what a global install leaves', () => {
+    // AIDEV-NOTE: install.sh ships INSIDE the server package now, so the server is not hunted for at
+    // all - `$HERE` is the package and its dist is the only build that can be the right one. This
+    // replaced a search of two candidate paths, which existed only because the script used to live
+    // in a package of its own beside the one it was installing.
+    it('runs the build it ships inside, rather than looking for one beside it', () => {
       const tree = aTreeWith('nested');
+      const said = asked(tree, { then: 'echo "$BUILT"; echo "$SERVER"' }).stdout.trim().split('\n');
 
-      expect(asked(tree, { then: 'echo "$BUILT"' }).stdout.trim()).toBe(path.join(tree.here, 'node_modules/@3d-print-shop/server/dist/main.js'));
+      expect(said[0]).toBe(path.join(tree.here, 'dist/main.js'));
+      expect(said[1]).toBe(said[0]);
     });
 
-    it('finds a server hoisted beside the package, which is what a local install leaves', () => {
+    it('resolves to a build that is really on the disk, and not merely to a plausible path', () => {
+      expect(asked(aTreeWith('nested'), { then: 'test -f "$BUILT" && echo found' }).stdout.trim()).toBe('found');
+    });
+
+    it('tells a package with no build to install itself again, which is the remedy it has', () => {
+      const refused = asked(aTreeWith('nested', { withoutTheBuild: true }), { then: 'requireBuild' });
+
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain('installed without its build');
+      expect(refused.stderr).toContain('sudo npm i -g @3d-print-shop/server@1.2.3');
+    });
+
+    // AIDEV-NOTE: npm nests a global install's dependencies under the installed package rather than
+    // hoisting them into the scope directory, so the page is at `server/node_modules/@3d-print-shop/ui`
+    // and not at `server/../ui`. A local install hoists and gives the second shape. Both are real.
+    it('finds a page npm nested under the server, which is what a global install leaves', () => {
+      const tree = aTreeWith('nested');
+
+      expect(asked(tree, { then: 'echo "$BUILT_PAGE"' }).stdout.trim()).toBe(path.join(tree.here, 'node_modules/@3d-print-shop/ui/dist'));
+    });
+
+    it('finds a page hoisted beside the server, which is what a local install leaves', () => {
       const tree = aTreeWith('hoisted');
 
       // Resolved, because the script keeps the `..` it built the path out of and `path.join` does not.
-      expect(path.resolve(asked(tree, { then: 'echo "$BUILT"' }).stdout.trim())).toBe(path.resolve(tree.here, '../server/dist/main.js'));
+      expect(path.resolve(asked(tree, { then: 'echo "$BUILT_PAGE"' }).stdout.trim())).toBe(path.resolve(tree.here, '../ui/dist'));
     });
 
     // AIDEV-NOTE: the case that tells the two candidates apart, and the only one that can. Where the
-    // server is nested ALONE, the fallback `packagedAt` ends on names the nested path too, so looking
+    // page is nested ALONE, the fallback `packagedAt` ends on names the nested path too, so looking
     // there first and not looking at all are indistinguishable - a mutation run proved it by dropping
     // that candidate and staying green. With both present, only the order decides, and the nested one
     // has to win: it is what npm made for THIS package, where a hoisted one belongs to whoever is
     // above it.
-    it('prefers the nested server to a hoisted one when both are there', () => {
+    it('prefers the nested page to a hoisted one when both are there', () => {
       const tree = aTreeWith('both');
 
-      expect(asked(tree, { then: 'echo "$BUILT"' }).stdout.trim()).toBe(path.join(tree.here, 'node_modules/@3d-print-shop/server/dist/main.js'));
+      expect(asked(tree, { then: 'echo "$BUILT_PAGE"' }).stdout.trim()).toBe(path.join(tree.here, 'node_modules/@3d-print-shop/ui/dist'));
     });
 
-    it('resolves to a server that is really on the disk, and not merely to a plausible path', () => {
-      expect(asked(aTreeWith('nested'), { then: 'test -f "$BUILT" && echo found' }).stdout.trim()).toBe('found');
-      expect(asked(aTreeWith('hoisted'), { then: 'test -f "$BUILT" && echo found' }).stdout.trim()).toBe('found');
-    });
-
-    it('finds the page by the same two routes as the server', () => {
-      expect(asked(aTreeWith('nested'), { then: 'echo "$BUILT_PAGE"' }).stdout.trim()).toMatch(/node_modules\/@3d-print-shop\/ui\/dist$/);
-      expect(asked(aTreeWith('hoisted'), { then: 'echo "$BUILT_PAGE"' }).stdout.trim()).toMatch(/installer\/\.\.\/ui\/dist$/);
-    });
-
-    it('names the nested place when the server is in neither, because that is where npm would have put it', () => {
-      const refused = asked(aTreeWith('neither'), { then: 'requireBuild' });
+    // AIDEV-NOTE: the server does not depend on the page - the page is a client of the shop - so a
+    // missing one is installed beside it BY NAME, and at the server's own version, since a page from
+    // another release is one that will complain about the shop it finds itself served by.
+    it('names the page package to install beside it, at its own version, when there is no page', () => {
+      const refused = asked(aTreeWith('neither'), { then: 'requirePage' });
 
       expect(refused.status).toBe(1);
-      expect(refused.stderr).toContain('node_modules/@3d-print-shop/server/dist/main.js');
-      expect(refused.stderr).toContain('is not installed beside this');
+      expect(refused.stderr).toContain('node_modules/@3d-print-shop/ui/dist');
+      expect(refused.stderr).toContain('sudo npm i -g @3d-print-shop/ui@1.2.3');
     });
 
     it('reads a checkout as a checkout, and points the service at the copy rather than at the build', () => {
@@ -72,13 +90,13 @@ describe('what the installer decides before it does anything', () => {
 
   describe('the node floor it holds a machine to', () => {
     it('reads the floor out of the manifest in play rather than saying one of its own', () => {
-      expect(asked(aTreeWith('nested', '>=24.16 <25'), { then: 'requiredNode' }).stdout.trim()).toBe('24.16');
-      expect(asked(aTreeWith('nested', '>=22.3 <23'), { then: 'requiredNode' }).stdout.trim()).toBe('22.3');
+      expect(asked(aTreeWith('nested', { engines: '>=24.16 <25' }), { then: 'requiredNode' }).stdout.trim()).toBe('24.16');
+      expect(asked(aTreeWith('nested', { engines: '>=22.3 <23' }), { then: 'requiredNode' }).stdout.trim()).toBe('22.3');
     });
 
     // A floor that came back empty would let every node past, which is the guard silently not being one.
     it('refuses a manifest that declares no floor at all', () => {
-      const refused = asked(aTreeWith('nested', ''), { then: 'requiredNode' });
+      const refused = asked(aTreeWith('nested', { engines: '' }), { then: 'requiredNode' });
 
       expect(refused.status).toBe(1);
       expect(refused.stderr).toContain('does not say which node this runs on');
@@ -139,50 +157,16 @@ describe('what the installer decides before it does anything', () => {
 
   // AIDEV-NOTE: load-bearing and invisible - npm fails the WHOLE install on a non-zero postinstall,
   // so a person who has not used sudo has to be told what to type rather than shouted at.
-  describe('what it does inside npm, where it may not fail', () => {
-    it('exits nothing but zero when it was unpacked without root, and says what is left to type', () => {
+  // AIDEV-NOTE: there was a `from-npm` word here once, which a postinstall hook called. It is gone
+  // along with the hook: npm holds stdin and swallows stdout of a dependency's postinstall, so an
+  // install that stopped short to ask something looked like an install that did nothing. Setting a
+  // machine up is a command somebody types now. See PLAN.md, Installation.
+  describe('what it refuses to be', () => {
+    it('is a command somebody types, and not a hook something else runs', () => {
       const answer = asked(aTreeWith('nested'), { then: 'main from-npm' });
 
-      expect(answer.status).toBe(0);
-      expect(answer.stdout).toContain('sudo 3d-print-shop-install');
-    });
-
-    it('does nothing at all from a checkout, where nobody asked for a daemon', () => {
-      const answer = asked(aTreeWith('checkout'), { then: 'main from-npm; echo "said nothing"' });
-
-      expect(answer.status).toBe(0);
-      expect(answer.stdout.trim()).toBe('');
-    });
-
-    // AIDEV-NOTE: this package is never npm's ROOT package, and npm hides a dependency's postinstall
-    // output while handing it a pipe for stdin. So the terminal is taken before a word is said -
-    // otherwise the install says nothing anybody can read and asks nothing anybody can answer, which
-    // is exactly how a shop that stopped short of its first admin looked like a shop that installed
-    // and simply did not run.
-    it('takes the controlling terminal before it says anything, because npm is holding the pen', () => {
-      const answer = asked(aTreeWith('nested'), { then: 'tookTheTerminal() { echo TOOK; }; main from-npm' });
-
-      expect(answer.stdout).toContain('TOOK');
-      expect(answer.stdout.indexOf('TOOK')).toBeLessThan(answer.stdout.indexOf('3d-print-shop is unpacked'));
-    });
-
-    // npm fails the whole install on a non-zero postinstall, so no terminal is a thing to carry on past.
-    it('carries on where there is no terminal to take, rather than failing the install over it', () => {
-      const answer = asked(aTreeWith('nested'), { then: 'tookTheTerminal() { return 1; }; main from-npm' });
-
-      expect(answer.status).toBe(0);
-      expect(answer.stdout).toContain('sudo 3d-print-shop-install');
-    });
-
-    // AIDEV-NOTE: the terminal is LOOKED FOR before it is taken, and this is what needs that. Taking
-    // one that is not there works out the same way - the redirect fails and nothing is taken - but it
-    // fails loudly, and the log it complains into is the npm install of somebody who did nothing
-    // wrong. Asked for rather than attempted, so a machine with no terminal installs in silence.
-    it('reports no terminal when there is no controlling one to open, and says nothing about it', () => {
-      const answer = asked(aTreeWith('nested'), { then: 'tookTheTerminal && echo took || echo none' });
-
-      expect(answer.stdout.trim()).toBe('none');
-      expect(answer.stderr).toBe('');
+      expect(answer.status).not.toBe(0);
+      expect(answer.stderr).toContain('install|update|uninstall');
     });
   });
 

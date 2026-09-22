@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { HttpShop, SHOP_URL_ENV, defaultShopUrl, defaultToken } from '@3d-print-shop/client';
 import type { Role, Shop } from '@3d-print-shop/client';
 import { DEFAULT_PORT, serve } from './api.js';
+import type { StartListening } from './api.js';
 import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
@@ -49,6 +50,14 @@ export interface CliParts {
   // that served a shop printed its whole log into the test run and could not ask what it said.
   /** Where the lines of a served shop's log go. Stdout unless something else is asked for. */
   writing?: (line: string) => void;
+  /** Which release this is, for `serve` to answer a client that asks. The entry point reads it. */
+  version?: string;
+  // AIDEV-NOTE: handed in so that what `serve` WIRES can be asked without binding a port - the shop
+  // decides what its API answers before the kernel is involved, and a real socket was the only way
+  // through to it. `serve()` has taken one since serve.test.ts stopped binding three ports to read
+  // an address back; this is the same seam, one layer out.
+  /** How a served shop starts listening. A real socket unless something else is handed in. */
+  startListening?: StartListening;
 }
 
 // AIDEV-NOTE: the default `reach`, named so that what it makes of `--shop-url` can be asked. Left
@@ -58,7 +67,7 @@ export function reachTheShop(options: { shopUrl?: string }, howToReach?: typeof 
   return new HttpShop(options.shopUrl ?? defaultShopUrl(), defaultToken(), howToReach);
 }
 
-export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Command {
+export function createCLI({ reach, say: told, ask, writing, version, startListening }: CliParts = {}): Command {
   const program = new Command();
   const shop = reach ?? reachTheShop;
 
@@ -146,10 +155,12 @@ export function createCLI({ reach, say: told, ask, writing }: CliParts = {}): Co
           spool,
           cancelPrint: (printer: string): Promise<void> => foreman.cancelPrintOn(printer),
           log,
+          version,
         },
         // Not defaulted here: `serve` holds the default, and a second copy of an address is a second
         // thing to change. Undefined is "wherever serve says", which is loopback.
         options.listen,
+        startListening,
       );
 
       const stopEverything = stoppingTheShop({

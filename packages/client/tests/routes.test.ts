@@ -27,6 +27,7 @@ describe('every path this client asks the shop for', () => {
 
     await Promise.all([
       anyway(shop.whoAmI()),
+      anyway(shop.version()),
       anyway(shop.logIn('dave', 'a password of some length')),
       anyway(shop.logOut()),
       anyway(shop.changeMyPassword('the password in use', 'a different password entirely')),

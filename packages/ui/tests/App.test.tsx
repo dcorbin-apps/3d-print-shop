@@ -300,4 +300,36 @@ describe('the page, against a shop that answers', () => {
 
     await waitFor(() => expect(screen.getByText(/Cannot reach the print shop/)).toBeDefined());
   });
+
+  // AIDEV-NOTE: the page and the shop are two packages and can come from different releases. Only
+  // THAT it says so, and where, is here - what it says is versionDrift's suite.
+  describe('a shop from another release', () => {
+    const answeringAsRelease = (version: string): void => {
+      fetching.mockImplementation((asked: Parameters<typeof fetch>[0]) => {
+        const path = String(asked);
+        if (path.endsWith('/me')) return Promise.resolve(answered({ id: 'dave', name: 'dave', role: 'admin' }));
+        if (path.endsWith('/version')) return Promise.resolve(answered({ version }));
+        if (path.endsWith('/printers')) return Promise.resolve(answered([]));
+
+        return Promise.resolve(answered({ accessibleJobs: [], totalJobs: 0 }));
+      });
+    };
+
+    it('says so, naming both', async () => {
+      answeringAsRelease('1.3.0');
+
+      render(<App pageVersion="1.2.3" />);
+
+      await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('This page is 1.2.3 and the shop is 1.3.0'));
+    });
+
+    it('says nothing of the kind when they match', async () => {
+      answeringAsRelease('1.2.3');
+
+      render(<App pageVersion="1.2.3" />);
+
+      await waitFor(() => expect(asked('GET', '/version')).toBeDefined());
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
 });
