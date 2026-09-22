@@ -8,6 +8,24 @@ import type { Answer } from './anInstaller.js';
 // Bash is the language these decisions are written in, the same way node is for every other suite
 // here; sourcing one is not launching a subject any more than importing a module is.
 describe('what the installer decides before it does anything', () => {
+  // AIDEV-NOTE: `install` is not reachable by sourcing on its own - every step of it wants root or
+  // writes outside a tmpdir - so those steps are shadowed, and what is left is the wiring between
+  // them: whether it goes on to start a service, and what it hands the service to run with. Nothing
+  // else guarded that wiring; a mutation that dropped the refusal to start stayed green until the
+  // first of these were written. `wroteUnit` says what it was given rather than writing a file.
+  const withoutTheStepsThatWantRoot = [
+    'requireRoot() { :; }',
+    'requireBuild() { :; }',
+    'requirePage() { :; }',
+    'requiredNode() { echo 24.16; }',
+    'findNode() { echo /usr/bin/node; }',
+    'madeServiceUserOnLinux() { :; }',
+    'madeDirectory() { :; }',
+    'stopIt() { :; }',
+    'wroteUnit() { echo "WROTE listen=[$LISTEN]"; }',
+    'startIt() { echo STARTED; }',
+  ].join('; ');
+
   describe('where the code it is installing actually is', () => {
     // AIDEV-NOTE: install.sh ships INSIDE the server package now, so the server is not hunted for at
     // all - `$HERE` is the package and its dist is the only build that can be the right one. This
@@ -324,23 +342,6 @@ describe('what the installer decides before it does anything', () => {
       expect(answer.stdout).not.toContain('Installed, and not started');
     });
 
-    // AIDEV-NOTE: `install` is not reachable by sourcing on its own - every step of it wants root or
-    // writes outside a tmpdir - so the steps are shadowed and what is left is the only thing these
-    // two are about: whether it goes on to start a service. Nothing else guarded that wiring; a
-    // mutation that dropped the refusal entirely stayed green until these were written.
-    const withoutTheStepsThatWantRoot = [
-      'requireRoot() { :; }',
-      'requireBuild() { :; }',
-      'requirePage() { :; }',
-      'requiredNode() { echo 24.16; }',
-      'findNode() { echo /usr/bin/node; }',
-      'madeServiceUserOnLinux() { :; }',
-      'madeDirectory() { :; }',
-      'stopIt() { :; }',
-      'wroteUnit() { :; }',
-      'startIt() { echo STARTED; }',
-    ].join('; ');
-
     it('starts the service once the shop has somebody it may answer', () => {
       const tree = aTreeWith('nested');
       const answer = asked(tree, { platform: 'Linux', then: `ETC=${anEtcWithCallers(tree)}; ${withoutTheStepsThatWantRoot}; install` });
@@ -362,6 +363,103 @@ describe('what the installer decides before it does anything', () => {
   // here - the claim is the TEXT, and what the supervisor is told to run is readable without owning
   // the file. The platform is forced by shadowing `uname`, so both halves are read from either
   // machine; CI runs Linux only, and the macOS half is the one with an open bug against it.
+  // AIDEV-NOTE: loopback is the shop's default because a password or a token sent to it travels in
+  // the clear, and a Pi in a workshop is reached from other machines. So the address is the
+  // operator's to say, it is said where the consequence is, and it survives a re-install that does
+  // not say it again - re-running this is meant to be safe, and quietly closing a shop the workshop
+  // reaches is not.
+  describe('where it answers', () => {
+    const readingArguments = (line: string): { said: string; status: number; stderr: string } => {
+      const answer = asked(aTreeWith('nested'), { then: `readArguments ${line}; echo "$COMMAND [$LISTEN]"` });
+
+      return { said: answer.stdout.trim(), status: answer.status, stderr: answer.stderr };
+    };
+
+    it('takes an address with or without naming the command, and in either spelling', () => {
+      expect(readingArguments('--listen 0.0.0.0').said).toBe('install [0.0.0.0]');
+      expect(readingArguments('install --listen=10.0.0.5').said).toBe('install [10.0.0.5]');
+    });
+
+    it('says nothing of an address when none was given', () => {
+      expect(readingArguments('update').said).toBe('update []');
+    });
+
+    it('refuses --listen with no address after it', () => {
+      const refused = readingArguments('--listen');
+
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain('--listen needs an address');
+    });
+
+    const written = (platform: 'Darwin' | 'Linux', listen: string): string => {
+      const file = platform === 'Linux' ? 'UNIT' : 'PLIST';
+      const write = platform === 'Linux' ? 'wroteUnit' : 'wrotePlist';
+
+      return asked(aTreeWith('nested'), {
+        platform,
+        then: `chown() { :; }; chmod() { :; }; LISTEN=${listen}; ${file}=$(mktemp); ${write} /usr/bin/node >/dev/null; cat "$${file}"`,
+      }).stdout;
+    };
+
+    it('hands the address to the service it writes, on both platforms', () => {
+      expect(written('Linux', '0.0.0.0')).toContain('serve --page ');
+      expect(written('Linux', '0.0.0.0')).toMatch(/ --listen 0\.0\.0\.0\n/);
+      expect(written('Darwin', '0.0.0.0')).toContain('<string>--listen</string>\n    <string>0.0.0.0</string>');
+    });
+
+    it('hands the service no address at all when none was said, leaving the shop on its own default', () => {
+      expect(written('Linux', "''")).not.toContain('--listen');
+      expect(written('Darwin', "''")).not.toContain('--listen');
+    });
+
+    // Read back out of what was WRITTEN, so the two halves are held to the same shape.
+    it('reads back the address a service it wrote was given, on both platforms', () => {
+      const readBack = (platform: 'Darwin' | 'Linux', listen: string): string => {
+        const file = platform === 'Linux' ? 'UNIT' : 'PLIST';
+        const write = platform === 'Linux' ? 'wroteUnit' : 'wrotePlist';
+
+        return asked(aTreeWith('nested'), {
+          platform,
+          then: `chown() { :; }; chmod() { :; }; LISTEN=${listen}; ${file}=$(mktemp); ${write} /usr/bin/node >/dev/null; LISTEN=''; listenedOnBefore`,
+        }).stdout.trim();
+      };
+
+      expect(readBack('Linux', '0.0.0.0')).toBe('0.0.0.0');
+      expect(readBack('Darwin', '10.0.0.5')).toBe('10.0.0.5');
+      expect(readBack('Linux', "''")).toBe('');
+    });
+
+    const installing = (then: string): string =>
+      asked(aTreeWith('nested'), { platform: 'Linux', then: `${withoutTheStepsThatWantRoot}; ${then}; install` }).stdout;
+
+    it('keeps the address the installed service already has, when this install does not say one', () => {
+      const said = installing(
+        `ETC=$(mktemp -d); touch "$ETC/callers.json"; UNIT=$(mktemp); echo 'ExecStart=/n /s serve --page /p --listen 0.0.0.0' > "$UNIT"`,
+      );
+
+      expect(said).toContain('WROTE listen=[0.0.0.0]');
+      expect(said).toContain('keeping --listen 0.0.0.0');
+    });
+
+    it('takes the address it was given over the one already there', () => {
+      const said = installing(
+        `ETC=$(mktemp -d); touch "$ETC/callers.json"; UNIT=$(mktemp); echo 'ExecStart=/n /s serve --listen 0.0.0.0' > "$UNIT"; LISTEN=127.0.0.1`,
+      );
+
+      expect(said).toContain('WROTE listen=[127.0.0.1]');
+      expect(said).not.toContain('keeping');
+    });
+
+    it('says where it answers once it is running, and what being on the network costs', () => {
+      const where = (listen: string): string => asked(aTreeWith('nested'), { then: `LISTEN=${listen}; whereItAnswers` }).stdout;
+
+      expect(where("''")).toContain('http://localhost:7373 - loopback');
+      expect(where('10.0.0.5')).toContain('http://10.0.0.5:7373 - on the network, over plain HTTP');
+      expect(where('0.0.0.0')).toContain('can be read by anybody on that network');
+      expect(where('0.0.0.0')).not.toContain('http://0.0.0.0');
+    });
+  });
+
   describe('what it tells the supervisor to run', () => {
     const rendered = (platform: 'Darwin' | 'Linux', into: string, call: string): Answer =>
       asked(aTreeWith('nested'), {

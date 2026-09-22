@@ -108,6 +108,52 @@ pageOption() {
 PLIST="/Library/LaunchDaemons/$LABEL.plist"
 UNIT=/etc/systemd/system/3d-print-shop.service
 
+# The shop's own default port. Said here only so the closing message can say where it answers.
+PORT=7373
+
+# AIDEV-NOTE: empty unless somebody said, which leaves the shop on its own default - loopback, because a
+# token or a password sent to it travels in the clear. Said with `--listen`, it goes into the service
+# as `serve --listen`, and it is KEPT by a later install that does not say it again: re-running this
+# is meant to be safe, and quietly putting a shop the workshop reaches back onto loopback is not.
+LISTEN=''
+
+listenArguments() {
+  [ -n "$LISTEN" ] || return 0
+  printf '    <string>--listen</string>\n    <string>%s</string>\n' "$LISTEN"
+}
+
+listenOption() {
+  [ -n "$LISTEN" ] || return 0
+  printf ' --listen %s' "$LISTEN"
+}
+
+# What the service already installed was told to listen on, from whichever file this platform writes.
+listenedOnBefore() {
+  if [ "$PLATFORM" = macos ]; then
+    [ -f "$PLIST" ] || return 0
+    awk '/<string>--listen<\/string>/ { getline; gsub(/.*<string>|<\/string>.*/, ""); print; exit }' "$PLIST"
+  else
+    [ -f "$UNIT" ] || return 0
+    sed -n 's/^ExecStart=.* --listen \([^ ]*\).*/\1/p' "$UNIT" | head -1
+  fi
+}
+
+# Where a person reaches it, and - when that is past loopback - what that costs, said while it can
+# still be undone.
+whereItAnswers() {
+  case "${LISTEN:-127.0.0.1}" in
+    127.0.0.1 | localhost | ::1)
+      printf 'on http://localhost:%s - loopback, which is where a token travelling in the clear belongs.' "$PORT"
+      ;;
+    *)
+      local host=$LISTEN
+      case "$host" in 0.0.0.0 | ::) host=$(hostname) ;; esac
+      printf 'on http://%s:%s - on the network, over plain HTTP. A password typed into the page and a\n' "$host" "$PORT"
+      printf "client's token can be read by anybody on that network who is looking."
+      ;;
+  esac
+}
+
 case "$(uname -s)" in
   Darwin) PLATFORM=macos; SHOP_USER=_printshop; ROOT_GROUP=wheel ;;
   Linux) PLATFORM=linux; SHOP_USER=printshop; ROOT_GROUP=root ;;
@@ -120,7 +166,7 @@ refuse() { printf '%s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<USAGE
-usage: sudo $0 [install|update|uninstall]
+usage: sudo $0 [install|update|uninstall] [--listen <address>]
 
 install    make the data and credentials directories, the user that owns them, the copy of the
            shop the service runs, and the service itself
@@ -128,6 +174,9 @@ update     copy a fresh build over the installed one and restart - what to run a
            and only from a checkout: an installed package is updated by installing it again
 uninstall  stop the service and remove it - the data, the credentials and the user are left,
            because they hold work and secrets this script did not create
+
+--listen   the address the shop answers on - 0.0.0.0 for every one this machine has. Loopback
+           unless said, and an install that does not say keeps what the last one said
 USAGE
 }
 
@@ -375,7 +424,7 @@ wrotePlist() {
     <string>$node</string>
     <string>$SERVER</string>
     <string>serve</string>
-$(pageArguments)  </array>
+$(pageArguments)$(listenArguments)  </array>
   <key>UserName</key><string>$SHOP_USER</string>
   <key>GroupName</key><string>$SHOP_GROUP</string>
   <key>WorkingDirectory</key><string>$STATE</string>
@@ -426,7 +475,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=$node $SERVER serve$(pageOption)
+ExecStart=$node $SERVER serve$(pageOption)$(listenOption)
 ExecReload=/bin/kill -HUP \$MAINPID
 User=$SHOP_USER
 Group=$SHOP_GROUP
@@ -604,6 +653,11 @@ install() {
   wanted=$(requiredNode)
   node=$(findNode "$wanted")
 
+  if [ -z "$LISTEN" ]; then
+    LISTEN=$(listenedOnBefore)
+    [ -z "$LISTEN" ] || say "keeping --listen $LISTEN, which the service already installed was given"
+  fi
+
   say 'the user it runs as:'
   if [ "$PLATFORM" = macos ]; then madeServiceUserOnMacos; else madeServiceUserOnLinux; fi
 
@@ -638,8 +692,7 @@ install() {
 
   cat <<RUNNING
 
-Installed and running, on http://localhost:7373 - loopback, which is where a token travelling in
-the clear belongs.
+Installed and running, $(whereItAnswers)
 
   its log        $(reading)
   a new build    $(if [ "$MODE" = package ]; then printf 'sudo npm i -g @3d-print-shop/server @3d-print-shop/ui'; else printf 'sudo %s update' "$0"; fi)
@@ -703,13 +756,39 @@ KEPT
 # `$0` is this file and `main` runs as it always did. Shadow `uname` before sourcing and the other
 # platform's decisions are readable from this one, which is the only way the half that CI never runs
 # on is testable at all.
+# What was asked for: a command, which is `install` when none is named, and the options after it.
+readArguments() {
+  COMMAND=install
+  case "${1:-}" in
+    install | --install | update | --update | uninstall | --uninstall) COMMAND=${1#--}; shift ;;
+    -h | --help | help) COMMAND=help; shift ;;
+  esac
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --listen)
+        [ -n "${2:-}" ] || refuse '--listen needs an address - 0.0.0.0 for every one this machine has'
+        LISTEN=$2
+        shift 2
+        ;;
+      --listen=*)
+        LISTEN=${1#--listen=}
+        [ -n "$LISTEN" ] || refuse '--listen needs an address - 0.0.0.0 for every one this machine has'
+        shift
+        ;;
+      *) usage >&2; exit 1 ;;
+    esac
+  done
+}
+
 main() {
-case "${1:-install}" in
-  install | --install) install ;;
-  update | --update) update ;;
-  uninstall | --uninstall) uninstall ;;
-  -h | --help | help) usage ;;
-  *) usage >&2; exit 1 ;;
+readArguments "$@"
+
+case "$COMMAND" in
+  install) install ;;
+  update) update ;;
+  uninstall) uninstall ;;
+  help) usage ;;
 esac
 }
 

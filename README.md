@@ -103,6 +103,19 @@ install that stopped short to ask for its first admin looked like an install tha
 Run by hand the script owns its terminal, so it can ask and be heard, and nothing is copied because
 npm has already put the code where the service can read it.
 
+**It answers on loopback unless told otherwise**, because a password typed into the page and a
+client's token both travel as plain HTTP. For a shop other machines reach - a Pi in the workshop -
+say where:
+
+```
+sudo 3d-print-shop-install --listen 0.0.0.0
+```
+
+That goes into the service as `serve --listen`, and an install that does not say it again keeps it,
+so re-running the install never quietly closes a shop the workshop was using. `--listen 127.0.0.1`
+puts it back. Past loopback, anybody on that network who is looking can read those passwords and
+tokens; the answer to that is a TLS proxy in front, with the shop left on loopback behind it.
+
 **The page is named, not depended on.** The server does not depend on `@3d-print-shop/ui`: the page
 is a client of the shop, and the dependency runs one way. Named together they land side by side in
 npm's global directory, which is where the setup script looks for the page, and it refuses without
