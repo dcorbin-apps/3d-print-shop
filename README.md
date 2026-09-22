@@ -138,11 +138,17 @@ means a `git checkout` of another branch is not a live change to a running servi
 yarn build && sudo packages/server/install.sh update
 ```
 
-**The first admin is yours to make**, because the token it answers with exists nowhere else. The
-install prints the exact command; it runs `init` as the service user, and then the token goes in
-`~/.config/3d-print-shop/token` (0600) where the client looks for it. Each printer's API key goes in
-`/etc/3d-print-shop/printer-keys.json`, 0600 and owned by the service user. Then run the install
-again to start it.
+**The first admin is made during the install.** It asks what to call them, and `init` - run as the
+service user - asks for their password twice: at least 12 characters, which is the only rule. A
+password it refuses is asked for again. The token it prints exists nowhere else, so it goes in
+`~/.config/3d-print-shop/token` (0600) of whoever runs a client, on whichever machine that is. Run
+where there is no terminal, the install stops short instead and prints the commands to finish by
+hand.
+
+**Printers come afterwards**, from the page, which takes each one together with the key it is
+reached by. `3d-print-shop printer add` takes no key, on purpose - a key on a command line is in
+shell history and in `ps` - so a printer added that way gets its key in
+`/etc/3d-print-shop/printer-keys.json`, 0600 and owned by the service user, followed by a reload.
 
 Day to day:
 

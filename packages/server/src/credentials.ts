@@ -264,7 +264,7 @@ function requireAName(name: string): void {
 // AIDEV-NOTE: a length and nothing else. Everything else a rule could demand - a digit, a symbol, a
 // capital - is known to push people towards `Password1!` and towards writing it down, and this file
 // is read by one shop in one workshop. Length is the thing that actually costs an attacker.
-const SHORTEST_PASSWORD = 12;
+export const SHORTEST_PASSWORD = 12;
 
 function requireAPassword(password: string): void {
   if (password.length < SHORTEST_PASSWORD) {

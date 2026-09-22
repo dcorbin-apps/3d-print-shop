@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { TOKEN_ENV, defaultTokenFile } from '@3d-print-shop/client';
+import { TOKEN_ENV, TOKEN_FILE_FOR_ANYONE } from '@3d-print-shop/client';
 import { CALLERS_FILE, writeFirstCaller } from './credentials.js';
 
 // AIDEV-NOTE: the one operator command that is NOT a client of a running shop, and cannot be: every
@@ -24,6 +24,6 @@ export async function initialiseShop(etc: string, name: string, password: string
     '',
     `  ${token}`,
     '',
-    `a client looks for it in ${TOKEN_ENV}, or in ${defaultTokenFile()}`,
+    `a client looks for it in ${TOKEN_ENV}, or in ${TOKEN_FILE_FOR_ANYONE} of whoever runs it`,
   ];
 }

@@ -12,11 +12,20 @@ export class UnusableToken extends Error {}
 // belongs to whoever is calling rather than to the machine, and the caller is often not on the same
 // machine at all. The environment suits a program; the file suits a person's shell, where an
 // environment variable would have to be set by something.
+const WITHIN_CONFIG = path.join('3d-print-shop', 'token');
+
 export function defaultTokenFile(): string {
   const configured = process.env.XDG_CONFIG_HOME;
 
-  return path.join(configured ?? path.join(homedir(), '.config'), '3d-print-shop', 'token');
+  return path.join(configured ?? path.join(homedir(), '.config'), WITHIN_CONFIG);
 }
+
+// AIDEV-NOTE: said for a PERSON rather than resolved for this process, because the commands that
+// issue a token run as the shop's service user - whose home is nobody's - and the token is used by
+// whoever runs a client, very often on another machine. `defaultTokenFile()` there named
+// /nonexistent/.config/..., which is where the token must not go.
+/** Where a client looks for its token, in the terms of whoever will run it rather than of this process. */
+export const TOKEN_FILE_FOR_ANYONE = path.join('~', '.config', WITHIN_CONFIG);
 
 /**
  * The token to present, or undefined when there is none to present - which every shop refuses,

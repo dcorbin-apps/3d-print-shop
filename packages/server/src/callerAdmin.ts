@@ -1,6 +1,6 @@
-import { TOKEN_ENV, defaultTokenFile } from '@3d-print-shop/client';
+import { TOKEN_ENV, TOKEN_FILE_FOR_ANYONE } from '@3d-print-shop/client';
 import type { Role } from '@3d-print-shop/client';
-import { addCaller, callersIn, issueToken, migrateCallers, setPassword } from './credentials.js';
+import { SHORTEST_PASSWORD, addCaller, callersIn, issueToken, migrateCallers, setPassword } from './credentials.js';
 import { askSecretlyTwice } from './prompt.js';
 import type { Asked } from './prompt.js';
 import type { Writable } from 'node:stream';
@@ -19,8 +19,16 @@ export type AskForAPassword = () => Promise<string>;
 const AND_SIGNAL =
   'the shop re-reads this on SIGHUP - `kill -HUP <pid>`, `systemctl reload 3d-print-shop`, or `launchctl kill HUP system/com.dcorbin.3d-print-shop`';
 
+// AIDEV-NOTE: the rule is said in the question, because it is the only rule there is and finding it
+// out from a refusal costs somebody two blind passwords typed with nothing echoed. Taken from the
+// constant the refusal uses, so the two cannot come to disagree.
 /** A password, asked for twice, because nobody can see what they typed the first time. */
-export async function askForANewPassword(asking = 'password: ', again = 'and again: ', input?: Asked, output?: Writable): Promise<string> {
+export async function askForANewPassword(
+  asking = `password (at least ${SHORTEST_PASSWORD} characters): `,
+  again = 'and again: ',
+  input?: Asked,
+  output?: Writable,
+): Promise<string> {
   const [said, confirmed] = await askSecretlyTwice(asking, again, input, output);
 
   if (said !== confirmed) throw new Error('those are not the same password, and nothing was changed');
@@ -65,7 +73,7 @@ export async function giveAToken(etc: string, id: string): Promise<string[]> {
     '',
     `  ${token}`,
     '',
-    `a client looks for it in ${TOKEN_ENV}, or in ${defaultTokenFile()}`,
+    `a client looks for it in ${TOKEN_ENV}, or in ${TOKEN_FILE_FOR_ANYONE} of whoever runs it`,
     '',
     AND_SIGNAL,
   ];

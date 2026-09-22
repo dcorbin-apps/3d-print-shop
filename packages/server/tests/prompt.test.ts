@@ -1,29 +1,12 @@
 import { describe, it, expect } from '@jest/globals';
 import { PassThrough } from 'node:stream';
 import { askSecretly, askSecretlyTwice } from '../src/prompt';
+import { aTerminal, whatIsWritten } from './aTerminal';
 
 // AIDEV-NOTE: a password is never an argument, because argv is `ps` and shell history - so it is
 // asked for. What is proved here is the two paths that gives: a terminal, where the echo has to be
 // off, and everything else, where a line is read so that a script or a test can drive it.
 describe('asking for something nobody should read over a shoulder', () => {
-  function aTerminal(): PassThrough & { isTTY?: boolean; setRawMode?: (raw: boolean) => void } {
-    const input = new PassThrough() as PassThrough & { isTTY?: boolean; setRawMode?: (raw: boolean) => void; raw?: boolean };
-    input.isTTY = true;
-    input.setRawMode = (raw: boolean) => {
-      input.raw = raw;
-    };
-
-    return input;
-  }
-
-  function whatIsWritten(): { output: PassThrough; said: () => string } {
-    const output = new PassThrough();
-    let written = '';
-    output.on('data', (chunk: Buffer) => (written += chunk.toString()));
-
-    return { output, said: () => written };
-  }
-
   describe('at a terminal', () => {
     it('answers with what was typed, up to the return', async () => {
       const input = aTerminal();

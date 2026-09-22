@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { TOKEN_ENV, defaultTokenFile } from '@3d-print-shop/client';
+import { TOKEN_ENV } from '@3d-print-shop/client';
 import { CALLERS_FILE, callersIn } from '../src/credentials';
 import { initialiseShop } from '../src/shopAdmin';
 
@@ -44,12 +44,14 @@ describe('setting a fresh machine up', () => {
   }, 10_000);
 
   // The token is written nowhere else and nothing shows it again, so where to put it is the half of
-  // this an operator has to be told while they can still act on it.
-  it('says where a client will look for that token', async () => {
+  // this an operator has to be told while they can still act on it. Said for whoever runs a CLIENT:
+  // this is run as the service user, whose own home is /nonexistent.
+  it('says where a client will look for that token, as whoever runs the client', async () => {
     const lines = await said('dave');
 
     expect(lines).toContain(TOKEN_ENV);
-    expect(lines).toContain(defaultTokenFile());
+    expect(lines).toContain('~/.config/3d-print-shop/token of whoever runs it');
+    expect(lines).not.toContain(homedir());
   }, 10_000);
 
   // An admin: there is nothing an operator can do to a fresh shop as a user - not add a printer,

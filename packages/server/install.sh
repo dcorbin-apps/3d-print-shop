@@ -509,11 +509,25 @@ atATerminal() { [ -t 0 ]; }
 # by root is one the shop cannot read. `init` asks for the password itself and says the token once,
 # so neither ever passes through this script, which is what keeps the rule at the top of this file
 # true: nothing here writes a credential.
+FIRST_ADMIN_ATTEMPTS=3
+
 madeTheFirstAdmin() {
-  local node=$1 name='' fallback=${SUDO_USER:-admin}
+  local node=$1 name='' fallback=${SUDO_USER:-admin} attempt
 
   read -r -p "what to call the first admin, and own every job of theirs [$fallback]: " name || true
-  sudo -u "$SHOP_USER" "$node" "$SERVER" init "${name:-$fallback}" || return 1
+
+  # AIDEV-NOTE: asked AGAIN rather than given up on, because what `init` refuses is what was typed -
+  # two passwords that differ, or one under its length - and it has said which, one line up. Giving
+  # up printed a page of manual steps that buried that line, for a mistake a second try fixes.
+  # Bounded, because ctrl-C at init's prompt is a refusal too - raw mode reads it as a character -
+  # and somebody who meant to stop should not be asked for ever.
+  for attempt in $(seq 1 "$FIRST_ADMIN_ATTEMPTS"); do
+    if sudo -u "$SHOP_USER" "$node" "$SERVER" init "${name:-$fallback}"; then break; fi
+
+    [ "$attempt" -lt "$FIRST_ADMIN_ATTEMPTS" ] || return 1
+    say ''
+    say 'That was not taken - the reason is just above. Once more:'
+  done
 
   # AIDEV-NOTE: said here rather than left to the running message, because the machine that calls
   # this shop need not be the machine it is installed on - so the token is put somewhere by hand,
@@ -546,8 +560,7 @@ Then keep that token where the client looks for it, as whoever will be running i
   printf %s '<the token>' > ~/.config/3d-print-shop/token
   chmod 600 ~/.config/3d-print-shop/token
 
-Each printer's API key goes in $ETC/printer-keys.json as {"mk4": "..."}, 0600 and owned by
-$SHOP_USER. Then run this again to start it:
+Then run this again to start it:
 
   sudo $(asTyped install)
 NEXT
@@ -574,7 +587,9 @@ gotItsFirstAdmin() {
 
   if madeTheFirstAdmin "$node"; then return 0; fi
 
-  whatIsLeftToDo "$node"
+  say ''
+  say 'No admin was made, so the shop was not started. Everything else is in place - run this again'
+  say "when you are ready, and it will ask again: sudo $(asTyped install)"
   return 1
 }
 

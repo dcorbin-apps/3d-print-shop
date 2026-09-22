@@ -6,6 +6,8 @@ import { PassThrough } from 'node:stream';
 import { CALLERS_FILE, callersIn } from '../src/credentials';
 import { addSomebody, askForANewPassword, changePassword, giveAToken, listCallers, migrateTheCallers } from '../src/callerAdmin';
 import { digestOf } from '../src/secrets';
+import { aTerminal, whatIsWritten } from './aTerminal';
+import { homedir } from 'node:os';
 
 // AIDEV-NOTE: nothing is mocked but the one thing that cannot be real in a test - a person typing a
 // password - and that arrives as a collaborator rather than as a mocked module, which is how
@@ -53,6 +55,21 @@ describe('the operator saying who this shop answers', () => {
   describe('asking for a new password', () => {
     it('answers with it when it was typed the same twice', async () => {
       await expect(askForANewPassword('one: ', 'two: ', typedTwice('the same thing'), new PassThrough())).resolves.toBe('the same thing');
+    });
+
+    // AIDEV-NOTE: the one rule, said before it can be broken. Found out from a refusal instead, it
+    // costs two blind passwords typed with nothing echoed - which is what a first install cost.
+    it('says the one rule a password has in the question, rather than only in the refusal', async () => {
+      const input = aTerminal();
+      const { output, said } = whatIsWritten();
+
+      const asked = askForANewPassword(undefined, undefined, input, output);
+      input.write(`${PASSWORD}\r`);
+      while (!said().includes('and again')) await new Promise((next) => setImmediate(next));
+      input.write(`${PASSWORD}\r`);
+      await asked;
+
+      expect(said()).toContain('password (at least 12 characters): ');
     });
 
     // Nothing is changed rather than the first one being taken: somebody who mistyped the second
@@ -163,8 +180,15 @@ describe('the operator saying who this shop answers', () => {
       expect(callers.presenting(second)?.id).toBe('slicer');
     });
 
-    it('says where a client looks for it', async () => {
-      expect((await giveAToken(etc, 'ada')).join('\n')).toContain('PRINT_SHOP_TOKEN');
+    // AIDEV-NOTE: in the terms of whoever runs the CLIENT, and not of this process. This is run as the
+    // shop's service user, whose home is nobody's, so the file it would have resolved for itself is
+    // /nonexistent/... - the one place the token must not go.
+    it('says where a client looks for it, as whoever runs the client and not as this process', async () => {
+      const said = (await giveAToken(etc, 'ada')).join('\n');
+
+      expect(said).toContain('PRINT_SHOP_TOKEN');
+      expect(said).toContain('~/.config/3d-print-shop/token of whoever runs it');
+      expect(said).not.toContain(homedir());
     });
 
     it('refuses somebody this shop does not answer', async () => {

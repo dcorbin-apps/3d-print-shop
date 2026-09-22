@@ -270,15 +270,58 @@ describe('what the installer decides before it does anything', () => {
       expect(answer.stdout).toContain('stopped');
     });
 
-    it('stops rather than starting a shop whose admin was not made after all', () => {
+    // AIDEV-NOTE: a key reaches the shop with its printer, from the page, and the running shop writes
+    // the file. Telling somebody finishing an install to write it by hand was left over from before
+    // the API took keys, and contradicted the file having one writer.
+    it('does not send anybody to write a printer key by hand to finish installing', () => {
+      const tree = aTreeWith('nested');
+
+      expect(asked(tree, { then: `ETC=${anEmptyEtc(tree)}; ${noTerminal}; gotItsFirstAdmin /usr/bin/node` }).stdout).not.toContain(
+        'printer-keys',
+      );
+    });
+
+    // `init` counted in a file, because each call to the shadow is a subshell's and a variable would not
+    // survive it. Refuses this many times, then takes what it is given.
+    const refusing = (times: number): string =>
+      `COUNT=$(mktemp); echo 0 > "$COUNT"; sudo() { local n; n=$(cat "$COUNT"); echo $((n + 1)) > "$COUNT"; echo "sudo $*"; [ "$n" -ge ${times} ]; }`;
+
+    // AIDEV-NOTE: what `init` refuses is what was TYPED - two passwords that differ, or one too short -
+    // and it has said which, one line up. Giving up printed a page of manual steps that buried that
+    // line, which is what the first real install on a Pi ran into.
+    it('asks again when what was typed is refused, and starts once it is taken', () => {
       const tree = aTreeWith('nested');
       const answer = asked(tree, {
-        then: `ETC=${anEmptyEtc(tree)}; ${aTerminal}; sudo() { return 1; }; gotItsFirstAdmin /usr/bin/node || echo stopped`,
+        then: `ETC=${anEmptyEtc(tree)}; ${aTerminal}; ${refusing(1)}; gotItsFirstAdmin /usr/bin/node && echo start`,
       });
 
-      expect(answer.stdout).toContain('Installed, and not started');
+      expect(answer.stdout).toContain('the reason is just above. Once more:');
+      expect(answer.stdout.match(/ init /g)).toHaveLength(2);
+      expect(answer.stdout).toContain('start');
+    });
+
+    // Bounded, because ctrl-C at init's prompt is a refusal too, and somebody who meant to stop should
+    // not be asked for ever.
+    it('stops asking after three, and starts nothing', () => {
+      const tree = aTreeWith('nested');
+      const answer = asked(tree, {
+        then: `ETC=${anEmptyEtc(tree)}; ${aTerminal}; ${refusing(99)}; gotItsFirstAdmin /usr/bin/node || echo stopped`,
+      });
+
+      expect(answer.stdout.match(/ init /g)).toHaveLength(3);
       expect(answer.stdout).toContain('stopped');
       expect(answer.stdout).not.toContain('That token is the only copy');
+    });
+
+    // The rest is already in place, so what is left is to be asked again - not to be handed the
+    // commands for doing by hand what running this again would do.
+    it('says to run it again when it gives up, rather than setting out the steps to do by hand', () => {
+      const tree = aTreeWith('nested');
+      const answer = asked(tree, { then: `ETC=${anEmptyEtc(tree)}; ${aTerminal}; ${refusing(99)}; gotItsFirstAdmin /usr/bin/node` });
+
+      expect(answer.stdout).toContain('No admin was made, so the shop was not started');
+      expect(answer.stdout).toContain('sudo 3d-print-shop-install install');
+      expect(answer.stdout).not.toContain('Installed, and not started');
     });
 
     // AIDEV-NOTE: `install` is not reachable by sourcing on its own - every step of it wants root or
