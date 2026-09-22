@@ -585,6 +585,13 @@ Remove them yourself if that is what you mean.
 KEPT
 }
 
+# AIDEV-NOTE: wrapped and guarded so that SOURCING this file decides everything without doing
+# anything - which is the seam its tests reach it through. Sourced, the mode, the paths, the platform
+# and the node search have all been worked out and not one of them has written to a disk. Executed,
+# `$0` is this file and `main` runs as it always did. Shadow `uname` before sourcing and the other
+# platform's decisions are readable from this one, which is the only way the half that CI never runs
+# on is testable at all.
+main() {
 case "${1:-install}" in
   # AIDEV-NOTE: what npm's postinstall calls, and it is a separate word from `install` because yarn
   # runs it on every install in the CHECKOUT too, where nobody asked for a daemon and there is
@@ -609,3 +616,8 @@ itself is one more command: sudo 3d-print-shop-install"
   -h | --help | help) usage ;;
   *) usage >&2; exit 1 ;;
 esac
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi

@@ -19,7 +19,7 @@
   "scripts": {
     "postinstall": "./install.sh from-npm",
     "build": "echo \"nothing to build - this package is a shell script\" && exit 0",
-    "typecheck": "echo \"no typescript here\" && exit 0",
+    "typecheck": "tsc --noEmit -p tests/tsconfig.json",
     "test": "echo \"tests run from root\" && exit 0"
   },
   "dependencies": {
