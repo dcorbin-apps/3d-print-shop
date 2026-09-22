@@ -1,5 +1,5 @@
 import { expect } from '@jest/globals';
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync, copyFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -94,20 +94,17 @@ export interface Asked {
 // when `$0` is not the script. Everything under test has been decided by the time `then` runs.
 // `uname` is shadowed as a FUNCTION, which a command substitution inherits, so the platform this is
 // running on decides nothing here - that is what lets the macOS half be read from Linux.
+// AIDEV-NOTE: `spawnSync` and not `execFileSync`, because what is written to stderr matters even
+// when the command SUCCEEDS - a step that works while complaining into a log is still wrong, and
+// execFileSync hands stderr back only on a throw.
 export function asked({ here }: Fixture, { platform, env, then }: Asked): Answer {
   const preamble = platform === undefined ? '' : `uname() { [ "$1" = "-s" ] && echo ${platform} || command uname "$@"; };\n`;
 
-  try {
-    const stdout = execFileSync('bash', ['-c', `${preamble}source "${here}/install.sh"\n${then}`], {
-      encoding: 'utf-8',
-      env: { ...process.env, ...env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+  const ran = spawnSync('bash', ['-c', `${preamble}source "${here}/install.sh"\n${then}`], {
+    encoding: 'utf-8',
+    env: { ...process.env, ...env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 
-    return { stdout, stderr: '', status: 0 };
-  } catch (thrown) {
-    const failure = thrown as { stdout?: string; stderr?: string; status?: number };
-
-    return { stdout: failure.stdout ?? '', stderr: failure.stderr ?? '', status: failure.status ?? -1 };
-  }
+  return { stdout: ran.stdout ?? '', stderr: ran.stderr ?? '', status: ran.status ?? -1 };
 }

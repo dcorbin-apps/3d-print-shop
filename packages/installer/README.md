@@ -89,8 +89,11 @@ So a first install makes one. It asks what to call them, defaulting to whoever r
 hands off to `init` as the service user - which asks for the password and says the token once. Then
 it starts.
 
-Run where there is no terminal to ask at - npm's `postinstall` owns stdin, and a prompt there waits
-on an answer nobody can give - it stops short instead and prints the two commands to run by hand.
+That works under `npm install -g` too. npm hides a dependency's postinstall output and hands it a
+pipe for stdin, and this package is never npm's root package - so the postinstall takes the
+controlling terminal directly, which both makes what it says visible and makes what it asks
+answerable. Where there is no controlling terminal at all - CI, a container build - it takes nothing,
+stops short instead, and prints the two commands to run by hand.
 
 The token is never written anywhere by the installer. It is shown once, and the machine that calls
 this shop need not be the one it is installed on, so placing it in `~/.config/3d-print-shop/token`

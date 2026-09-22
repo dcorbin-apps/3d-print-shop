@@ -459,6 +459,22 @@ reading() {
 
 # ---------------------------------------------------------------------------- its first admin
 
+# AIDEV-NOTE: npm hides a DEPENDENCY's postinstall output and hands it a pipe for stdin - and this
+# package is never the root one, so that is every install of it. Everything said from in there is
+# invisible and nothing asked can be answered, which is how an install that stopped short to ask for
+# its first admin looked, from the outside, like an install that did nothing at all. The controlling
+# terminal is untouched by any of that and can simply be taken, and taking it fixes both halves at
+# once: what is said arrives, and what is asked can be answered.
+#
+# Measured against npm 10 on Linux, where a dependency's postinstall has `[ -t 0 ]` false, its stdout
+# swallowed, and /dev/tty open to it. Where there is no controlling terminal at all - CI, a container
+# build, a machine provisioning itself - nothing is taken and `atATerminal` reads that correctly.
+tookTheTerminal() {
+  if ! (exec 3<>/dev/tty) 2>/dev/null; then return 1; fi
+
+  exec </dev/tty >/dev/tty 2>&1
+}
+
 # AIDEV-NOTE: a function rather than `[ -t 0 ]` written where it is asked, because there are two
 # callers of `install` and only one of them has a person at a keyboard. npm's postinstall owns
 # stdin, and `init` asks for a password - so asking there is a prompt nobody can see, waiting on an
@@ -659,6 +675,10 @@ case "${1:-install}" in
   # to count on even under sudo.
   from-npm)
     [ "$MODE" = package ] || exit 0
+
+    # Before anything is said, because npm is holding the pen until this is done.
+    tookTheTerminal || true
+
     if [ "$(id -u)" != 0 ]; then
       say "3d-print-shop is unpacked. It makes a system user, a data directory and a daemon, so the install
 itself is one more command: sudo 3d-print-shop-install"

@@ -153,6 +153,37 @@ describe('what the installer decides before it does anything', () => {
       expect(answer.status).toBe(0);
       expect(answer.stdout.trim()).toBe('');
     });
+
+    // AIDEV-NOTE: this package is never npm's ROOT package, and npm hides a dependency's postinstall
+    // output while handing it a pipe for stdin. So the terminal is taken before a word is said -
+    // otherwise the install says nothing anybody can read and asks nothing anybody can answer, which
+    // is exactly how a shop that stopped short of its first admin looked like a shop that installed
+    // and simply did not run.
+    it('takes the controlling terminal before it says anything, because npm is holding the pen', () => {
+      const answer = asked(aTreeWith('nested'), { then: 'tookTheTerminal() { echo TOOK; }; main from-npm' });
+
+      expect(answer.stdout).toContain('TOOK');
+      expect(answer.stdout.indexOf('TOOK')).toBeLessThan(answer.stdout.indexOf('3d-print-shop is unpacked'));
+    });
+
+    // npm fails the whole install on a non-zero postinstall, so no terminal is a thing to carry on past.
+    it('carries on where there is no terminal to take, rather than failing the install over it', () => {
+      const answer = asked(aTreeWith('nested'), { then: 'tookTheTerminal() { return 1; }; main from-npm' });
+
+      expect(answer.status).toBe(0);
+      expect(answer.stdout).toContain('sudo 3d-print-shop-install');
+    });
+
+    // AIDEV-NOTE: the terminal is LOOKED FOR before it is taken, and this is what needs that. Taking
+    // one that is not there works out the same way - the redirect fails and nothing is taken - but it
+    // fails loudly, and the log it complains into is the npm install of somebody who did nothing
+    // wrong. Asked for rather than attempted, so a machine with no terminal installs in silence.
+    it('reports no terminal when there is no controlling one to open, and says nothing about it', () => {
+      const answer = asked(aTreeWith('nested'), { then: 'tookTheTerminal && echo took || echo none' });
+
+      expect(answer.stdout.trim()).toBe('none');
+      expect(answer.stderr).toBe('');
+    });
   });
 
   // AIDEV-NOTE: (UT) a shop with no callers refuses to start, so the installer either makes one or
