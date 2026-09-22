@@ -33,6 +33,8 @@ export interface Asking {
   body?: Buffer;
   contentType?: string;
   headers?: Record<string, string>;
+  /** The address the request arrived FROM - what a socket calls its remote address. None unless said. */
+  from?: string;
 }
 
 /** The host `drive` says a request arrived at, and the origin a page this shop served would name. */
@@ -44,7 +46,10 @@ export function drive(api: Express) {
     const payload = asking.json === undefined ? asking.body : Buffer.from(JSON.stringify(asking.json));
     const contentType = asking.contentType ?? (asking.json === undefined ? undefined : 'application/json');
 
-    const request = new IncomingMessage(new Socket());
+    const socket = new Socket();
+    if (asking.from !== undefined) Object.defineProperty(socket, 'remoteAddress', { value: asking.from });
+
+    const request = new IncomingMessage(socket);
     request.method = method;
     request.url = url;
     request.headers = {

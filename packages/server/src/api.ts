@@ -329,6 +329,15 @@ declare module 'express-serve-static-core' {
 export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimits = {}): Express {
   const api = express();
 
+  // AIDEV-NOTE: a proxy on THIS machine is believed about the browser behind it, and nobody else is.
+  // The shop sits behind one when it is reached over TLS - nginx terminating it and passing requests
+  // to loopback - and then every request arrives as plain http from 127.0.0.1: a session cookie was
+  // never marked Secure, a login was logged as coming from the proxy, and the borrowed protocol
+  // handed a file's URL back as http:// to a client that came over https. Loopback only, because a
+  // shop listening on the network with nothing in front of it must not take a stranger's word for
+  // what protocol they used.
+  api.set('trust proxy', 'loopback');
+
   // AIDEV-NOTE: on everything the shop answers, set here rather than per route so that a route added
   // later cannot forget one. `nosniff` is what stops a browser deciding for itself that a body is a
   // document: what a CLIENT sent comes back in those bodies - a job's name, its metadata, a filament -

@@ -116,6 +116,22 @@ so re-running the install never quietly closes a shop the workshop was using. `-
 puts it back. Past loopback, anybody on that network who is looking can read those passwords and
 tokens; the answer to that is a TLS proxy in front, with the shop left on loopback behind it.
 
+**Behind a TLS proxy**, three settings are not optional. With nginx:
+
+```nginx
+client_max_body_size 128m;           # the shop's own cap on a gcode; nginx's default is 1m
+location / {
+    proxy_pass http://127.0.0.1:7373;
+    proxy_set_header Host $host;     # a session is refused when its Origin is not the shop's Host
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+Without the real `Host`, every login from the page is refused as coming from somewhere else. The
+forwarded headers are believed only from a proxy on the same machine: they are what marks the
+session cookie `Secure` and what the log records as where a login came from.
+
 **The page is named, not depended on.** The server does not depend on `@3d-print-shop/ui`: the page
 is a client of the shop, and the dependency runs one way. Named together they land side by side in
 npm's global directory, which is where the setup script looks for the page, and it refuses without

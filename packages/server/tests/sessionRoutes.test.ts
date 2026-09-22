@@ -80,6 +80,27 @@ describe('the sessions, over the shop routes', () => {
       expect(said).not.toContain('Secure');
     }, 15_000);
 
+    // AIDEV-NOTE: behind a TLS proxy on the same machine - nginx on odin - every request reaches the
+    // shop as plain http from loopback, so the cookie was never Secure however the browser came. The
+    // proxy says what the browser used, and a proxy on THIS machine is believed; one anywhere else is
+    // not, or a shop listening on the network would take a stranger's word for it.
+    describe('behind a proxy that says the browser came over TLS', () => {
+      const throughAProxy = (from: string): ReturnType<typeof asked> =>
+        asked('POST', '/sessions', {
+          json: { id: 'dave', password: PASSWORD },
+          headers: { origin: HERE, 'x-forwarded-proto': 'https' },
+          from,
+        });
+
+      it('marks the session Secure when that proxy is on this machine', async () => {
+        expect((await throughAProxy('127.0.0.1')).header('set-cookie')).toContain('Secure');
+      }, 15_000);
+
+      it('takes the word of nothing on the network for it', async () => {
+        expect((await throughAProxy('192.168.1.50')).header('set-cookie')).not.toContain('Secure');
+      }, 15_000);
+    });
+
     // AIDEV-NOTE: the companion to the cookie's SameSite above, and the reason one does not cover the
     // other. SameSite stops another site SENDING this cookie; it says nothing about a Set-Cookie
     // being STORED, so without this a page elsewhere could post a login of its own choosing and
