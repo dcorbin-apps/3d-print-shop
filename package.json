@@ -10,7 +10,7 @@
     "shop": "tsx packages/server/src/main.ts",
     "ui": "yarn workspace @3d-print-shop/ui dev",
     "build": "yarn workspaces foreach -A -p --topological-dev run build",
-    "typecheck": "yarn workspaces foreach -A -p --topological-dev run typecheck",
+    "typecheck": "yarn workspaces foreach -A -p --topological-dev run typecheck && tsc --noEmit -p scripts/tests/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
