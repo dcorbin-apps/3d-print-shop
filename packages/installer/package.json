@@ -1,6 +1,6 @@
 {
   "name": "@3d-print-shop/installer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Installs 3d-print-shop as a service: the user that owns its work, the directories it keeps it in, and launchd or systemd to run it",
   "author": "dcorbin",
