@@ -2,6 +2,7 @@ import type { Job, RegisteredPrinter, Verdict } from '@3d-print-shop/client/brow
 import { asPrintingTime, byFilament } from '../byFilament.js';
 import { JobControls } from './JobControls.js';
 import { JobName } from './JobName.js';
+import { JobPicture } from './JobPicture.js';
 import type { JobActions } from './JobControls.js';
 import { Verdicts } from './Verdicts.js';
 
@@ -39,6 +40,7 @@ export function JobsByFilament({ jobs, totalJobs, selected, onVerdict, actions }
           <ul>
             {group.jobs.map((job) => (
               <li key={job.id} className={`job ${job.state}${job.heldBack === undefined ? '' : ' held'}`}>
+                <JobPicture job={job} />
                 <JobName job={job} onRename={actions?.onRename} />
                 <span className="state">{whereItIs(job)}</span>
                 {actions !== undefined && <JobControls job={job} actions={actions} />}

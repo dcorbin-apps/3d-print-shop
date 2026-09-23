@@ -62,6 +62,7 @@ describe('minding the printers', () => {
     jobs: jest.fn<Shop['jobs']>(),
     waitingOn: jest.fn<Shop['waitingOn']>(),
     job: jest.fn<Shop['job']>(),
+    picture: jest.fn<Shop['picture']>(),
     submit: jest.fn<Shop['submit']>(),
     verdict: jest.fn<Shop['verdict']>(),
     rename: jest.fn<Shop['rename']>(),

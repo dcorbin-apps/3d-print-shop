@@ -67,6 +67,13 @@ const RECORD_FILE = 'job.json';
 // does and a job directory without one is complete.
 const STATUS_OVERRIDE_FILE = 'statusOverride.json';
 const GCODE_FILE = 'print.gcode';
+// AIDEV-NOTE: a picture of the gcode, kept beside it so it is drawn once rather than on every ask.
+// The store neither makes one nor knows how: it keeps bytes under the version the caller names, and
+// a caller whose drawing has changed names a new version and finds nothing kept. The gcode never
+// changes, so a picture of it cannot fall out of step - which is why this sits outside the rule that
+// nothing in a job RECORD is derived.
+const PICTURE_PREFIX = 'picture-';
+const PICTURE_VERSION = /^[\w.-]+$/;
 const PRINTER_FILE = 'printer.json';
 const STATUS_FILE = 'status.json';
 
@@ -240,13 +247,25 @@ export class JobStore {
   }
 
   /**
-   * Opened only when something is about to print it - see why a job record carries no gcode. A
-   * stream, not a Buffer, for the reason it arrived as one: the caller is about to push tens of
-   * megabytes at a printer and has no reason to hold them first.
+   * Opened only when something is about to print it or draw it - see why a job record carries no
+   * gcode. A stream, not a Buffer, for the reason it arrived as one: the caller is about to push tens
+   * of megabytes at a printer, or read them for a picture, and has no reason to hold them first.
    */
   async gcodeStream(id: number): Promise<Readable> {
     await this.require(id);
     return createReadStream(path.join(this.jobDir(id), GCODE_FILE));
+  }
+
+  /** A picture of this job's gcode kept under that version, or nothing if none has been. */
+  async keptPicture(id: number, version: string): Promise<Buffer | undefined> {
+    await this.require(id);
+    return readFile(this.pictureFile(id, version)).catch(() => undefined);
+  }
+
+  /** Keep a picture of this job's gcode under that version, to be handed back instead of drawn again. */
+  async keepPicture(id: number, version: string, picture: Buffer): Promise<void> {
+    await this.require(id);
+    await writeAtomically(this.pictureFile(id, version), picture);
   }
 
   // AIDEV-NOTE: ONE write, to the printer. A job is printing because a printer says it is holding it
@@ -789,6 +808,12 @@ export class JobStore {
     return path.join(this.where.jobs, String(id));
   }
 
+  private pictureFile(id: number, version: string): string {
+    if (!PICTURE_VERSION.test(version)) throw new Error(`a picture's version is a plain name, and ${JSON.stringify(version)} is not one`);
+
+    return path.join(this.jobDir(id), `${PICTURE_PREFIX}${version}`);
+  }
+
   // AIDEV-NOTE: every name that reaches here is one the directory already gave back, or one
   // `addPrinter` is creating - the public methods take a printer rather than a name, and
   // `printerNamed` is the only thing that turns one into the other. Keep it that way and there is
@@ -858,7 +883,7 @@ function asJson(value: unknown): string {
 // AIDEV-NOTE: written beside and renamed over, because a rename is atomic and a write is not. A
 // restart during a plain write leaves a truncated file, which the next scan cannot parse - and what
 // it described is then invisible while the rest of its directory still sits there.
-async function writeAtomically(file: string, contents: string): Promise<void> {
+async function writeAtomically(file: string, contents: string | Buffer): Promise<void> {
   const scratch = `${file}.writing`;
   await writeFile(scratch, contents, { mode: FILE_MODE });
   await rename(scratch, file);

@@ -18,6 +18,7 @@ import { LONGEST_MS, SESSION_COOKIE, Sessions } from './sessions.js';
 import { silent } from './log.js';
 import type { Log } from './log.js';
 import type { JobStore } from './JobStore.js';
+import { pictureOfJob } from './jobPicture.js';
 import type { PrinterRecord } from './Printer.js';
 import { waitingOn } from './selection.js';
 
@@ -138,6 +139,7 @@ const OPEN_TO_EVERY_CALLER: readonly { method: string; path: RegExp }[] = [
   { method: 'POST', path: /^\/jobs$/ },
   { method: 'GET', path: /^\/jobs$/ },
   { method: 'GET', path: /^\/jobs\/[^/]+$/ },
+  { method: 'GET', path: /^\/jobs\/[^/]+\/picture$/ },
   // A verdict is the owner's to give, which is a thing about the JOB rather than about the caller's
   // role - so the route is open here and the ownership of it is decided in the route itself.
   { method: 'PUT', path: /^\/jobs\/[^/]+\/verdict$/ },
@@ -628,6 +630,19 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
     if (!job || !theirs(request.caller, job)) throw new NoSuchJob(`no job ${request.params.id}`);
 
     response.json(job);
+  });
+
+  // AIDEV-NOTE: a PICTURE of the gcode and never the gcode itself - a page showing a list of jobs
+  // would otherwise pull up to maxGcodeBytes apiece to draw them. A render is kept once drawn, and
+  // the browser's cache spares the shop even the read; an id is never given to a second job.
+  api.get('/jobs/:id/picture', async (request, response) => {
+    const job = await shop.find(jobId(request.params.id));
+    if (!job || !theirs(request.caller, job)) throw new NoSuchJob(`no job ${request.params.id}`);
+
+    const picture = await pictureOfJob(shop, job.id, log);
+
+    response.setHeader('Cache-Control', 'private, max-age=3600');
+    response.type(picture.contentType).send(picture.bytes);
   });
 
   // AIDEV-NOTE: a verdict is a resource rather than an /approve, a /reject and an /abandon, so each

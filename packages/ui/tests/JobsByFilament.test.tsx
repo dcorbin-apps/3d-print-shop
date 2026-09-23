@@ -52,6 +52,13 @@ describe('the work the shop is holding', () => {
     expect(screen.getAllByRole('heading').map((heading) => heading.textContent)).toEqual(['PLA-Blue', 'PLA-Red']);
   });
 
+  it('shows a picture of every job', () => {
+    showing([job(1, ['PLA-Red']), job(2, ['PLA-Blue'])]);
+
+    expect(screen.getByRole('button', { name: 'Show Job 1 larger' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Show Job 2 larger' })).toBeDefined();
+  });
+
   it('shows each job by name, and where it has got to', () => {
     showing([job(1, ['PLA-Red'], { displayName: 'Player Box', state: 'printing', heldBy: 'mk4' })]);
 

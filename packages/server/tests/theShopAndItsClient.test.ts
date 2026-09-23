@@ -143,6 +143,12 @@ describe('the shop and its client', () => {
       expect(await shop.job(id)).toMatchObject({ id });
     });
 
+    it('hands back a picture of one, typed as what it is', async () => {
+      const { id } = await shop.submit({ filaments: ['PLA-SpaceGray'] }, gcode());
+
+      expect((await shop.picture(id)).type).toBe('image/png');
+    });
+
     it('refuses a job no printer here could take, in the words the shop used', async () => {
       const tooTall = { filaments: ['PLA-SpaceGray'], requiredBuildVolume: { x: 100, y: 100, z: 400 } };
 

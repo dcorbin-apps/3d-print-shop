@@ -33,6 +33,7 @@ describe('every path this client asks the shop for', () => {
       anyway(shop.changeMyPassword('the password in use', 'a different password entirely')),
       anyway(shop.jobs()),
       anyway(shop.job(1)),
+      anyway(shop.picture(1)),
       anyway(shop.submit({ filaments: ['PLA-Red'] }, new Blob(['G1\n']))),
       anyway(shop.verdict(1, 'approved')),
       anyway(shop.rename(1, 'Clamp Dock')),

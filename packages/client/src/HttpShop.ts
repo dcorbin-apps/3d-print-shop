@@ -78,6 +78,10 @@ export class HttpShop implements Shop {
     return asJob((await this.answered('GET', `/jobs/${id}`)) as WireJob);
   }
 
+  async picture(id: number): Promise<Blob> {
+    return (await this.reach('GET', picturePath(id))).blob();
+  }
+
   // AIDEV-NOTE: the description part is appended FIRST because the shop requires that order - it
   // validates the description before reading a byte of gcode, which is what lets it refuse a job
   // nothing could print without being sent tens of megabytes to say so. FormData keeps the order.
@@ -201,6 +205,11 @@ export function sending(body: unknown): { headers?: Record<string, string>; body
 // path stops there.
 export function printerPath(name: string): string {
   return `/printers/${encodeURIComponent(name)}`;
+}
+
+// Exported because a page shows a picture with an <img>, which asks for it by URL and not through here.
+export function picturePath(id: number): string {
+  return `/jobs/${id}/picture`;
 }
 
 async function bodyOf(response: Response): Promise<unknown> {

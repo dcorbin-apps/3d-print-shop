@@ -43,6 +43,13 @@ export interface Shop {
   jobs(): Promise<JobsHeld>;
   /** Refused as a job that is not here when it is not this caller's to read - see `jobs`. */
   job(id: number): Promise<Job>;
+  // AIDEV-NOTE: a picture and never the gcode. A client showing a list of jobs would otherwise pull
+  // every one of them whole, and the gcode is the printing loop's and not a client's to read.
+  /**
+   * What the job looks like: the image its slicer embedded, or one the shop rendered from its moves.
+   * Refused as a job that is not here when it is not this caller's to read - see `jobs`.
+   */
+  picture(id: number): Promise<Blob>;
   /**
    * The description goes first and the gcode second, which is the shop's own rule: it refuses a job
    * no printer could take before reading a byte, so a hopeless submission costs no upload.

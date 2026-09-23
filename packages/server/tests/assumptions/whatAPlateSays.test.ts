@@ -1,7 +1,9 @@
 import { describe, it, expect } from '@jest/globals';
+import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { ENDS_BYTES, endsOf } from '../../src/asAnOctoPrint';
+import { pictureOf } from '../../src/jobPicture';
 import { slicedPlate } from '../../src/slicedPlate';
 
 // AIDEV-NOTE: (assumption test) the one thing `slicedPlate` cannot say about itself - that the
@@ -28,6 +30,14 @@ describe('what a plate a real tool wrote actually says', () => {
       estimatedPrintSeconds: 359,
       requiredBuildVolume: { x: 250, y: 210, z: 220 },
     });
+  });
+
+  // The plate carries QOI pictures larger than its PNG, and those are for the printer's own screen.
+  it('is pictured by the PNG it embedded, which is a real one', async () => {
+    const picture = await pictureOf(createReadStream(PLATE));
+
+    expect(picture.contentType).toBe('image/png');
+    expect([picture.bytes.readUInt32BE(16), picture.bytes.readUInt32BE(20)]).toEqual([380, 285]);
   });
 
   // What the window costs is bounded; what it has to reach is not, and only a real file says which.

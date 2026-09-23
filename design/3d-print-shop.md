@@ -315,6 +315,7 @@ a script and curl all speak it without acquiring anything to do so.
 POST   /jobs                    submit
 GET    /jobs                    what this caller may see, and how many there are altogether
 GET    /jobs/{id}
+GET    /jobs/{id}/picture       what it looks like - the slicer's embedded image, or a render
 PUT    /jobs/{id}/verdict       approved | rejected | abandoned
 GET    /filaments[?printer=]    what the queued work is waiting for, busiest first
 GET    /printers
@@ -343,6 +344,17 @@ print changes, which is why it is a route rather than a file somebody edits.
 `startNextPrint` inside the service, and they are the loop's own bookkeeping rather than anything a client decides.
 Publishing them would invite a second writer into a store built for one, and would hand out states
 no client is in a position to set honestly - only the loop knows whether a printer took a job.
+
+**A job's picture is a picture, never its gcode.** A page listing jobs would otherwise pull every
+plate whole, up to `maxGcodeBytes` apiece, to show a thumbnail. The shop serves the largest PNG or
+JPG the slicer embedded in the head of the file, as written. Otherwise it renders a PNG itself: every
+extrusion move as a lit tube of plastic, isometric, drawn into a depth buffer so nearer beads hide
+further ones - what a slicer's own preview does, with no image library to depend on. Beads are
+sampled once a plate passes a fixed number of them, so a large plate costs no more than that. A
+render is kept in the job's directory the first time it is drawn, under the version of the drawing
+that made it, and served from there after that - the gcode never changes, so it cannot fall out of
+step, and a new drawing names a new version. An embedded picture is not kept: it is read from the
+head of the file for almost nothing.
 
 **`GET /jobs` answers one object, not a list.** `{ accessibleJobs, totalJobs }` - what this caller
 may see, and how many the shop holds whoever owns them. A list and a count asked for separately are

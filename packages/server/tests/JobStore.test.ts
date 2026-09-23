@@ -1030,6 +1030,45 @@ describe('JobStore', () => {
     });
   });
 
+  describe('a picture kept beside a job', () => {
+    let id: number;
+    const drawn = Buffer.from('a picture of the plate');
+
+    beforeEach(async () => {
+      id = (await submit(details(), gcode())).id;
+    });
+
+    it('is nothing until one is kept', async () => {
+      expect(await shop.keptPicture(id, 'render-1.png')).toBeUndefined();
+    });
+
+    it('is handed back as it was kept', async () => {
+      await shop.keepPicture(id, 'render-1.png', drawn);
+
+      expect(await shop.keptPicture(id, 'render-1.png')).toEqual(drawn);
+    });
+
+    it('is kept under its version, so a picture drawn another way is not taken for it', async () => {
+      await shop.keepPicture(id, 'render-1.png', drawn);
+
+      expect(await shop.keptPicture(id, 'render-2.png')).toBeUndefined();
+    });
+
+    it('will not be kept under a version that names a path', async () => {
+      await expect(shop.keepPicture(id, '../job.json', drawn)).rejects.toThrow(
+        'a picture\'s version is a plain name, and "../job.json" is not one',
+      );
+    });
+
+    it('is not kept for a job the shop does not hold', async () => {
+      await expect(shop.keepPicture(99, 'render-1.png', drawn)).rejects.toThrow(NoSuchJob);
+    });
+
+    it('is not asked after for a job the shop does not hold', async () => {
+      await expect(shop.keptPicture(99, 'render-1.png')).rejects.toThrow(NoSuchJob);
+    });
+  });
+
   // AIDEV-NOTE: (UT) the machine's own account of itself, which is the one trouble here the shop
   // does not work out for itself - and the one an operator cannot lift.
   describe('a machine that says it cannot print', () => {

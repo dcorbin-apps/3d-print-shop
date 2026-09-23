@@ -271,13 +271,59 @@ body {
 
 .job {
   display: grid;
-  /* The name, what it is doing, and what can be done with it. The shop's own id for a job is not
+  /* A picture, the name, what it is doing, and what can be done with it. The shop's own id for a job is not
      here: it is how the shop and a client name one to each other, and a person reads the name. */
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto;
   gap: 8px;
   align-items: baseline;
   padding: 4px 0;
   border-top: 1px solid var(--edge);
+}
+
+/* Small enough to leave the row its height; clicked, the same picture fills the screen. */
+.job .picture {
+  align-self: center;
+  width: 80px;
+  height: 80px;
+  padding: 0;
+  background: var(--ground);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  cursor: zoom-in;
+}
+
+.job .picture:hover,
+.job .picture:focus-visible {
+  border-color: var(--live);
+}
+
+.job .picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.picture-shown {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 75%);
+  cursor: zoom-out;
+}
+
+/* As it is, and only ever smaller - an embedded picture is shown at the size its slicer drew it. */
+.picture-shown img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
 }
 
 /* The name is editable in place, so it has to be the same size and in the same spot either way -

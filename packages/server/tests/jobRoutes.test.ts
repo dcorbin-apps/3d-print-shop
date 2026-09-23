@@ -193,6 +193,40 @@ describe('the jobs, over the shop routes', () => {
     });
   });
 
+  describe('the picture of a job', () => {
+    const asUser = (path: string): ReturnType<typeof asked> => asked('GET', path, { token: USER });
+
+    it('is rendered from its gcode, and a browser may keep it', async () => {
+      const { id } = (await submit(playerBox, 'M83\nG1 X10 E1\n')).body as Job;
+
+      const answer = await ask(`/jobs/${id}/picture`);
+
+      expect(answer.status).toBe(200);
+      expect(answer.header('content-type')).toBe('image/png');
+      expect(answer.header('cache-control')).toBe('private, max-age=3600');
+      expect(answer.text.slice(1, 4)).toBe('PNG');
+    });
+
+    it('is shown to the caller the job belongs to', async () => {
+      const { id } = (await submitting(submission(playerBox), USER)).body as Job;
+
+      expect((await asUser(`/jobs/${id}/picture`)).status).toBe(200);
+    });
+
+    it('answers a job that is not theirs as one that is not here', async () => {
+      const { id } = await submitted(playerBox);
+
+      const answer = await asUser(`/jobs/${id}/picture`);
+
+      expect(answer.status).toBe(404);
+      expect(answer.body).toEqual({ error: `no job ${id}` });
+    });
+
+    it('answers a job the shop does not hold as not here', async () => {
+      expect((await ask('/jobs/9/picture')).body).toEqual({ error: 'no job 9' });
+    });
+  });
+
   describe('a verdict', () => {
     async function awaitingApproval(): Promise<Job> {
       const job = await submitted(playerBox);
