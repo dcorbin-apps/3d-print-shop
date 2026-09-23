@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'" />
+    <title>Settings</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font:
+          13px -apple-system,
+          system-ui,
+          sans-serif;
+      }
+      body {
+        margin: 16px;
+      }
+      label {
+        display: block;
+        margin-bottom: 6px;
+      }
+      input {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 4px 6px;
+        font: inherit;
+      }
+      .problem {
+        min-height: 1.4em;
+        margin: 6px 0;
+        color: #d33;
+      }
+      .buttons {
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <form>
+      <label for="shopUrl">The print shop this icon speaks to</label>
+      <input id="shopUrl" type="text" spellcheck="false" placeholder="http://localhost:7373" />
+      <div class="problem"></div>
+      <div class="buttons">
+        <button type="button" class="cancel">Cancel</button>
+        <button type="submit">Save</button>
+      </div>
+    </form>
+    <script type="module" src="../dist/settingsPage.js"></script>
+  </body>
+</html>

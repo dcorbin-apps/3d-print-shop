@@ -5,6 +5,7 @@ export default {
     '<rootDir>/packages/server/jest.config.mjs',
     '<rootDir>/packages/octoprint-sim/jest.config.mjs',
     '<rootDir>/packages/ui/jest.config.mjs',
+    '<rootDir>/packages/menubar/jest.config.mjs',
     '<rootDir>/scripts/jest.config.mjs',
   ],
 };

@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "jest", "@jest/globals"],
+    "rootDir": "../..",
+    "noEmit": true,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["./**/*", "../src/**/*"]
+}

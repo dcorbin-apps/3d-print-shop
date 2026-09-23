@@ -168,9 +168,19 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
 ### The icon in the menu bar
 
-- [ ] A macOS menubar app that CONTROLS the shop rather than owning it. The shop stays the daemon it
-  is: the app starts nothing, holds nothing, and can be closed without anything stopping. That is the
-  whole of the boundary, and the reason the app has no tests worth writing.
+- [ ] Give each OctoPrint an https address, then take `AutoupgradeMixedContent` back out of
+  `packages/menubar/src/main.ts`. A camera is OctoPrint's http stream, and an https shop page cannot
+  show it: Chromium rewrites the image to https, where OctoPrint does not answer - in every browser,
+  not only the app. The app switches that rewrite off as a stopgap. The fix is OctoPrint behind the
+  same reverse proxy as the shop, with a certificate browsers already trust (OctoPi's own https is
+  self-signed and is refused the same way), and the printer re-registered at that address - `camera`
+  is derived from it, so nothing in the shop changes.
+
+- [ ] The rest of the menubar app. `packages/menubar` (`yarn menubar`) is the icon: double-click
+  opens a window on the shop's own URL, right-click offers the same, Settings (which shop) and Quit. It
+  CONTROLS the shop rather than owning it. The shop stays the daemon it is: the app starts nothing,
+  holds nothing, and can be closed without anything stopping. That is the whole of the boundary, and
+  why only what it decides - which shop, what counts as a double-click - has tests.
 
   Availability decided nothing here and should not be re-argued. A print the shop is absent for is
   still printing - OctoPrint has the file, and `recordOutcome` picks the watch back up from the
@@ -178,16 +188,9 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   would have waited anyway: the printer holds the job and the bed until a person gives a verdict, and
   that person is the one who is not there.
 
-  The menu: what the shop is doing, read from the same routes the page uses; open the shop; and an
-  item that closes the ICON, named so it cannot be read as stopping the shop. Stopping the shop is
-  `launchctl` and root, which is the most expensive thing that could go on a menu of three - leave it
-  off until somebody wants it.
-
-  Open the shop is `shell.openExternal` at the shop's URL, and a `BrowserWindow` on that SAME URL
-  when the page should live in the app instead. Same URL is the point: the page is a client like any
-  other and reaches the shop over HTTP, so a window pointed at the shop is a browser pointed at the
-  shop and the session cookie behaves. Do NOT ship `ui/dist` inside the app and load it from
-  `file://` - that is cross-origin against an API with no CORS handling, which it should not grow.
+  Still missing from the menu: what the shop is doing, read from the same routes the page uses.
+  Stopping the shop is `launchctl` and root, which is the most expensive thing that could go on a
+  menu of three - leave it off until somebody wants it.
 
   What would actually earn the runtime: telling somebody a print is off the bed and waiting on a
   verdict. It is the one moment the shop has no way to reach anybody, and the only reason this is
@@ -201,5 +204,5 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
 
   Two costs to know going in. CI is Linux only, so none of this is covered there - keep it thin
   enough that there is nothing to cover, and put anything worth testing in a package that is not the
-  app. And it needs signing and notarization or Gatekeeper refuses it, which is the first thing that
-  will cost a day.
+  app. And it is only run from a checkout today: packaging it as a `.app` needs signing and
+  notarization or Gatekeeper refuses it, which is the first thing that will cost a day.

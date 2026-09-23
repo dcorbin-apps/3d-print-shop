@@ -27,6 +27,7 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for why it is shaped this
 | `@3d-print-shop/client` | The contract - the wire types, the `Shop` interface, and `HttpShop`, which speaks it. What a client depends on. |
 | `@3d-print-shop/octoprint-sim` | A stand-in OctoPrint, enough of the real protocol to prove the shop talks to one. |
 | `@3d-print-shop/ui` | A single page in a browser: what the shop is doing, the printers with their cameras, and the work grouped by what it needs loaded. |
+| `@3d-print-shop/menubar` | A macOS menu-bar icon: double-click it for a window on the shop's page. Not published; `yarn menubar` runs it from a checkout. |
 
 The server depends on the client, not the other way about: the contract is one thing, written once,
 so a client cannot be written against an API it can no longer see. The UI is a client like any other

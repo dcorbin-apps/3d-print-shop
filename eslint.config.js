@@ -20,7 +20,7 @@ export default tseslint.config(
   // seconds over the whole repository - measured, not guessed - and buys the only rules in this
   // config that can see across a function boundary.
   {
-    files: ['**/*.ts', '**/*.tsx'],
+    files: ['**/*.ts', '**/*.tsx', '**/*.cts'],
     languageOptions: {
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
@@ -50,7 +50,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.ts', '**/*.tsx'],
+    files: ['**/*.ts', '**/*.tsx', '**/*.cts'],
     rules: {
       // An error, not a warning. A warning does not fail a build, so it is a rule nobody has to keep.
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
