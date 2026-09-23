@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, afterEach, beforeEach } from '@jest/globals';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PrinterRecord, RegisteredPrinter } from '@3d-print-shop/client/browser';
 import { PrinterGallery, stillHere } from '../src/components/PrinterGallery';
 import { BEFORE_TRYING_AGAIN_MS, TRIES } from '../src/components/PrinterTile';
@@ -31,7 +31,7 @@ describe('the gallery of printers', () => {
   // offering it to everybody and letting the shop's 403 teach them. The shop refuses either way -
   // withholding the button is manners, not the guard.
   describe('the way to add one', () => {
-    const takesIt = jest.fn<(record: PrinterRecord) => Promise<void>>();
+    const takesIt = jest.fn<(record: PrinterRecord, key: string | undefined) => Promise<void>>();
     const addsOne = (): HTMLElement | null => screen.queryByRole('button', { name: 'Add a printer' });
 
     it('is not offered to a caller who was given no way to add one', () => {
@@ -41,7 +41,7 @@ describe('the gallery of printers', () => {
     });
 
     it('is offered beside the machines to a caller who was', () => {
-      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} onAdd={takesIt} />);
+      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} onSave={takesIt} />);
 
       expect(addsOne()).not.toBeNull();
     });
@@ -49,18 +49,95 @@ describe('the gallery of printers', () => {
     // The emptiest shop is where it matters most, and the one place the old wording sent somebody
     // to a terminal instead.
     it('is offered in a shop with no printers at all', () => {
-      render(<PrinterGallery printers={[]} onSelect={nobodyChooses} onAdd={takesIt} />);
+      render(<PrinterGallery printers={[]} onSelect={nobodyChooses} onSave={takesIt} />);
 
       expect(addsOne()).not.toBeNull();
     });
 
     // It comes after them: what an operator is looking at is the machines, not the way to add one.
     it('comes after the machines rather than before them', () => {
-      render(<PrinterGallery printers={[printer('mk4'), printer('mini')]} onSelect={nobodyChooses} onAdd={takesIt} />);
+      render(<PrinterGallery printers={[printer('mk4'), printer('mini')]} onSelect={nobodyChooses} onSave={takesIt} />);
 
       const last = screen.getAllByRole('button').at(-1);
 
       expect(last?.getAttribute('aria-label')).toBe('Add a printer');
+    });
+  });
+
+  // AIDEV-NOTE: changing a printer is an admin's for the same reason adding one is, and is offered
+  // on the same terms - see 'the way to add one' above.
+  describe('the way to change one', () => {
+    const saves = jest.fn<(record: PrinterRecord, key: string | undefined) => Promise<void>>();
+    const editButton = (name: string): HTMLElement | null => screen.queryByRole('button', { name: `Edit ${name}` });
+
+    beforeEach(() => {
+      saves.mockResolvedValue(undefined);
+    });
+
+    it('is not offered to a caller who was given no way to change one', () => {
+      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+
+      expect(editButton('mk4')).toBeNull();
+    });
+
+    const dialog = (name: string): HTMLElement | null => screen.queryByRole('dialog', { name: `Edit ${name}` });
+
+    it('opens a dialog about only the printer asked about', () => {
+      render(<PrinterGallery printers={[printer('mk4'), printer('mini')]} onSelect={nobodyChooses} onSave={saves} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit mini' }));
+
+      expect(dialog('mini')).not.toBeNull();
+      expect(dialog('mk4')).toBeNull();
+      expect((screen.getByLabelText('address', { exact: false }) as HTMLInputElement).value).toBe('http://mini');
+    });
+
+    // The machine being changed stays in view behind it, camera and all.
+    it('leaves the tile where it was', () => {
+      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} onSave={saves} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit mk4' }));
+
+      expect(screen.getByRole('img', { name: 'mk4 now' })).toBeDefined();
+    });
+
+    it('is not choosing the printer', () => {
+      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} onSave={saves} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit mk4' }));
+
+      expect(nobodyChooses).not.toHaveBeenCalled();
+    });
+
+    it('hands the shop what was changed, and closes once it is taken', async () => {
+      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} onSave={saves} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit mk4' }));
+      fireEvent.change(screen.getByLabelText('address', { exact: false }), { target: { value: 'http://mk4.home' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(dialog('mk4')).toBeNull());
+      expect(saves).toHaveBeenCalledWith(expect.objectContaining({ name: 'mk4', address: 'http://mk4.home' }), undefined);
+    });
+
+    it('closes, changing nothing, when somebody gives up on it', () => {
+      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} onSave={saves} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit mk4' }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(dialog('mk4')).toBeNull();
+      expect(saves).not.toHaveBeenCalled();
+    });
+
+    it('closes, changing nothing, on Escape', () => {
+      render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} onSave={saves} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit mk4' }));
+
+      fireEvent.keyDown(screen.getByLabelText('address', { exact: false }), { key: 'Escape' });
+
+      expect(dialog('mk4')).toBeNull();
+      expect(saves).not.toHaveBeenCalled();
     });
   });
 

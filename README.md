@@ -179,6 +179,9 @@ hand.
 reached by. `3d-print-shop printer add` takes no key, on purpose - a key on a command line is in
 shell history and in `ps` - so a printer added that way gets its key in
 `/etc/3d-print-shop/printer-keys.json`, 0600 and owned by the service user, followed by a reload.
+An admin changes one from the page the same way, with Edit on its tile: its address, build volume
+or key, but not its name. A key left blank keeps the one it has, and what is loaded, held or paused
+stays as it was.
 
 Day to day:
 

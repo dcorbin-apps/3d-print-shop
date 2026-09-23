@@ -1,26 +1,33 @@
+import { useState } from 'react';
 import type { PrinterRecord, RegisteredPrinter } from '@3d-print-shop/client/browser';
 import { AddPrinterTile } from './AddPrinterTile.js';
+import { EditPrinterDialog } from './EditPrinterDialog.js';
 import { PrinterTile } from './PrinterTile.js';
 
 interface PrinterGalleryProps {
   printers: RegisteredPrinter[];
   selected?: string;
   onSelect: (name: string) => void;
-  // AIDEV-NOTE: absent is what an ordinary caller gets, because adding a printer is an admin's.
-  // Withheld rather than offered-and-refused: a button that answers 403 teaches somebody they are
-  // not trusted by letting them press it. The shop refuses either way - this is not the guard.
-  /** How a printer is added, with the key the shop will reach it by, when this caller may add one. */
-  onAdd?: (record: PrinterRecord, key: string) => Promise<void>;
+  // AIDEV-NOTE: absent is what an ordinary caller gets, because adding or changing a printer is an
+  // admin's. Withheld rather than offered-and-refused: a button that answers 403 teaches somebody they
+  // are not trusted by letting them press it. The shop refuses either way - this is not the guard.
+  // One callback for both because the shop has one act for both: a record under a name it already
+  // has replaces what it knew, and keeps what is loaded, held and paused.
+  /** How a printer is added or changed when this caller may - with a key, or none to keep the one it has. */
+  onSave?: (record: PrinterRecord, key: string | undefined) => Promise<void>;
 }
 
-export function PrinterGallery({ printers, selected, onSelect, onAdd }: PrinterGalleryProps): React.JSX.Element {
+export function PrinterGallery({ printers, selected, onSelect, onSave }: PrinterGalleryProps): React.JSX.Element {
+  const [editing, setEditing] = useState<string | undefined>(undefined);
+  const beingEdited = printers.find((printer) => printer.name === editing);
+
   // An empty shop is the one place the add tile matters most, so it is said beside it rather than
   // instead of it.
   if (printers.length === 0) {
     return (
       <section className="gallery empty" aria-label="printers">
-        <p>No printers{onAdd === undefined && '. `3d-print-shop printer add` is how one gets here.'}</p>
-        {onAdd !== undefined && <AddPrinterTile onAdd={onAdd} />}
+        <p>No printers{onSave === undefined && '. `3d-print-shop printer add` is how one gets here.'}</p>
+        {onSave !== undefined && <AddPrinterTile onAdd={onSave} />}
       </section>
     );
   }
@@ -28,9 +35,20 @@ export function PrinterGallery({ printers, selected, onSelect, onAdd }: PrinterG
   return (
     <section className="gallery" aria-label="printers">
       {printers.map((printer) => (
-        <PrinterTile key={printer.name} printer={printer} selected={printer.name === selected} onSelect={onSelect} />
+        // A tile is a button, and a button cannot hold another - so Edit sits beside it, in its corner.
+        <div key={printer.name} className={onSave === undefined ? 'printer-slot' : 'printer-slot editable'}>
+          <PrinterTile printer={printer} selected={printer.name === selected} onSelect={onSelect} />
+          {onSave !== undefined && (
+            <button type="button" className="edit-printer" aria-label={`Edit ${printer.name}`} onClick={() => setEditing(printer.name)}>
+              Edit
+            </button>
+          )}
+        </div>
       ))}
-      {onAdd !== undefined && <AddPrinterTile onAdd={onAdd} />}
+      {onSave !== undefined && <AddPrinterTile onAdd={onSave} />}
+      {onSave !== undefined && beingEdited !== undefined && (
+        <EditPrinterDialog printer={beingEdited} onSave={onSave} onClose={() => setEditing(undefined)} />
+      )}
     </section>
   );
 }

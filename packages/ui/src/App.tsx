@@ -30,8 +30,9 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
   // that knows what a printer looks like once it has one, and a page that drew its own version of
   // the answer would be showing something the shop never said.
   // One call: the shop takes a machine and the key it is reached by together, so a printer cannot
-  // land here without one and leave somebody to work out which half happened.
-  const addPrinter = async (record: PrinterRecord, key: string): Promise<void> => {
+  // land here without one and leave somebody to work out which half happened. No key keeps the one a
+  // printer being changed already has.
+  const savePrinter = async (record: PrinterRecord, key: string | undefined): Promise<void> => {
     await shop.addPrinter(record, key);
     askAgain();
   };
@@ -99,7 +100,7 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
           {drift}
         </p>
       )}
-      <PrinterGallery printers={printers} selected={selected} onSelect={setChosen} onAdd={caller?.role === 'admin' ? addPrinter : undefined} />
+      <PrinterGallery printers={printers} selected={selected} onSelect={setChosen} onSave={caller?.role === 'admin' ? savePrinter : undefined} />
       <JobsByFilament
         jobs={jobs}
         totalJobs={totalJobs}

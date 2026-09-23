@@ -6,7 +6,7 @@ import { AddPrinterTile } from '../src/components/AddPrinterTile';
 describe('adding a printer from the row it will appear in', () => {
   afterEach(cleanup);
 
-  const takesIt = jest.fn<(record: PrinterRecord, key: string) => Promise<void>>();
+  const takesIt = jest.fn<(record: PrinterRecord, key: string | undefined) => Promise<void>>();
 
   const open = (): void => {
     render(<AddPrinterTile onAdd={takesIt} />);

@@ -168,6 +168,34 @@ describe('the page, against a shop that answers', () => {
     expect(fetching.mock.calls.filter(([, sent]) => sent?.method !== 'GET')).toHaveLength(1);
   });
 
+  // AIDEV-NOTE: changing a printer is the SAME call as adding one, under the name it already has -
+  // and a key left blank is not sent at all, which is the contract's "keep the one it has". Sending
+  // an empty one would be a printer the shop can no longer reach.
+  it('changes a printer through the same call, keeping its key when none is typed', async () => {
+    const mk4 = { name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://prusa.local', loaded: [] };
+    fetching.mockImplementation((where: Parameters<typeof fetch>[0]) => {
+      const path = String(where);
+      if (path.endsWith('/me')) return Promise.resolve(answered({ id: 'dave', name: 'dave', role: 'admin' }));
+      if (path.endsWith('/printers')) return Promise.resolve(answered([mk4]));
+
+      return Promise.resolve(answered({ accessibleJobs: [], totalJobs: 0 }));
+    });
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit mk4' })).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit mk4' }));
+    fireEvent.change(screen.getByLabelText('address', { exact: false }), { target: { value: 'http://prusa.home.example' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(asked('POST', '/printers')).toBeDefined());
+    expect(JSON.parse(String(asked('POST', '/printers')?.body))).toEqual({
+      name: 'mk4',
+      buildVolume: { x: 250, y: 210, z: 220 },
+      api: 'octoprint',
+      address: 'http://prusa.home.example',
+    });
+  });
+
   // AIDEV-NOTE: the verdict end to end from the page - the one thing that frees a bed, which until
   // now meant walking to a terminal while the machine that finished stood holding it.
   describe('judging a print that has finished', () => {
