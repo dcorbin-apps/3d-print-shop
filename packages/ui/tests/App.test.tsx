@@ -196,6 +196,95 @@ describe('the page, against a shop that answers', () => {
     });
   });
 
+  // The wire end of loading: the same PUT the operator's `printer load` makes, and only for an admin.
+  describe('loading a printer', () => {
+    const withMk4 = (as: Role): void => {
+      const mk4 = { name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://prusa.local', loaded: [] };
+      fetching.mockImplementation((where: Parameters<typeof fetch>[0], sent?: RequestInit) => {
+        const path = String(where);
+        if (path.endsWith('/me')) return Promise.resolve(answered({ id: 'dave', name: 'dave', role: as }));
+        if (path.endsWith('/printers')) return Promise.resolve(answered([mk4]));
+        if (sent?.method === 'PUT') return Promise.resolve(answered({ ...mk4, loaded: ['PLA'] }));
+
+        return Promise.resolve(
+          answered({
+            accessibleJobs: [
+              { id: 2, displayName: 'Markers', filaments: ['PLA'], submittedAt: '2026-09-09T12:00:00Z', gcodeBytes: 1024, state: 'queued' },
+              {
+                id: 7,
+                displayName: 'Player Box',
+                filaments: ['PLA-Red'],
+                submittedAt: '2026-09-09T12:00:00Z',
+                gcodeBytes: 1024,
+                state: 'awaiting-approval',
+                heldBy: 'mk4',
+                lastPrinterOutcome: 'finished',
+              },
+            ],
+            totalJobs: 2,
+          }),
+        );
+      });
+    };
+
+    it('tells the shop what an admin put on the machine', async () => {
+      withMk4('admin');
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Load mk4' })).toBeDefined());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load mk4' }));
+      fireEvent.change(screen.getByLabelText('Filament loaded'), { target: { value: 'PLA' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Load' }));
+
+      await waitFor(() => expect(asked('PUT', '/printers/mk4/filament')).toBeDefined());
+      expect(JSON.parse(String(asked('PUT', '/printers/mk4/filament')?.body))).toEqual({ loaded: ['PLA'] });
+    });
+
+    // A print waiting for a verdict needs nothing loaded, so its filament is not suggested.
+    it('suggests only what queued work is waiting for', async () => {
+      withMk4('admin');
+      render(<App />);
+      await waitFor(() => expect(screen.getByText('Markers')).toBeDefined());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load mk4' }));
+      const field = screen.getByLabelText('Filament loaded') as HTMLInputElement;
+
+      expect([...(field.list?.options ?? [])].map((option) => option.value)).toEqual(['PLA']);
+    });
+
+    it('loads what a group waits for on the chosen machine', async () => {
+      withMk4('admin');
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Load on mk4' })).toBeDefined());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load on mk4' }));
+
+      await waitFor(() => expect(asked('PUT', '/printers/mk4/filament')).toBeDefined());
+      expect(JSON.parse(String(asked('PUT', '/printers/mk4/filament')?.body))).toEqual({ loaded: ['PLA'] });
+    });
+
+    // Loading what a queued job waits for starts it, and the page should show that without a tick.
+    it('asks the shop again at once rather than waiting for the next poll', async () => {
+      withMk4('admin');
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Load on mk4' })).toBeDefined());
+      const askedBefore = fetching.mock.calls.filter(([where]) => String(where) === '/printers').length;
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load on mk4' }));
+
+      await waitFor(() => expect(fetching.mock.calls.filter(([where]) => String(where) === '/printers').length).toBeGreaterThan(askedBefore));
+    });
+
+    it('is not offered to a user, on the machine or on the work', async () => {
+      withMk4('user');
+      render(<App />);
+
+      await waitFor(() => expect(screen.getByText('Markers')).toBeDefined());
+      expect(screen.queryByRole('button', { name: 'Load mk4' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Load on mk4' })).toBeNull();
+    });
+  });
+
   // AIDEV-NOTE: the verdict end to end from the page - the one thing that frees a bed, which until
   // now meant walking to a terminal while the machine that finished stood holding it.
   describe('judging a print that has finished', () => {

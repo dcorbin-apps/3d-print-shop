@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PrinterRecord, Verdict } from '@3d-print-shop/client/browser';
+import { byFilament } from './byFilament.js';
 import { LogIn } from './components/LogIn.js';
 import { JobsByFilament } from './components/JobsByFilament.js';
 import { PrinterGallery, stillHere } from './components/PrinterGallery.js';
@@ -37,6 +38,12 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
     askAgain();
   };
 
+  // Loading what a queued job waits for starts it, so this asks again straight away too.
+  const load = async (name: string, filaments: string[]): Promise<void> => {
+    await shop.load(name, filaments);
+    askAgain();
+  };
+
   // AIDEV-NOTE: asked for again straight away rather than waiting for the next tick, because a
   // verdict frees a bed - the printer holding it becomes free and the next job starts, and the page
   // somebody just judged on should show that rather than the last poll's answer.
@@ -63,6 +70,10 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
   };
 
   const selected = stillHere(printers, chosen);
+  const admin = caller?.role === 'admin';
+  const waitingFor = byFilament(jobs)
+    .filter((group) => group.queued > 0)
+    .map((group) => group.filament);
   const drift = drifted(pageVersion, shopVersion);
 
   // AIDEV-NOTE: written when it SETTLES rather than when it is clicked, so that a printer removed
@@ -100,13 +111,21 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
           {drift}
         </p>
       )}
-      <PrinterGallery printers={printers} selected={selected} onSelect={setChosen} onSave={caller?.role === 'admin' ? savePrinter : undefined} />
+      <PrinterGallery
+        printers={printers}
+        selected={selected}
+        onSelect={setChosen}
+        onSave={admin ? savePrinter : undefined}
+        onLoad={admin ? load : undefined}
+        waitingFor={waitingFor}
+      />
       <JobsByFilament
         jobs={jobs}
         totalJobs={totalJobs}
         selected={printers.find((printer) => printer.name === selected)}
         onVerdict={judge}
         actions={actions}
+        onLoad={admin ? load : undefined}
       />
 
       {!answered && <p className="asking">asking the shop...</p>}

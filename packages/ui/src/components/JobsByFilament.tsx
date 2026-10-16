@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type { Job, RegisteredPrinter, Verdict } from '@3d-print-shop/client/browser';
 import { asPrintingTime, byFilament } from '../byFilament.js';
+import type { FilamentGroup } from '../byFilament.js';
 import { JobControls } from './JobControls.js';
 import { JobName } from './JobName.js';
 import { JobPicture } from './JobPicture.js';
@@ -15,9 +17,13 @@ interface JobsByFilamentProps {
   onVerdict?: (id: number, verdict: Verdict) => Promise<void>;
   /** What a person may do to a job. Absent, the list reports and offers nothing. */
   actions?: JobActions;
+  /** How a filament is put on the selected machine. Absent, a group only says whether it is there. */
+  onLoad?: Loads;
 }
 
-export function JobsByFilament({ jobs, totalJobs, selected, onVerdict, actions }: JobsByFilamentProps): React.JSX.Element {
+type Loads = (printer: string, filaments: string[]) => Promise<void>;
+
+export function JobsByFilament({ jobs, totalJobs, selected, onVerdict, actions, onLoad }: JobsByFilamentProps): React.JSX.Element {
   const groups = byFilament(jobs);
   const others = totalJobs - jobs.length;
 
@@ -30,6 +36,9 @@ export function JobsByFilament({ jobs, totalJobs, selected, onVerdict, actions }
           <h2>
             {group.filament}
             {selected?.loaded.includes(group.filament) && <span className="on-machine">on {selected.name}</span>}
+            {selected !== undefined && onLoad !== undefined && worthLoading(group, selected) && (
+              <LoadHere filament={group.filament} printer={selected} onLoad={onLoad} />
+            )}
           </h2>
 
           <p className="waiting">
@@ -56,6 +65,41 @@ export function JobsByFilament({ jobs, totalJobs, selected, onVerdict, actions }
       {/* What is not this caller's is a number and nothing else - the same thing `job list` says. */}
       {others > 0 && <p className="not-yours">and {others} more this shop is holding, which are not yours</p>}
     </section>
+  );
+}
+
+// Nothing is offered for a group with nothing queued: loading it would start nothing.
+function worthLoading(group: FilamentGroup, printer: RegisteredPrinter): boolean {
+  return group.queued > 0 && !printer.loaded.includes(group.filament);
+}
+
+// AIDEV-NOTE: it REPLACES what is on the machine rather than adding to it, because every printer here
+// has one extruder - putting this spool on is taking the other one off.
+function LoadHere({ filament, printer, onLoad }: { filament: string; printer: RegisteredPrinter; onLoad: Loads }): React.JSX.Element {
+  const [loading, setLoading] = useState(false);
+  const [refused, setRefused] = useState<string | undefined>(undefined);
+
+  const load = async (): Promise<void> => {
+    setLoading(true);
+    setRefused(undefined);
+
+    try {
+      await onLoad(printer.name, [filament]);
+    } catch (failure) {
+      setRefused((failure as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      {/* A spool is not changed under a print that is running. */}
+      <button type="button" className="load-here" disabled={loading || printer.holding?.phase === 'printing'} onClick={() => void load()}>
+        Load on {printer.name}
+      </button>
+      {refused !== undefined && <span className="refused">{refused}</span>}
+    </>
   );
 }
 

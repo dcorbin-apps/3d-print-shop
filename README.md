@@ -259,6 +259,13 @@ printer land without the key it is reached by. It is still kept where every othe
 and uses it from that moment: no editing a file, no `SIGHUP`, no restart. It is never read back; the
 shop answers with the printer, never with the key, and a key is redacted out of every line it logs.
 
+**An admin says what is on a machine from the page**, two ways. Load on its tile takes the filaments
+on it, in order and comma-separated, or none at all, and suggests the ones queued work is waiting
+for - the shop matches by exact name, so `PLA-Red` on the machine starts nothing that asked for
+`PLA`. And every filament the chosen machine does not have, with work queued for it, offers **Load on**
+that machine in its heading: one click puts that spool on in place of whatever was there, because
+every printer here has one extruder. Either is `printer load`, and a job waiting for it starts.
+
 **Somebody changes their own password from the page**, behind their own name in the corner: the one
 they have now, the one they want, and it twice. The one in use is asked for even though the shop
 already knows whose browser this is - a session is a screen somebody walked away from. Every OTHER

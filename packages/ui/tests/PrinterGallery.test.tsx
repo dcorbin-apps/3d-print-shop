@@ -141,6 +141,106 @@ describe('the gallery of printers', () => {
     });
   });
 
+  // AIDEV-NOTE: what is on a machine is an admin's to say, offered on the same terms as Edit.
+  describe('the way to load one', () => {
+    const loads = jest.fn<(name: string, filaments: string[]) => Promise<void>>();
+    const dialog = (name: string): HTMLElement | null => screen.queryByRole('dialog', { name: `Load ${name}` });
+    const field = (): HTMLInputElement => screen.getByLabelText('Filament loaded') as HTMLInputElement;
+
+    beforeEach(() => {
+      loads.mockReset();
+      loads.mockResolvedValue(undefined);
+    });
+
+    const loading = (on: RegisteredPrinter, waitingFor: string[] = []): void => {
+      render(<PrinterGallery printers={[on]} onSelect={nobodyChooses} onLoad={loads} waitingFor={waitingFor} />);
+      fireEvent.click(screen.getByRole('button', { name: `Load ${on.name}` }));
+    };
+
+    it('is not offered to a caller who was given no way to load one', () => {
+      render(
+        <PrinterGallery
+          printers={[printer('mk4')]}
+          onSelect={nobodyChooses}
+          onSave={jest.fn<(record: PrinterRecord, key: string | undefined) => Promise<void>>()}
+        />,
+      );
+
+      expect(screen.queryByRole('button', { name: 'Load mk4' })).toBeNull();
+    });
+
+    it.each([
+      ['printing', true],
+      ['awaiting-approval', false],
+    ] as const)('is disabled only while the machine is printing - %s', (phase, disabled) => {
+      render(<PrinterGallery printers={[printer('mk4', { holding: { job: 1, phase } })]} onSelect={nobodyChooses} onLoad={loads} />);
+
+      expect((screen.getByRole('button', { name: 'Load mk4' }) as HTMLButtonElement).disabled).toBe(disabled);
+    });
+
+    it('starts from what is on the machine now', () => {
+      loading(printer('mk4', { loaded: ['PLA', 'PETG'] }));
+
+      expect(field().value).toBe('PLA, PETG');
+    });
+
+    // The shop matches by exact name, so the names worth typing are the ones queued work waits for.
+    it('suggests what queued work is waiting for', () => {
+      loading(printer('mk4'), ['PLA', 'PETG-Black']);
+
+      const suggested = [...(field().list?.options ?? [])].map((option) => option.value);
+
+      expect(suggested).toEqual(['PLA', 'PETG-Black']);
+    });
+
+    it('hands the shop each filament typed, in order, and closes once it is taken', async () => {
+      loading(printer('mk4'));
+      fireEvent.change(field(), { target: { value: ' PLA ,, PETG ' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load' }));
+
+      await waitFor(() => expect(dialog('mk4')).toBeNull());
+      expect(loads).toHaveBeenCalledWith('mk4', ['PLA', 'PETG']);
+    });
+
+    it('takes everything off the machine when nothing is typed', async () => {
+      loading(printer('mk4', { loaded: ['PLA'] }));
+      fireEvent.change(field(), { target: { value: '  ' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load' }));
+
+      await waitFor(() => expect(loads).toHaveBeenCalledWith('mk4', []));
+    });
+
+    it('stays open with what the shop said when it will not', async () => {
+      loads.mockRejectedValue(new Error('the shop has no printer named mk4'));
+      loading(printer('mk4'));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load' }));
+
+      await waitFor(() => expect(screen.getByText('the shop has no printer named mk4')).toBeDefined());
+      expect(dialog('mk4')).not.toBeNull();
+    });
+
+    it('closes, changing nothing, when somebody gives up on it', () => {
+      loading(printer('mk4'));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(dialog('mk4')).toBeNull();
+      expect(loads).not.toHaveBeenCalled();
+    });
+
+    it('closes, changing nothing, on Escape', () => {
+      loading(printer('mk4'));
+
+      fireEvent.keyDown(field(), { key: 'Escape' });
+
+      expect(dialog('mk4')).toBeNull();
+      expect(loads).not.toHaveBeenCalled();
+    });
+  });
+
   it('shows one tile for each machine', () => {
     render(<PrinterGallery printers={[printer('mk4'), printer('mini')]} onSelect={nobodyChooses} />);
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, afterEach } from '@jest/globals';
+import { describe, it, expect, jest, afterEach, beforeEach } from '@jest/globals';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Job, RegisteredPrinter, Verdict } from '@3d-print-shop/client/browser';
 import { JobsByFilament } from '../src/components/JobsByFilament';
@@ -137,6 +137,82 @@ describe('the work the shop is holding', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Approve job 9' }));
 
       await waitFor(() => expect(judged).toHaveBeenCalledWith(9, 'approved'));
+    });
+  });
+
+  // AIDEV-NOTE: the one-click way to put on what a group waits for. It REPLACES what is on the chosen
+  // machine, because every printer here has one extruder.
+  describe('loading what a group waits for', () => {
+    const loads = jest.fn<(printer: string, filaments: string[]) => Promise<void>>();
+    const loadOnMk4 = (): HTMLElement[] => screen.queryAllByRole('button', { name: 'Load on mk4' });
+
+    beforeEach(() => {
+      loads.mockReset();
+      loads.mockResolvedValue(undefined);
+    });
+
+    const offering = (jobs: Job[], selected?: RegisteredPrinter): void => {
+      render(<JobsByFilament jobs={jobs} totalJobs={jobs.length} selected={selected} onLoad={loads} />);
+    };
+
+    it('puts that filament, and only it, on the chosen machine', async () => {
+      offering([job(1, ['PLA-Blue'])], mk4);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load on mk4' }));
+
+      await waitFor(() => expect(loads).toHaveBeenCalledWith('mk4', ['PLA-Blue']));
+    });
+
+    it.each([
+      ['printing', true],
+      ['awaiting-approval', false],
+    ] as const)('is disabled only while the machine is printing - %s', (phase, disabled) => {
+      offering([job(1, ['PLA-Blue'])], { ...mk4, holding: { job: 9, phase } });
+
+      expect((screen.getByRole('button', { name: 'Load on mk4' }) as HTMLButtonElement).disabled).toBe(disabled);
+    });
+
+    it('is not offered for what the machine already has on it', () => {
+      offering([job(1, ['PLA-Red']), job(2, ['PLA-Blue'])], mk4);
+
+      expect(loadOnMk4()).toHaveLength(1);
+    });
+
+    // A group of prints waiting for a verdict starts nothing when its filament goes on.
+    it('is not offered for a group with nothing queued', () => {
+      offering([job(1, ['PLA-Blue'], { state: 'awaiting-approval', heldBy: 'mk4', lastPrinterOutcome: 'finished' })], mk4);
+
+      expect(loadOnMk4()).toHaveLength(0);
+    });
+
+    it('is not offered when no machine is chosen', () => {
+      offering([job(1, ['PLA-Blue'])]);
+
+      expect(screen.queryByRole('button', { name: /^Load on/ })).toBeNull();
+    });
+
+    it('is not offered where there is nobody to take it', () => {
+      showing([job(1, ['PLA-Blue'])], 1, mk4);
+
+      expect(loadOnMk4()).toHaveLength(0);
+    });
+
+    it('cannot be pressed again while the shop is still answering', () => {
+      loads.mockReturnValue(new Promise<void>(() => undefined));
+      offering([job(1, ['PLA-Blue'])], mk4);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load on mk4' }));
+
+      expect((screen.getByRole('button', { name: 'Load on mk4' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('says what the shop said when it will not', async () => {
+      loads.mockRejectedValue(new Error('no printer is named mk4'));
+      offering([job(1, ['PLA-Blue'])], mk4);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load on mk4' }));
+
+      await waitFor(() => expect(screen.getByText('no printer is named mk4')).toBeDefined());
     });
   });
 });

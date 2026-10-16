@@ -165,14 +165,20 @@ body {
 }
 
 .printer-slot.editable .loaded {
-  padding-right: 52px;
+  padding-right: 104px;
 }
 
 /* Level with the loaded line at the foot of the tile, which leaves it room - never over the camera. */
-.edit-printer {
+.printer-actions {
   position: absolute;
   right: 10px;
   bottom: 8px;
+  display: flex;
+  gap: 4px;
+}
+
+.printer-actions button,
+.load-here {
   padding: 3px 9px;
   color: var(--ink);
   font: inherit;
@@ -184,10 +190,18 @@ body {
   opacity: 0.85;
 }
 
-.edit-printer:hover {
+.printer-actions button:hover:enabled,
+.load-here:hover:enabled {
   border-color: var(--live);
   color: var(--live);
   opacity: 1;
+}
+
+.printer-actions button:disabled,
+.load-here:disabled {
+  color: var(--dim);
+  cursor: default;
+  opacity: 0.5;
 }
 
 .camera {
