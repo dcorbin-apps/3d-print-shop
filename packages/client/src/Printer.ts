@@ -25,6 +25,19 @@ export interface Holding {
   remotePath?: string;
   /** What the machine said when it stopped. Present once it has stopped. */
   outcome?: PrinterOutcome;
+  /**
+   * When the machine had the file and began printing it. Absent on a print started before the shop
+   * recorded this, or one whose upload was never answered - the same cases `remotePath` misses.
+   */
+  printingSince?: Date;
+  /**
+   * The MACHINE paused this print and has not yet resumed it, and since when - a person at it, a
+   * filament change. Not the operator's `paused`, which stops the shop handing out work and leaves
+   * a running print alone.
+   */
+  machinePausedSince?: Date;
+  /** How long the machine's pauses that have ENDED kept this print waiting, in seconds. */
+  pausedSeconds?: number;
 }
 
 /** What a printer is DOING. It changes as the shop runs. */

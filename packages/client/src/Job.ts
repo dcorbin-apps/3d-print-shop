@@ -118,4 +118,13 @@ export interface Job extends JobDetails {
   heldBy?: string;
   /** What the printer said when it stopped, which is not a verdict. */
   lastPrinterOutcome?: PrinterOutcome;
+  /**
+   * When a printing job should come off the bed: when it started, plus its estimate, plus however
+   * long the machine has kept it paused. Derived when the job is read, and present only while it is
+   * printing on a print with a known start and an estimate.
+   *
+   * No better than the slicer's estimate it is built on, and a pause the shop did not hear - one
+   * begun and ended while it was out of contact - is not in it.
+   */
+  expectedDone?: Date;
 }

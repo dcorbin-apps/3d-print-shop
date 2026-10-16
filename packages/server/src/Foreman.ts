@@ -322,6 +322,25 @@ export class Foreman {
         this.log.error('could not write down what a printer said about itself', { printer: name, why: (failure as Error).message }),
       );
     });
+
+    // AIDEV-NOTE: CHAINED, unlike what it says about its fitness. A pause and its resume each read
+    // the printer before writing, and a resume written first is ignored - which leaves the pause
+    // open and the print's end sliding later for as long as it runs. No test catches the chain's
+    // absence: the two reads it orders finish in order in practice, and slowing one needs a spy.
+    let pausing = Promise.resolve();
+    machine.saysWhetherItIsPaused?.((paused) => {
+      if (this.stopping) return;
+
+      pausing = this.track(pausing.then(() => this.writeDownWhetherItIsPaused(name, paused))).catch((failure: unknown) =>
+        this.log.error('could not write down a printer pausing its print', { printer: name, why: (failure as Error).message }),
+      );
+    });
+  }
+
+  private async writeDownWhetherItIsPaused(name: string, paused: boolean): Promise<void> {
+    const printer = await this.shop.printerNamed(name);
+
+    await (paused ? this.shop.machinePaused(printer) : this.shop.machineResumed(printer));
   }
 
   private async writeDownWhatItSaid(name: string, canPrint: boolean, why: string): Promise<void> {

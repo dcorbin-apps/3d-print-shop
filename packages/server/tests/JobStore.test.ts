@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { InvalidSubmission } from '../src/Job';
 import type { BuildVolume, Job, JobDetails, PrinterOutcome } from '../src/Job';
-import type { RegisteredPrinter } from '../src/Printer';
+import type { Holding, RegisteredPrinter } from '../src/Printer';
 import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, DataUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
 import { aDataDirectory, parentOf } from './aDataDirectory';
 import { toStdout } from '../src/log';
@@ -224,7 +224,7 @@ describe('JobStore', () => {
 
       await shop.printingAt(await the('mk4'), 'plates/umlaut.gcode');
 
-      expect((await shop.printerNamed('mk4')).holding).toEqual({ job: id, phase: 'printing', remotePath: 'plates/umlaut.gcode' });
+      expect((await shop.printerNamed('mk4')).holding).toMatchObject({ job: id, phase: 'printing', remotePath: 'plates/umlaut.gcode' });
     });
 
     // A print is watched to its end from a holding that has by then moved phase, so a path lost on
@@ -1071,6 +1071,114 @@ describe('JobStore', () => {
 
   // AIDEV-NOTE: (UT) the machine's own account of itself, which is the one trouble here the shop
   // does not work out for itself - and the one an operator cannot lift.
+  // (UT) Date alone is faked: everything else here is a real directory, and its callbacks must run.
+  describe('how long a print has left', () => {
+    const STARTED = new Date('2026-09-12T09:00:00Z');
+    const HOUR = 3600;
+
+    const at = (when: string): void => jest.setSystemTime(new Date(when));
+    const holding = async (): Promise<Holding | undefined> => (await the('mk4')).holding;
+
+    let id: number;
+
+    beforeEach(async () => {
+      jest.useFakeTimers({
+        doNotFake: [
+          'nextTick',
+          'setImmediate',
+          'clearImmediate',
+          'setTimeout',
+          'clearTimeout',
+          'setInterval',
+          'clearInterval',
+          'queueMicrotask',
+        ],
+        now: STARTED,
+      });
+      id = (await submit(details({ estimatedPrintSeconds: 2 * HOUR }), gcode())).id;
+      await shop.startPrinting(await the('mk4'), id);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('starts counting once the machine has the file, not when the printer was claimed', async () => {
+      at('2026-09-12T09:05:00Z');
+      await shop.printingAt(await the('mk4'), 'plates/a.gcode');
+
+      expect((await holding())?.printingSince).toEqual(new Date('2026-09-12T09:05:00Z'));
+    });
+
+    it('is the start and the estimate', async () => {
+      await shop.printingAt(await the('mk4'), 'plates/a.gcode');
+
+      expect((await shop.find(id))?.expectedDone).toEqual(new Date('2026-09-12T11:00:00Z'));
+    });
+
+    it('adds a pause the machine took once it has ended', async () => {
+      await shop.printingAt(await the('mk4'), 'plates/a.gcode');
+      at('2026-09-12T09:30:00Z');
+      await shop.machinePaused(await the('mk4'));
+      at('2026-09-12T09:40:00Z');
+
+      await shop.machineResumed(await the('mk4'));
+
+      expect(await holding()).toMatchObject({ pausedSeconds: 600, machinePausedSince: undefined });
+    });
+
+    it('adds every pause, not only the last', async () => {
+      await shop.printingAt(await the('mk4'), 'plates/a.gcode');
+      for (const [paused, resumed] of [
+        ['2026-09-12T09:10:00Z', '2026-09-12T09:15:00Z'],
+        ['2026-09-12T09:30:00Z', '2026-09-12T09:40:00Z'],
+      ]) {
+        at(paused);
+        await shop.machinePaused(await the('mk4'));
+        at(resumed);
+        await shop.machineResumed(await the('mk4'));
+      }
+
+      expect((await holding())?.pausedSeconds).toBe(900);
+    });
+
+    it('keeps when a pause began, however often the machine says it is paused', async () => {
+      await shop.printingAt(await the('mk4'), 'plates/a.gcode');
+      at('2026-09-12T09:30:00Z');
+      await shop.machinePaused(await the('mk4'));
+      at('2026-09-12T09:35:00Z');
+
+      await shop.machinePaused(await the('mk4'));
+
+      expect((await holding())?.machinePausedSince).toEqual(new Date('2026-09-12T09:30:00Z'));
+    });
+
+    it('moves later for as long as the machine stays paused', async () => {
+      await shop.printingAt(await the('mk4'), 'plates/a.gcode');
+      at('2026-09-12T09:30:00Z');
+      await shop.machinePaused(await the('mk4'));
+      at('2026-09-12T10:00:00Z');
+
+      expect((await shop.find(id))?.expectedDone).toEqual(new Date('2026-09-12T11:30:00Z'));
+    });
+
+    it('ignores a resume when the machine was never seen to pause', async () => {
+      await shop.printingAt(await the('mk4'), 'plates/a.gcode');
+
+      await shop.machineResumed(await the('mk4'));
+
+      expect((await holding())?.pausedSeconds).toBeUndefined();
+    });
+
+    it('ignores a pause on a printer that is not printing', async () => {
+      await shop.finishedPrinting(await the('mk4'), 'finished');
+
+      await shop.machinePaused(await the('mk4'));
+
+      expect((await holding())?.machinePausedSince).toBeUndefined();
+    });
+  });
+
   describe('a machine that says it cannot print', () => {
     beforeEach(async () => {
       await shop.addPrinter({ name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://mk4' });

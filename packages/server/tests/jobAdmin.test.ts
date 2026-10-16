@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, afterEach, beforeEach, jest } from '@jest/globals';
 import type { Job, Shop } from '@3d-print-shop/client';
 import { judgeJob, listJobs, whatToLoadNext } from '../src/jobAdmin';
 
@@ -50,6 +50,28 @@ describe('minding the work', () => {
       mockJobs.mockResolvedValue(holding([job({ state: 'printing', heldBy: 'mk4' })]));
 
       expect(await listJobs(shop)).toEqual(['1  Player Box  PLA-SpaceGray  printing on mk4']);
+    });
+
+    describe('how long one that is running has left', () => {
+      beforeEach(() => {
+        jest.useFakeTimers({ now: new Date('2026-09-06T13:00:00Z') });
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('says how long until it should be done', async () => {
+        mockJobs.mockResolvedValue(holding([job({ state: 'printing', heldBy: 'mk4', expectedDone: new Date('2026-09-06T14:20:00Z') })]));
+
+        expect(await listJobs(shop)).toEqual(['1  Player Box  PLA-SpaceGray  printing on mk4, about 1h 20m left']);
+      });
+
+      it('says when it has run past what it was expected to take', async () => {
+        mockJobs.mockResolvedValue(holding([job({ state: 'printing', heldBy: 'mk4', expectedDone: new Date('2026-09-06T12:59:00Z') })]));
+
+        expect(await listJobs(shop)).toEqual(['1  Player Box  PLA-SpaceGray  printing on mk4, past its estimate']);
+      });
     });
 
     // AIDEV-NOTE: said rather than left out. A list that quietly showed a caller only their own work

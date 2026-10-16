@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
-import { canTake, fitsInside, whereToWatch } from '../src/Printer';
+import { canTake, expectedDone, fitsInside, whereToWatch } from '../src/Printer';
 import type { JobRecord } from '../src/Job';
-import type { PrinterRecord } from '../src/Printer';
+import type { Holding, PrinterRecord } from '../src/Printer';
 
 const MK4: PrinterRecord = { name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, address: 'http://octopi.local', api: 'octoprint' };
 
@@ -83,5 +83,36 @@ describe('where a person can watch a machine', () => {
 
   it('does not double the separator when the address was given with a trailing slash', () => {
     expect(whereToWatch({ ...MK4, address: 'http://octopi.local/' })).toBe('http://octopi.local/webcam/?action=stream');
+  });
+});
+
+// (UT) A pause the machine took is time the print did not move, so it pushes the end out by as long.
+describe('when a print should be done', () => {
+  const STARTED = new Date('2026-09-12T09:00:00Z');
+  const NOW = new Date('2026-09-12T10:00:00Z');
+  const HOUR = 3600;
+
+  const printing = (holding: Partial<Holding> = {}): Holding => ({ job: 1, phase: 'printing', printingSince: STARTED, ...holding });
+
+  it('is its start and its estimate', () => {
+    expect(expectedDone(printing(), 2 * HOUR, NOW)).toEqual(new Date('2026-09-12T11:00:00Z'));
+  });
+
+  it('is later by every pause that has ended', () => {
+    expect(expectedDone(printing({ pausedSeconds: 900 }), 2 * HOUR, NOW)).toEqual(new Date('2026-09-12T11:15:00Z'));
+  });
+
+  it('is later by as long as the pause still going has lasted', () => {
+    const pausedAtHalfPast = printing({ pausedSeconds: 900, machinePausedSince: new Date('2026-09-12T09:30:00Z') });
+
+    expect(expectedDone(pausedAtHalfPast, 2 * HOUR, NOW)).toEqual(new Date('2026-09-12T11:45:00Z'));
+  });
+
+  it.each([
+    ['nobody said how long it takes', printing(), undefined],
+    ['the shop never learned when it started', printing({ printingSince: undefined }), 2 * HOUR],
+    ['it has stopped printing', printing({ phase: 'awaiting-approval', outcome: 'finished' }), 2 * HOUR],
+  ])('is not known when %s', (_why, holding, estimate) => {
+    expect(expectedDone(holding, estimate, NOW)).toBeUndefined();
   });
 });

@@ -975,6 +975,46 @@ describe('the foreman', () => {
     });
   });
 
+  // (UT) the machine pausing its own print is written onto what the printer holds, so the end of the
+  // print can be moved out by as long as it waited.
+  describe('a machine that pauses its print', () => {
+    let tellTheForeman: (paused: boolean) => void;
+
+    const holding = async (): Promise<RegisteredPrinter['holding']> => (await shop.printerNamed('mk4')).holding;
+
+    beforeEach(async () => {
+      mockReach.mockImplementation(async (_printer: RegisteredPrinter): Promise<Printer> => {
+        return {
+          send: mockSend,
+          awaitOutcome: mockAwaitOutcome,
+          saysWhetherItIsPaused: (told: (paused: boolean) => void): void => {
+            tellTheForeman = told;
+          },
+        };
+      });
+      await submit();
+      await foreman.considerStarting();
+      await until(async () => (await holding())?.printingSince !== undefined);
+    });
+
+    it('is written down as paused', async () => {
+      tellTheForeman(true);
+
+      await until(async () => (await holding())?.machinePausedSince !== undefined);
+      expect((await holding())?.pausedSeconds).toBeUndefined();
+    });
+
+    it('is written down as having waited once it goes on', async () => {
+      tellTheForeman(true);
+      await until(async () => (await holding())?.machinePausedSince !== undefined);
+
+      tellTheForeman(false);
+
+      await until(async () => (await holding())?.pausedSeconds !== undefined);
+      expect((await holding())?.machinePausedSince).toBeUndefined();
+    });
+  });
+
   // The eager half: a machine with nothing to print is reached anyway, because a machine nobody has
   // opened a line to is one whose own state cannot be known until there is work - which is too late.
   describe('keeping in touch with every machine', () => {

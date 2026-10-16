@@ -66,6 +66,28 @@ describe('the work the shop is holding', () => {
     expect(screen.getByText('printing on mk4')).toBeDefined();
   });
 
+  describe('a job that is printing', () => {
+    beforeEach(() => {
+      jest.useFakeTimers({ now: new Date('2026-09-09T13:00:00Z') });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('says how long until it should be done', () => {
+      showing([job(1, ['PLA-Red'], { state: 'printing', heldBy: 'mk4', expectedDone: new Date('2026-09-09T13:45:00Z') })]);
+
+      expect(screen.getByText('printing on mk4, about 45m left')).toBeDefined();
+    });
+
+    it('says when it has run past what it was expected to take', () => {
+      showing([job(1, ['PLA-Red'], { state: 'printing', heldBy: 'mk4', expectedDone: new Date('2026-09-09T12:30:00Z') })]);
+
+      expect(screen.getByText('printing on mk4, past its estimate')).toBeDefined();
+    });
+  });
+
   // The outcome is not the verdict, and the line has to say which is missing.
   it('says a finished print is waiting for somebody to judge it', () => {
     showing([job(1, ['PLA-Red'], { state: 'awaiting-approval', heldBy: 'mk4', lastPrinterOutcome: 'finished' })]);

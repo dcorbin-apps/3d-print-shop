@@ -271,6 +271,8 @@ export class OctoPrint implements Printer {
   // is "it has not said yet", which is not the same as a no and must not be reported as one.
   private canPrint: boolean | undefined = undefined;
   private tellAboutFitness: ((canPrint: boolean, why: string) => void) | undefined = undefined;
+  private paused: boolean | undefined = undefined;
+  private tellAboutPausing: ((paused: boolean) => void) | undefined = undefined;
   private disconnectRequested = false;
   private reconnectAttempt = 0;
   private lostContactAt: number | null = null;
@@ -608,6 +610,23 @@ export class OctoPrint implements Printer {
     this.tellAboutFitness = told;
   }
 
+  // AIDEV-NOTE: on change, for the reason `tellWhatItCanDo` is. `pausing` counts as paused: the
+  // machine has stopped laying down plastic, and that is what an estimate of the end cares about.
+  private tellWhetherItIsPaused(status: OctoPrintStatusPayload): void {
+    const flags = status.state?.flags;
+    if (!flags) return;
+
+    const paused = flags.paused === true || flags.pausing === true;
+    if (paused === this.paused) return;
+
+    this.paused = paused;
+    this.tellAboutPausing?.(paused);
+  }
+
+  saysWhetherItIsPaused(told: (paused: boolean) => void): void {
+    this.tellAboutPausing = told;
+  }
+
   private handleCompletionEvent(type: string | undefined, path: string | undefined): void {
     if (!type || !path) return;
 
@@ -622,6 +641,7 @@ export class OctoPrint implements Printer {
   // the same messages and was being dropped on the floor by that early return.
   private handleStatus(status: OctoPrintStatusPayload): void {
     this.tellWhatItCanDo(status);
+    this.tellWhetherItIsPaused(status);
 
     if (!this.reconcileOnNextStatus) return;
 

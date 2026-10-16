@@ -105,7 +105,17 @@ function LoadHere({ filament, printer, onLoad }: { filament: string; printer: Re
 
 function whereItIs(job: Job): string {
   if (job.state === 'queued') return job.heldBack === undefined ? 'queued' : 'paused';
-  if (job.state === 'printing') return `printing on ${job.heldBy}`;
+  if (job.state === 'printing') return `printing on ${job.heldBy}${howLongLeft(job.expectedDone)}`;
 
   return `${job.lastPrinterOutcome} on ${job.heldBy} - waiting for a verdict`;
+}
+
+// AIDEV-NOTE: counted from the page's clock on each poll rather than from the shop's, so it moves
+// as the page is asked again. The same words as `job list` says it in jobAdmin.ts.
+function howLongLeft(expectedDone: Date | undefined): string {
+  if (expectedDone === undefined) return '';
+
+  const seconds = (expectedDone.getTime() - Date.now()) / 1000;
+
+  return seconds > 0 ? `, about ${asPrintingTime(seconds)} left` : ', past its estimate';
 }

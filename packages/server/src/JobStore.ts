@@ -5,7 +5,7 @@ import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { InvalidSubmission, generatedDisplayName, validateDisplayName } from './Job.js';
 import type { BuildVolume, Job, JobDetails, JobRecord, PrinterOutcome } from './Job.js';
-import { canTake, whereToWatch } from './Printer.js';
+import { canTake, expectedDone, whereToWatch } from './Printer.js';
 import type { Holding, PrinterRecord, PrinterStatus, RegisteredPrinter } from './Printer.js';
 import { defaultLayout } from './dataLayout.js';
 import { silent } from './log.js';
@@ -93,12 +93,14 @@ interface StoredTrouble {
   reason: string;
   since: string;
 }
-type StoredStatus = Omit<PrinterStatus, 'paused' | 'unreachable' | 'refused' | 'outOfContact' | 'unavailable'> & {
+type StoredHolding = Omit<Holding, 'printingSince' | 'machinePausedSince'> & { printingSince?: string; machinePausedSince?: string };
+type StoredStatus = Omit<PrinterStatus, 'paused' | 'unreachable' | 'refused' | 'outOfContact' | 'unavailable' | 'holding'> & {
   paused?: StoredTrouble;
   unreachable?: StoredTrouble;
   refused?: StoredTrouble;
   outOfContact?: StoredTrouble;
   unavailable?: StoredTrouble;
+  holding?: StoredHolding;
 };
 
 export class NoSuchJob extends Error {}
@@ -302,7 +304,34 @@ export class JobStore {
   async printingAt(printer: RegisteredPrinter, remotePath: string): Promise<void> {
     const { printer: holder, holding } = await this.requireHolding(printer.name, 'printing');
 
-    await this.changeStatus(holder, (status) => ({ ...status, holding: { ...holding, remotePath } }));
+    // AIDEV-NOTE: the start is HERE and not at the claim, because the upload asks the machine to
+    // print as soon as it has the file - so the time a plate spends on the wire is not printing.
+    await this.changeStatus(holder, (status) => ({ ...status, holding: { ...holding, remotePath, printingSince: new Date() } }));
+  }
+
+  // AIDEV-NOTE: a machine already paused stays paused SINCE when it was first seen to be. The machine
+  // repeats itself after a reconnect, and taking the repeat as a new pause would lose what came before.
+  /** The machine paused the print it has - a person at it, a filament change - and is not printing. */
+  async machinePaused(printer: RegisteredPrinter): Promise<void> {
+    await this.changeStatus(printer, (status) => {
+      const holding = status.holding;
+      if (holding?.phase !== 'printing' || holding.machinePausedSince !== undefined) return status;
+
+      return { ...status, holding: { ...holding, machinePausedSince: new Date() } };
+    });
+  }
+
+  /** The machine went on with it. How long it waited is added to what the print has waited already. */
+  async machineResumed(printer: RegisteredPrinter): Promise<void> {
+    await this.changeStatus(printer, (status) => {
+      const holding = status.holding;
+      if (holding?.machinePausedSince === undefined) return status;
+
+      const { machinePausedSince, ...rest } = holding;
+      const waited = (Date.now() - machinePausedSince.getTime()) / 1000;
+
+      return { ...status, holding: { ...rest, pausedSeconds: (holding.pausedSeconds ?? 0) + waited } };
+    });
   }
 
   /**
@@ -685,6 +714,11 @@ export class JobStore {
         refused: since(stored.refused),
         outOfContact: since(stored.outOfContact),
         unavailable: since(stored.unavailable),
+        holding: stored.holding && {
+          ...stored.holding,
+          printingSince: asDate(stored.holding.printingSince),
+          machinePausedSince: asDate(stored.holding.machinePausedSince),
+        },
       },
     };
   }
@@ -842,7 +876,13 @@ function asJob(record: JobRecord, printers: RegisteredPrinter[], override: Statu
   // read as though it were - so it is kept on disk and simply not shown while it prints.
   if (!holder?.holding) return { ...record, state: 'queued', heldBack: whenPaused(override) };
 
-  return { ...record, state: holder.holding.phase, heldBy: holder.name, lastPrinterOutcome: holder.holding.outcome };
+  return {
+    ...record,
+    state: holder.holding.phase,
+    heldBy: holder.name,
+    lastPrinterOutcome: holder.holding.outcome,
+    expectedDone: expectedDone(holder.holding, record.estimatedPrintSeconds, new Date()),
+  };
 }
 
 function whenPaused(override: StatusOverride): Date | undefined {
@@ -914,4 +954,8 @@ function describeVolume(volume: BuildVolume): string {
 
 function since(trouble: StoredTrouble | undefined): { reason: string; since: Date } | undefined {
   return trouble && { reason: trouble.reason, since: new Date(trouble.since) };
+}
+
+function asDate(when: string | undefined): Date | undefined {
+  return when === undefined ? undefined : new Date(when);
 }

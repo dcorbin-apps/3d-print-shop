@@ -1,6 +1,6 @@
 import type { Caller } from './Caller.js';
 import type { FilamentDemand, Job, JobDetails, JobsHeld, Verdict } from './Job.js';
-import type { PrinterRecord, RegisteredPrinter } from './Printer.js';
+import type { Holding, PrinterRecord, RegisteredPrinter } from './Printer.js';
 import type { PrinterAdded, Shop } from './Shop.js';
 
 const DESCRIPTION_PART = 'job';
@@ -225,20 +225,22 @@ export async function refusal(response: Response): Promise<string> {
 // AIDEV-NOTE: a time is an ISO string on the wire and a Date in hand. Converting here is the whole
 // reason this is a client rather than a cast: a caller handed `submittedAt` typed as a Date and
 // holding a string finds out at the first comparison, somewhere else entirely.
-type WireJob = Omit<Job, 'submittedAt'> & { submittedAt: string };
+type WireJob = Omit<Job, 'submittedAt' | 'expectedDone'> & { submittedAt: string; expectedDone?: string };
 interface WireTrouble {
   reason: string;
   since: string;
 }
-type WirePrinter = Omit<RegisteredPrinter, 'paused' | 'unreachable' | 'refused' | 'outOfContact'> & {
+type WireHolding = Omit<Holding, 'printingSince' | 'machinePausedSince'> & { printingSince?: string; machinePausedSince?: string };
+type WirePrinter = Omit<RegisteredPrinter, 'paused' | 'unreachable' | 'refused' | 'outOfContact' | 'holding'> & {
   paused?: WireTrouble;
   unreachable?: WireTrouble;
   refused?: WireTrouble;
   outOfContact?: WireTrouble;
+  holding?: WireHolding;
 };
 
 export function asJob(job: WireJob): Job {
-  return { ...job, submittedAt: new Date(job.submittedAt) };
+  return { ...job, submittedAt: new Date(job.submittedAt), expectedDone: asDate(job.expectedDone) };
 }
 
 export function asPrinter(printer: WirePrinter): RegisteredPrinter {
@@ -248,7 +250,16 @@ export function asPrinter(printer: WirePrinter): RegisteredPrinter {
     unreachable: since(printer.unreachable),
     refused: since(printer.refused),
     outOfContact: since(printer.outOfContact),
+    holding: asHolding(printer.holding),
   };
+}
+
+function asHolding(holding: WireHolding | undefined): Holding | undefined {
+  return holding && { ...holding, printingSince: asDate(holding.printingSince), machinePausedSince: asDate(holding.machinePausedSince) };
+}
+
+function asDate(when: string | undefined): Date | undefined {
+  return when === undefined ? undefined : new Date(when);
 }
 
 export function since(trouble: WireTrouble | undefined): { reason: string; since: Date } | undefined {

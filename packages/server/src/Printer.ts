@@ -1,6 +1,6 @@
 import type { BuildVolume, JobRecord } from './Job.js';
 import { octoPrintCamera } from './OctoPrint.js';
-import type { PrinterRecord } from '@3d-print-shop/client';
+import type { Holding, PrinterRecord } from '@3d-print-shop/client';
 
 // The wire contract, so the shop and everything that talks to it cannot drift apart.
 export type { Holding, PrinterApi, PrinterRecord, PrinterStatus, RegisteredPrinter } from '@3d-print-shop/client';
@@ -30,4 +30,16 @@ export function canTake(printer: PrinterRecord, job: JobRecord): boolean {
   const claimed = job.printer === undefined || job.printer === printer.name;
 
   return claimed && fitsInside(job.requiredBuildVolume, printer.buildVolume);
+}
+
+// AIDEV-NOTE: a pause still OPEN counts up to `now`, so while the machine waits the answer slides
+// later with it rather than standing at a time already known to be wrong.
+/** When a print should be done, if the shop knows when it started and how long it was expected to take. */
+export function expectedDone(holding: Holding, estimatedPrintSeconds: number | undefined, now: Date): Date | undefined {
+  if (holding.phase !== 'printing' || holding.printingSince === undefined || estimatedPrintSeconds === undefined) return undefined;
+
+  const pausedNow = holding.machinePausedSince === undefined ? 0 : now.getTime() - holding.machinePausedSince.getTime();
+  const takesMs = ((holding.pausedSeconds ?? 0) + estimatedPrintSeconds) * 1000 + pausedNow;
+
+  return new Date(holding.printingSince.getTime() + takesMs);
 }

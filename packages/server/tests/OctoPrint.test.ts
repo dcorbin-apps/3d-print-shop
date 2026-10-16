@@ -1015,6 +1015,49 @@ describe('OctoPrint', () => {
     });
   });
 
+  // (UT) the machine pausing a print itself, which is time the print is not moving.
+  describe('whether the machine has paused its print', () => {
+    let said: boolean[];
+
+    const frame = (flags: Record<string, boolean>): string => JSON.stringify({ current: { state: { text: 'Printing', flags } } });
+
+    beforeEach(async () => {
+      said = [];
+      await connectAdapter();
+      adapter.saysWhetherItIsPaused((paused) => said.push(paused));
+    });
+
+    it.each([
+      ['paused', { printing: false, paused: true }, true],
+      ['on its way to a pause', { printing: true, pausing: true }, true],
+      ['printing', { printing: true, paused: false }, false],
+    ])('says whether it is paused when it is %s', (_doing, flags, paused) => {
+      mockWs.onmessage!(frame(flags));
+
+      expect(said).toEqual([paused]);
+    });
+
+    it('says nothing when the answer has not changed', () => {
+      mockWs.onmessage!(frame({ paused: true }));
+      mockWs.onmessage!(frame({ paused: true }));
+
+      expect(said).toEqual([true]);
+    });
+
+    it('says so again when it goes on printing', () => {
+      mockWs.onmessage!(frame({ paused: true }));
+      mockWs.onmessage!(frame({ printing: true }));
+
+      expect(said).toEqual([true, false]);
+    });
+
+    it('says nothing at all about a frame carrying no flags', () => {
+      mockWs.onmessage!(JSON.stringify({ current: { state: { text: 'Who knows' } } }));
+
+      expect(said).toEqual([]);
+    });
+  });
+
   // AIDEV-NOTE: the reason a push socket never opened reaches an operator as `printer.paused.reason`,
   // so it has to say the same things a failed request says. A close with no error before it has nothing
   // to add, which is what a machine that answered and then hung up looks like.

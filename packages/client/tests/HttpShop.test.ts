@@ -23,6 +23,16 @@ describe('what the wire says, in the shape a caller was promised', () => {
     it('leaves everything else exactly as it came', () => {
       expect(asJob(WIRE_JOB)).toMatchObject({ id: 1, filaments: ['PLA-Red'], displayName: 'Player Box', gcodeBytes: 100, state: 'queued' });
     });
+
+    it('hands back when a printing one should be done as a time', () => {
+      const printing = { ...WIRE_JOB, state: 'printing' as const, expectedDone: '2026-09-12T11:30:00.000Z' };
+
+      expect(asJob(printing).expectedDone).toEqual(new Date('2026-09-12T11:30:00.000Z'));
+    });
+
+    it('has no time it should be done when the shop gave none', () => {
+      expect(asJob(WIRE_JOB).expectedDone).toBeUndefined();
+    });
   });
 
   describe('a time a printer has been in some state since', () => {
@@ -63,6 +73,28 @@ describe('what the wire says, in the shape a caller was promised', () => {
 
     it('keeps what the printer is', () => {
       expect(asPrinter(WIRE_PRINTER)).toMatchObject(WIRE_PRINTER);
+    });
+
+    it('hands back when a print started, and when the machine paused it, as times', () => {
+      const holding = {
+        job: 7,
+        phase: 'printing' as const,
+        printingSince: '2026-09-12T09:00:00.000Z',
+        machinePausedSince: '2026-09-12T10:00:00.000Z',
+        pausedSeconds: 90,
+      };
+
+      expect(asPrinter({ ...WIRE_PRINTER, holding }).holding).toEqual({
+        job: 7,
+        phase: 'printing',
+        printingSince: new Date('2026-09-12T09:00:00.000Z'),
+        machinePausedSince: new Date('2026-09-12T10:00:00.000Z'),
+        pausedSeconds: 90,
+      });
+    });
+
+    it('leaves a printer holding nothing holding nothing', () => {
+      expect(asPrinter(WIRE_PRINTER).holding).toBeUndefined();
     });
   });
 });

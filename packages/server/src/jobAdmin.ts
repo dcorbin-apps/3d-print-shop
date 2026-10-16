@@ -44,6 +44,15 @@ function jobsWaiting({ jobs, estimatedPrintSeconds }: FilamentDemand): string {
   return estimatedPrintSeconds === undefined ? waiting : `${waiting}, ${asPrintingTime(estimatedPrintSeconds)} of printing`;
 }
 
+// AIDEV-NOTE: the same words as the page's `howLongLeft` in JobsByFilament.tsx. Keep them alike.
+function howLongLeft(expectedDone: Date | undefined): string {
+  if (expectedDone === undefined) return '';
+
+  const seconds = (expectedDone.getTime() - Date.now()) / 1000;
+
+  return seconds > 0 ? `, about ${asPrintingTime(seconds)} left` : ', past its estimate';
+}
+
 // Hours and minutes, which is what a person deciding whether to swap a spool thinks in - and rounded
 // UP, so that the queue is never said to be shorter than it is.
 function asPrintingTime(seconds: number): string {
@@ -70,7 +79,7 @@ export async function judgeJob(shop: Shop, id: number, verdict: Verdict): Promis
 
 function whereItIs(job: Job): string {
   if (job.state === 'queued') return 'queued';
-  if (job.state === 'printing') return `printing on ${job.heldBy}`;
+  if (job.state === 'printing') return `printing on ${job.heldBy}${howLongLeft(job.expectedDone)}`;
 
   return `printed on ${job.heldBy}, ${job.lastPrinterOutcome} - waiting for a verdict`;
 }

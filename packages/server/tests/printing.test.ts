@@ -72,7 +72,7 @@ describe('printing the next job', () => {
 
       await printOn('mk4', ['PLA-Red']);
 
-      expect((await shop.printerNamed('mk4')).holding).toEqual({ job: job.id, phase: 'printing', remotePath: remotePathFor(job) });
+      expect((await shop.printerNamed('mk4')).holding).toMatchObject({ job: job.id, phase: 'printing', remotePath: remotePathFor(job) });
     });
 
     it('sends the gcode that was stored with it', async () => {
