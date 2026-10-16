@@ -79,6 +79,20 @@ describe('the shop wearing a protocol it borrowed', () => {
     expect(job).toMatchObject({ filaments: ['PLA-SpaceGray'], estimatedPrintSeconds: 5400, state: 'queued', owner: 'dave' });
   });
 
+  // Somebody has to be at the machine for a colour change, so it waits on a filament only a person loads.
+  it('takes a plate that stops for a colour change as needing its filament mixed', async () => {
+    await upload(`${A_PLATE}\n;COLOR_CHANGE,T0,#DAEC1B\nM600\nG1 X110.000 Y100.000\n`);
+
+    expect((await shop.all())[0].filaments).toEqual(['Mixed/PLA-SpaceGray']);
+  });
+
+  // Only the first is what has to be loaded to start, so it is the only one that changes.
+  it('mixes only the filament it starts with', async () => {
+    await upload(`${A_PLATE.replace('PLA-SpaceGray', 'PLA-SpaceGray;PETG-Blue')}\n;COLOR_CHANGE,T0,#DAEC1B\n`);
+
+    expect((await shop.all())[0].filaments).toEqual(['Mixed/PLA-SpaceGray', 'PETG-Blue']);
+  });
+
   it('names the job after the file that arrived, in the words a person would use', async () => {
     await upload(A_PLATE, 'ClampDock_0.4n_0.2mm_PLA_MK4IS_6m.gcode');
 

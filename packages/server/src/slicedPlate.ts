@@ -52,6 +52,17 @@ const ESTIMATE_KEYS = ['estimated printing time (normal mode)', 'estimated print
 const WIDTH_AND_DEPTH_KEYS = ['bed_shape'];
 const HEIGHT_KEYS = ['max_print_height'];
 
+// AIDEV-NOTE: the marker written where a colour change was put in, followed by whatever the
+// settings say to send for one - which a person can change, so the marker is matched and the
+// command is not. At the start of a line, so the `color_change_gcode` setting does not count.
+// Measured in tests/assumptions/aColourChangePlate.gcode.
+const COLOUR_CHANGE = /^;COLOR_CHANGE,/;
+
+/** Whether this line of a plate is where it stops for somebody to change the filament by hand. */
+export function isColourChange(line: string): boolean {
+  return COLOUR_CHANGE.test(line);
+}
+
 // AIDEV-NOTE: `; name = value`, which is the one shape every writer of these agrees on. A line that
 // is not a comment ends nothing and is simply not a setting - the block is not delimited here,
 // because what this is given is already only the ends of a file.

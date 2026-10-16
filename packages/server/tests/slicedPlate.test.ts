@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { READS, slicedPlate } from '../src/slicedPlate';
+import { READS, isColourChange, slicedPlate } from '../src/slicedPlate';
 import type { PlateRead } from '../src/slicedPlate';
 
 // AIDEV-NOTE: (UT) over a string, which is what the ends of a plate are by the time anything here
@@ -106,5 +106,18 @@ describe('what a sliced plate says about itself', () => {
     it('says what it does read, for whoever has to write the refusal', () => {
       expect(READS).toBe('PrusaSlicer 2');
     });
+  });
+});
+
+// (UT) The marker and not the command: what is sent for a colour change is a setting a person can
+// change, and every plate carries that setting whether it changes colour or not.
+describe('where a plate stops for a colour change', () => {
+  it.each([
+    [';COLOR_CHANGE,T0,#DAEC1B', true],
+    ['; color_change_gcode = M600\\nG1 E0.3 F1500 ; prime after color change', false],
+    ['M600', false],
+    ['G1 X120.632 Y109.368 E.2957 ;COLOR_CHANGE,T0,#DAEC1B', false],
+  ])('%s is %s', (line, stops) => {
+    expect(isColourChange(line)).toBe(stops);
   });
 });

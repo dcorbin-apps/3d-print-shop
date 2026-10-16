@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
-import { ENDS_BYTES, endsOf } from '../../src/asAnOctoPrint';
+import { ENDS_BYTES, changesColour, endsOf } from '../../src/asAnOctoPrint';
 import { pictureOf } from '../../src/jobPicture';
 import { slicedPlate } from '../../src/slicedPlate';
 
@@ -56,5 +56,24 @@ describe('what a plate a real tool wrote actually says', () => {
 
     expect(ends).toContain('; filament_settings_id = ');
     expect(slicedPlate(ends)).toMatchObject({ read: true, filaments: ['PLA'] });
+  });
+});
+
+// AIDEV-NOTE: (assumption test) the same tool's plate with one colour change put in at a layer. What
+// is pinned is that the marker `isColourChange` looks for is the one it really writes, and that a
+// plate with none - the one above - is not taken for one.
+describe('what a plate with a colour change in it actually says', () => {
+  const HERE = path.dirname(expect.getState().testPath ?? '');
+
+  it('is found to stop for somebody to change the filament', async () => {
+    expect(await changesColour(path.resolve(HERE, 'aColourChangePlate.gcode'))).toBe(true);
+  });
+
+  it('is not confused with a plate that never stops', async () => {
+    expect(await changesColour(path.resolve(HERE, 'aRealPlate.gcode'))).toBe(false);
+  });
+
+  it('is read for its filament like any other plate', async () => {
+    expect(slicedPlate(await endsOf(path.resolve(HERE, 'aColourChangePlate.gcode')))).toMatchObject({ read: true, filaments: ['PLA'] });
   });
 });

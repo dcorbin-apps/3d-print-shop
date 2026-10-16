@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { open, rm } from 'node:fs/promises';
 import * as path from 'node:path';
+import { createInterface } from 'node:readline';
 import { pipeline } from 'node:stream/promises';
 import type { Express, Request } from 'express';
 import { InvalidSubmission, validateDetails } from './Job.js';
@@ -11,7 +12,7 @@ import { TooMuchToTake, WrongState } from './JobStore.js';
 import type { JobStore } from './JobStore.js';
 import { silent } from './log.js';
 import type { Log } from './log.js';
-import { READS, slicedPlate } from './slicedPlate.js';
+import { READS, isColourChange, slicedPlate } from './slicedPlate.js';
 
 /** What the face needs: a shop to submit into, and somewhere to put a plate while it reads it. */
 export interface AnOctoPrint {
@@ -171,7 +172,7 @@ async function submitWhatArrived(shop: JobStore, parked: string, filename: strin
   }
 
   const details: JobDetails = {
-    filaments: plate.filaments,
+    filaments: (await changesColour(parked)) ? mixed(plate.filaments) : plate.filaments,
     displayName: whatToCallIt(filename),
     estimatedPrintSeconds: plate.estimatedPrintSeconds,
     requiredBuildVolume: plate.requiredBuildVolume,
@@ -183,6 +184,33 @@ async function submitWhatArrived(shop: JobStore, parked: string, filename: strin
   validateDetails(details);
 
   return shop.submit(details, createReadStream(parked), owner);
+}
+
+// AIDEV-NOTE: a plate that stops for a person to swap the spool must not start just because its first
+// colour is on the machine - somebody has to be standing there. Renaming what it needs is what keeps
+// it waiting: nobody has `Mixed/PLA` loaded until a person loads it, and loading it is saying go.
+const MIXED = 'Mixed/';
+
+function mixed([first, ...rest]: string[]): string[] {
+  return [`${MIXED}${first}`, ...rest];
+}
+
+// AIDEV-NOTE: the WHOLE plate, unlike `endsOf`, because a colour change is written at the layer it
+// happens on and that is anywhere. Read a line at a time and stopped at the first, so a plate is
+// never held whole.
+/** Whether this plate stops anywhere for somebody to change the filament by hand. */
+export async function changesColour(plate: string): Promise<boolean> {
+  const input = createReadStream(plate);
+
+  try {
+    for await (const line of createInterface({ input, crlfDelay: Infinity })) {
+      if (isColourChange(line)) return true;
+    }
+
+    return false;
+  } finally {
+    input.destroy();
+  }
 }
 
 // AIDEV-NOTE: both ends, because the same setting is written in a short block at the top by one tool
