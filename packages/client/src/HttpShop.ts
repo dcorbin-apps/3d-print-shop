@@ -231,11 +231,12 @@ interface WireTrouble {
   since: string;
 }
 type WireHolding = Omit<Holding, 'printingSince' | 'machinePausedSince'> & { printingSince?: string; machinePausedSince?: string };
-type WirePrinter = Omit<RegisteredPrinter, 'paused' | 'unreachable' | 'refused' | 'outOfContact' | 'holding'> & {
+type WirePrinter = Omit<RegisteredPrinter, 'paused' | 'unreachable' | 'refused' | 'outOfContact' | 'unavailable' | 'holding'> & {
   paused?: WireTrouble;
   unreachable?: WireTrouble;
   refused?: WireTrouble;
   outOfContact?: WireTrouble;
+  unavailable?: WireTrouble;
   holding?: WireHolding;
 };
 
@@ -250,6 +251,7 @@ export function asPrinter(printer: WirePrinter): RegisteredPrinter {
     unreachable: since(printer.unreachable),
     refused: since(printer.refused),
     outOfContact: since(printer.outOfContact),
+    unavailable: since(printer.unavailable),
     holding: asHolding(printer.holding),
   };
 }

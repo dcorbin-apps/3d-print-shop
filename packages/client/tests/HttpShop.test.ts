@@ -48,7 +48,7 @@ describe('what the wire says, in the shape a caller was promised', () => {
     });
   });
 
-  // Four ways a printer can be in trouble, and each carries a time. A cast would let any of them
+  // Five ways a printer can be in trouble, and each carries a time. A cast would let any of them
   // through as a string.
   describe('a printer', () => {
     const WIRE_PRINTER = {
@@ -59,16 +59,25 @@ describe('what the wire says, in the shape a caller was promised', () => {
       loaded: ['PLA-Red'],
     };
 
-    it.each(['paused', 'unreachable', 'refused', 'outOfContact'] as const)('hands back the time it went %s as a time', (trouble) => {
-      const printer = asPrinter({ ...WIRE_PRINTER, [trouble]: { reason: 'because', since: '2026-09-12T09:00:00.000Z' } });
+    it.each(['paused', 'unreachable', 'refused', 'outOfContact', 'unavailable'] as const)(
+      'hands back the time it went %s as a time',
+      (trouble) => {
+        const printer = asPrinter({ ...WIRE_PRINTER, [trouble]: { reason: 'because', since: '2026-09-12T09:00:00.000Z' } });
 
-      expect(printer[trouble]).toEqual({ reason: 'because', since: new Date('2026-09-12T09:00:00.000Z') });
-    });
+        expect(printer[trouble]).toEqual({ reason: 'because', since: new Date('2026-09-12T09:00:00.000Z') });
+      },
+    );
 
     it('leaves a printer in no trouble with none of them', () => {
       const printer = asPrinter(WIRE_PRINTER);
 
-      expect([printer.paused, printer.unreachable, printer.refused, printer.outOfContact]).toEqual([undefined, undefined, undefined, undefined]);
+      expect([printer.paused, printer.unreachable, printer.refused, printer.outOfContact, printer.unavailable]).toEqual([
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ]);
     });
 
     it('keeps what the printer is', () => {
