@@ -156,6 +156,15 @@ describe('the credentials a shop is given', () => {
       await expect(callersIn(etc)).rejects.toThrow('is not JSON');
     });
 
+    // (UT) What a command run as root leaves behind: a good file the shop's own user may not open.
+    it('says a file it may not open cannot be read, rather than that it is not JSON', async () => {
+      await write(CALLERS_FILE, JSON.stringify([dave]), 0o000);
+
+      await expect(callersIn(etc)).rejects.toThrow(
+        `cannot be read by the user this shop runs as (EACCES) - it belongs to uid ${process.getuid?.()}`,
+      );
+    });
+
     // AIDEV-NOTE: a fresh machine is where this matters. Every route names its caller, so reading a
     // file that is not there as "nobody configured yet" would put a shop anybody may call on the
     // first machine it was installed on - the one place nobody is watching for it.

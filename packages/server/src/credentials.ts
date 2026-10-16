@@ -579,8 +579,16 @@ async function readOnlyByItsOwner(file: string): Promise<unknown> {
     );
   }
 
+  // AIDEV-NOTE: read and parsed apart. Together, a file the shop's user may not open - one a command
+  // run as root wrote over - was reported as not JSON, and sent somebody looking for a stray comma.
+  const contents = await readFile(file, 'utf-8').catch((failure: NodeJS.ErrnoException) => {
+    throw new UnusableCredentials(
+      `${file} cannot be read by the user this shop runs as (${failure.code ?? failure.message}) - it belongs to uid ${found.uid}, and must belong to that user`,
+    );
+  });
+
   try {
-    return JSON.parse(await readFile(file, 'utf-8')) as unknown;
+    return JSON.parse(contents) as unknown;
   } catch {
     throw new UnusableCredentials(`${file} is not JSON`);
   }
