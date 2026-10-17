@@ -1,4 +1,5 @@
 export { HttpShop, NotAuthenticated, picturePath } from './HttpShop.js';
+export { inQueueOrder } from './queueOrder.js';
 export { SHOP_ROUTES, OCTOPRINT_PREFIX, BORROWED_ROUTES } from './routes.js';
 export type { Caller, Role } from './Caller.js';
 export type { BuildVolume, FilamentDemand, Job, JobDetails, JobPhase, JobState, JobsHeld, PrinterOutcome, Verdict } from './Job.js';

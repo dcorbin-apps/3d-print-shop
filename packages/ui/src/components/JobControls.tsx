@@ -6,6 +6,8 @@ export interface JobActions {
   onRename: (id: number, displayName: string) => Promise<void>;
   onHold: (id: number, held: boolean) => Promise<void>;
   onRemove: (id: number) => Promise<void>;
+  /** Absent for anybody who is not an admin, because the shop refuses them it. */
+  onPromote?: (id: number) => Promise<void>;
 }
 
 interface JobControlsProps {
@@ -15,8 +17,8 @@ interface JobControlsProps {
   confirm?: (question: string) => boolean;
 }
 
-// AIDEV-NOTE: on the row itself, because there are two of them. A menu is worth its click when it is
-// hiding a list; hiding two buttons behind one button is a click to reach a click. What each is FOR
+// AIDEV-NOTE: on the row itself, because there are at most three of them. A menu is worth its click when it is
+// hiding a list; hiding three buttons behind one button is a click to reach a click. What each is FOR
 // is said on hover - a word, the same word the button would have said - and its accessible name says
 // the word and which job, because a screen is offering this for every job at once.
 //
@@ -35,6 +37,7 @@ export function JobControls({ job, actions, confirm = window.confirm.bind(window
   const held = job.heldBack !== undefined;
   const queued = job.state === 'queued';
   const printing = job.state === 'printing';
+  const promote = actions.onPromote;
 
   // The shop's own words for a refusal. This end knows only that something was not done.
   const doing = async (what: () => Promise<void>): Promise<void> => {
@@ -82,6 +85,18 @@ export function JobControls({ job, actions, confirm = window.confirm.bind(window
           </button>
         )}
 
+        {queued && promote !== undefined && (
+          <button
+            type="button"
+            data-says="Promote"
+            aria-label={`Promote job ${job.id}`}
+            disabled={busy}
+            onClick={() => void doing(() => promote(job.id))}
+          >
+            <PromoteMark />
+          </button>
+        )}
+
         {(queued || printing) && (
           <button
             type="button"
@@ -116,6 +131,15 @@ function ResumeMark(): React.JSX.Element {
   return (
     <svg className="mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <polygon points="8,5 19,12 8,19" fill="currentColor" />
+    </svg>
+  );
+}
+
+// A bar and an arrow up to it: to the top of the list, which is the front of the queue.
+function PromoteMark(): React.JSX.Element {
+  return (
+    <svg className="mark" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M5 5h14M12 19V9M7.5 13.5L12 9l4.5 4.5" strokeLinejoin="round" />
     </svg>
   );
 }

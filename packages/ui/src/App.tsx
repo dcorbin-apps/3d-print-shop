@@ -54,6 +54,7 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
 
   // Each of these changes what the queue will do next, so the page asks again rather than waiting
   // out a tick - the same reasoning as a verdict.
+  const admin = caller?.role === 'admin';
   const actions = {
     onRename: async (id: number, displayName: string): Promise<void> => {
       await shop.rename(id, displayName);
@@ -67,10 +68,15 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
       await shop.remove(id);
       askAgain();
     },
+    onPromote: admin
+      ? async (id: number): Promise<void> => {
+          await shop.promote(id);
+          askAgain();
+        }
+      : undefined,
   };
 
   const selected = stillHere(printers, chosen);
-  const admin = caller?.role === 'admin';
   const waitingFor = byFilament(jobs)
     .filter((group) => group.queued > 0)
     .map((group) => group.filament);

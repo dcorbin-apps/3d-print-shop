@@ -88,6 +88,7 @@ type StoredJob = Omit<JobRecord, 'submittedAt'> & { submittedAt: string };
  */
 interface StatusOverride {
   paused?: string;
+  promoted?: string;
 }
 interface StoredTrouble {
   reason: string;
@@ -549,6 +550,15 @@ export class JobStore {
     return this.require(id);
   }
 
+  // AIDEV-NOTE: kept after the job starts, like a pause, so a reprint comes back still promoted.
+  /** Put a queued job at the front of its filament's queue, ahead of any promoted before it. */
+  async promote(id: number): Promise<Job> {
+    await this.requireNothingIsHolding(id, 'promoted');
+    await this.overrideStatus(id, (override) => ({ ...override, promoted: new Date().toISOString() }));
+
+    return this.require(id);
+  }
+
   // AIDEV-NOTE: a queued job only. One on a bed leaves by a VERDICT, which is a person saying what
   // came off the machine - and deleting it instead would leave a printer holding a job that is not
   // there, which is the failure `leaveTheShop` orders its two steps to avoid. Stopping a running
@@ -874,7 +884,7 @@ function asJob(record: JobRecord, printers: RegisteredPrinter[], override: Statu
   // AIDEV-NOTE: a pause is only ever reported on a job nothing is holding. A print already on a bed
   // is not stopped by somebody having pressed pause on the queue, and saying "paused" about it would
   // read as though it were - so it is kept on disk and simply not shown while it prints.
-  if (!holder?.holding) return { ...record, state: 'queued', heldBack: whenPaused(override) };
+  if (!holder?.holding) return { ...record, state: 'queued', heldBack: asDate(override.paused), promotedAt: asDate(override.promoted) };
 
   return {
     ...record,
@@ -883,10 +893,6 @@ function asJob(record: JobRecord, printers: RegisteredPrinter[], override: Statu
     lastPrinterOutcome: holder.holding.outcome,
     expectedDone: expectedDone(holder.holding, record.estimatedPrintSeconds, new Date()),
   };
-}
-
-function whenPaused(override: StatusOverride): Date | undefined {
-  return override.paused === undefined ? undefined : new Date(override.paused);
 }
 
 // AIDEV-NOTE: piped rather than buffered - a kit's gcode runs to tens of megabytes, and pipeline()

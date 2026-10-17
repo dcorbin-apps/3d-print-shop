@@ -113,6 +113,11 @@ describe('choosing what to print', () => {
       expect(nextToPrint([job(2, ['red']), job(1, ['red'])], printer(['red']))?.id).toBe(1);
     });
 
+    // How promotions order among themselves is inQueueOrder's, and tested beside it.
+    it('takes a promoted job ahead of one submitted before it', () => {
+      expect(nextToPrint([job(1, ['red']), job(2, ['red'], { promotedAt: new Date('2026-09-05T13:00:00Z') })], printer(['red']))?.id).toBe(2);
+    });
+
     it('answers with nothing when what is loaded cannot print anything', () => {
       expect(nextToPrint([job(1, ['red'])], printer(['blue']))).toBeUndefined();
     });

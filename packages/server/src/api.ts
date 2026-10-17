@@ -682,6 +682,17 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
     response.json(await shop.letThrough(id));
   });
 
+  // AIDEV-NOTE: an admin's alone, by being left off OPEN_TO_EVERY_CALLER - it puts a job ahead of
+  // everybody's, which is not a thing about whose job it is.
+  api.put('/jobs/:id/promotion', async (request, response) => {
+    const id = jobId(request.params.id);
+    const promoted = await shop.promote(id);
+
+    log.info('a job was promoted', { job: id, by: request.caller.name });
+
+    response.json(promoted);
+  });
+
   // AIDEV-NOTE: one route, two acts, decided by what the job is DOING rather than by which button a
   // page offered. A queued job is forgotten. A printing one is stopped on the machine and stays -
   // there is plastic on that bed, so it lands where a finished print lands and waits for a verdict

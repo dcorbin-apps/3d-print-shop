@@ -114,6 +114,11 @@ export interface Job extends JobDetails {
    * its gcode is where it was. What is different is only that the shop has been told to leave it.
    */
   heldBack?: Date;
+  /**
+   * An admin put this job at the front of its filament's queue, and when. The latest promotion goes
+   * first, so promoting another puts that one ahead of this. Only ever on a queued job.
+   */
+  promotedAt?: Date;
   /** The printer holding it, when one is. */
   heldBy?: string;
   /** What the printer said when it stopped, which is not a verdict. */

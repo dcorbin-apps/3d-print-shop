@@ -12,12 +12,14 @@ describe('what can be done with a job', () => {
   const onRename = jest.fn<(id: number, displayName: string) => Promise<void>>();
   const onHold = jest.fn<(id: number, held: boolean) => Promise<void>>();
   const onRemove = jest.fn<(id: number) => Promise<void>>();
+  const onPromote = jest.fn<(id: number) => Promise<void>>();
   const confirm = jest.fn<(question: string) => boolean>();
 
   beforeEach(() => {
     onRename.mockResolvedValue(undefined);
     onHold.mockResolvedValue(undefined);
     onRemove.mockResolvedValue(undefined);
+    onPromote.mockResolvedValue(undefined);
     confirm.mockReturnValue(true);
   });
 
@@ -35,6 +37,10 @@ describe('what can be done with a job', () => {
 
   const show = (overrides: Partial<Job> = {}): void => {
     render(<JobControls job={job(overrides)} actions={{ onRename, onHold, onRemove }} confirm={confirm} />);
+  };
+
+  const showToAnAdmin = (overrides: Partial<Job> = {}): void => {
+    render(<JobControls job={job(overrides)} actions={{ onRename, onHold, onRemove, onPromote }} confirm={confirm} />);
   };
 
   const press = (button: string): void => fireEvent.click(screen.getByRole('button', { name: button }));
@@ -91,6 +97,28 @@ describe('what can be done with a job', () => {
     });
   });
 
+  describe('promoting a job', () => {
+    it('sends a queued one to the front', async () => {
+      showToAnAdmin();
+
+      press('Promote job 7');
+
+      await waitFor(() => expect(onPromote).toHaveBeenCalledWith(7));
+    });
+
+    it('is not offered on one that is printing, because it has already started', () => {
+      showToAnAdmin({ state: 'printing', heldBy: 'mk4' });
+
+      expect(screen.queryByRole('button', { name: 'Promote job 7' })).toBeNull();
+    });
+
+    it('is not offered where there is nobody to take it', () => {
+      show();
+
+      expect(screen.queryByRole('button', { name: 'Promote job 7' })).toBeNull();
+    });
+  });
+
   // The shop refuses it: a verdict is how a print waiting for one leaves.
   describe('a print waiting for a verdict', () => {
     it('is offered neither a delete nor a cancel', () => {
@@ -107,8 +135,9 @@ describe('what can be done with a job', () => {
       ['a paused one', 'Resume', { heldBack: new Date('2026-09-15T13:00:00Z') }],
       ['a queued job', 'Delete', {}],
       ['a printing one', 'Cancel', { state: 'printing' as const, heldBy: 'mk4' }],
+      ['a queued job', 'Promote', {}],
     ])('tells somebody %s can be %s, in the word the button would have said', (_what, word, overrides) => {
-      show(overrides);
+      showToAnAdmin(overrides);
 
       // `data-says` and not `title`: a browser draws a title under the pointer, which on a mark this
       // size is the pointer covering the word. The stylesheet draws this one above the button.

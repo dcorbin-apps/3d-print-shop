@@ -1,3 +1,4 @@
+import { inQueueOrder } from '@3d-print-shop/client/browser';
 import type { Job } from '@3d-print-shop/client/browser';
 
 /** Every job the shop is holding that needs this filament, and what it is waiting for. */
@@ -26,7 +27,7 @@ export function byFilament(jobs: Job[]): FilamentGroup[] {
   return [...grouped.entries()]
     .map(([filament, held]) => ({
       filament,
-      jobs: [...held].sort((a, b) => a.id - b.id),
+      jobs: [...held].sort(inQueueOrder),
       queued: held.filter((job) => job.state === 'queued').length,
       estimatedPrintSeconds: workIn(held.filter((job) => job.state === 'queued')),
     }))

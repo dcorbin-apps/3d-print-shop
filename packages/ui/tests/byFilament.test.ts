@@ -52,6 +52,12 @@ describe('the work, by what it needs loaded', () => {
     expect(byFilament([job(3, ['red']), job(1, ['red'])])[0].jobs.map((held) => held.id)).toEqual([1, 3]);
   });
 
+  it('lists a promoted job first, because that is the order the shop prints them in', () => {
+    const promoted = job(3, ['red'], { promotedAt: new Date('2026-09-09T13:00:00Z') });
+
+    expect(byFilament([job(1, ['red']), promoted])[0].jobs.map((held) => held.id)).toEqual([3, 1]);
+  });
+
   describe('how much printing is waiting', () => {
     it('totals what the queued jobs say they take', () => {
       const held = [job(1, ['red'], { estimatedPrintSeconds: 3600 }), job(2, ['red'], { estimatedPrintSeconds: 1800 })];

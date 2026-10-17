@@ -118,6 +118,10 @@ export class HttpShop implements Shop {
     return asJob((await this.answered('DELETE', `/jobs/${id}/hold`)) as WireJob);
   }
 
+  async promote(id: number): Promise<Job> {
+    return asJob((await this.answered('PUT', `/jobs/${id}/promotion`)) as WireJob);
+  }
+
   async remove(id: number): Promise<void> {
     await this.answered('DELETE', `/jobs/${id}`);
   }
@@ -225,7 +229,7 @@ export async function refusal(response: Response): Promise<string> {
 // AIDEV-NOTE: a time is an ISO string on the wire and a Date in hand. Converting here is the whole
 // reason this is a client rather than a cast: a caller handed `submittedAt` typed as a Date and
 // holding a string finds out at the first comparison, somewhere else entirely.
-type WireJob = Omit<Job, 'submittedAt' | 'expectedDone'> & { submittedAt: string; expectedDone?: string };
+type WireJob = Omit<Job, 'submittedAt' | 'expectedDone' | 'promotedAt'> & { submittedAt: string; expectedDone?: string; promotedAt?: string };
 interface WireTrouble {
   reason: string;
   since: string;
@@ -241,7 +245,7 @@ type WirePrinter = Omit<RegisteredPrinter, 'paused' | 'unreachable' | 'refused' 
 };
 
 export function asJob(job: WireJob): Job {
-  return { ...job, submittedAt: new Date(job.submittedAt), expectedDone: asDate(job.expectedDone) };
+  return { ...job, submittedAt: new Date(job.submittedAt), expectedDone: asDate(job.expectedDone), promotedAt: asDate(job.promotedAt) };
 }
 
 export function asPrinter(printer: WirePrinter): RegisteredPrinter {

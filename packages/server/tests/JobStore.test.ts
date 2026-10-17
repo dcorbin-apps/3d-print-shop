@@ -1009,6 +1009,42 @@ describe('JobStore', () => {
       });
     });
 
+    describe('promoting it', () => {
+      it('says when it was promoted', async () => {
+        await shop.promote(id);
+
+        expect((await shop.find(id))?.promotedAt).toBeInstanceOf(Date);
+      });
+
+      it('survives being read back from disk rather than from memory', async () => {
+        await shop.promote(id);
+
+        expect((await new JobStore(where).find(id))?.promotedAt).toBeInstanceOf(Date);
+      });
+
+      it('keeps a pause it already had', async () => {
+        await shop.holdBack(id);
+
+        await shop.promote(id);
+
+        expect((await shop.find(id))?.heldBack).toBeInstanceOf(Date);
+      });
+
+      it('is refused on a job a printer is holding', async () => {
+        await shop.startPrinting(await shop.printerNamed('mk4'), id);
+
+        await expect(shop.promote(id)).rejects.toThrow(WrongState);
+      });
+
+      it('is not said of a job a printer is holding', async () => {
+        await shop.promote(id);
+
+        await shop.startPrinting(await shop.printerNamed('mk4'), id);
+
+        expect((await shop.find(id))?.promotedAt).toBeUndefined();
+      });
+    });
+
     describe('forgetting it', () => {
       it('takes the record, the gcode and what was said about it', async () => {
         await shop.rename(id, 'Clamp Dock');

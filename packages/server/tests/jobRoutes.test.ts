@@ -687,6 +687,38 @@ describe('the jobs, over the shop routes', () => {
       });
     });
 
+    describe('promoting it', () => {
+      it('answers with the job, saying when it was promoted', async () => {
+        const answer = await send('PUT', `/jobs/${id}/promotion`);
+
+        expect(answer.status).toBe(200);
+        expect((answer.body as Job).promotedAt).toBeDefined();
+      });
+
+      // It puts the job ahead of everybody's, so owning the job is not enough.
+      it('is refused to somebody who is not an admin, even on their own job', async () => {
+        const { id: theirs } = (await submitting(submission(playerBox), USER)).body as Job;
+
+        const answer = await asUser('PUT', `/jobs/${theirs}/promotion`);
+
+        expect(answer.status).toBe(403);
+      });
+
+      it('is not there for a job the shop does not hold', async () => {
+        const answer = await send('PUT', '/jobs/999/promotion');
+
+        expect(answer.status).toBe(404);
+      });
+
+      it('is refused once a printer has it', async () => {
+        await shop.startPrinting(await shop.printerNamed('mk4'), id);
+
+        const answer = await send('PUT', `/jobs/${id}/promotion`);
+
+        expect(answer.status).toBe(409);
+      });
+    });
+
     describe('being rid of it', () => {
       it('forgets a queued one', async () => {
         const answer = await send('DELETE', `/jobs/${id}`);

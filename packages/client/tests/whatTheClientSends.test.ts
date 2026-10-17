@@ -74,6 +74,13 @@ describe('what the client sends, and what it makes of the answer', () => {
       expect(await shop.job(7)).toMatchObject({ id: 7, displayName: 'Player Box' });
       expect(asked[0]).toMatchObject({ method: 'GET', path: '/jobs/7' });
     });
+
+    it('promotes one, and answers with the job the shop made of it', async () => {
+      answers = { status: 200, body: { ...aJob, submittedAt: '2026-09-06T11:22:04.177Z', promotedAt: '2026-09-06T12:00:00.000Z' } };
+
+      expect(await shop.promote(7)).toMatchObject({ id: 7, promotedAt: new Date('2026-09-06T12:00:00.000Z') });
+      expect(asked).toMatchObject([{ method: 'PUT', path: '/jobs/7/promotion' }]);
+    });
   });
 
   describe('submitting', () => {

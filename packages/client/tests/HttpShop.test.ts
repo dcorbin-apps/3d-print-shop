@@ -33,6 +33,14 @@ describe('what the wire says, in the shape a caller was promised', () => {
     it('has no time it should be done when the shop gave none', () => {
       expect(asJob(WIRE_JOB).expectedDone).toBeUndefined();
     });
+
+    it('hands back when it was promoted as a time', () => {
+      expect(asJob({ ...WIRE_JOB, promotedAt: '2026-09-12T10:00:00.000Z' }).promotedAt).toEqual(new Date('2026-09-12T10:00:00.000Z'));
+    });
+
+    it('has no time it was promoted when it never was', () => {
+      expect(asJob(WIRE_JOB).promotedAt).toBeUndefined();
+    });
   });
 
   describe('a time a printer has been in some state since', () => {

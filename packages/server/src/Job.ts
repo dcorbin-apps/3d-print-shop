@@ -9,7 +9,7 @@ export type { BuildVolume, Job, JobDetails, JobPhase, JobState, PrinterOutcome }
 // than being updated. Everything that CHANGES while a job is in the shop belongs to the printer
 // holding it, because a printer is the only thing whose state actually moves. See
 // design/3d-print-shop.md's "What changes, and what does not".
-export type JobRecord = Omit<Job, 'state' | 'heldBy' | 'lastPrinterOutcome' | 'heldBack' | 'expectedDone'>;
+export type JobRecord = Omit<Job, 'state' | 'heldBy' | 'lastPrinterOutcome' | 'heldBack' | 'promotedAt' | 'expectedDone'>;
 
 // AIDEV-NOTE: submission order, and only used when a client offers no name of its own. It is
 // deliberately not derived from anything about the job: a name built from the filament or the file

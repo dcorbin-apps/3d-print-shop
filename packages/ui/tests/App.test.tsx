@@ -350,6 +350,43 @@ describe('the page, against a shop that answers', () => {
     });
   });
 
+  // An admin's alone, because it puts a job ahead of everybody's - and the shop refuses anybody else.
+  describe('promoting a queued job', () => {
+    const queued = (as: Role): void => {
+      fetching.mockImplementation((where: Parameters<typeof fetch>[0], sent?: RequestInit) => {
+        const path = String(where);
+        if (path.endsWith('/me')) return Promise.resolve(answered({ id: 'dave', name: 'dave', role: as }));
+        if (path.endsWith('/printers')) return Promise.resolve(answered([]));
+        if (sent?.method === 'PUT') return Promise.resolve(answered({ id: 7, filaments: ['PLA-Red'], submittedAt: '2026-09-09T12:00:00Z' }));
+
+        return Promise.resolve(
+          answered({
+            accessibleJobs: [{ id: 7, displayName: 'Player Box', filaments: ['PLA-Red'], submittedAt: '2026-09-09T12:00:00Z', gcodeBytes: 1024, state: 'queued' }],
+            totalJobs: 1,
+          }),
+        );
+      });
+    };
+
+    it('tells the shop which job an admin sent to the front', async () => {
+      queued('admin');
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Promote job 7' })).toBeDefined());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Promote job 7' }));
+
+      await waitFor(() => expect(asked('PUT', '/jobs/7/promotion')).toBeDefined());
+    });
+
+    it('is not offered to a user', async () => {
+      queued('user');
+      render(<App />);
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Pause job 7' })).toBeDefined());
+      expect(screen.queryByRole('button', { name: 'Promote job 7' })).toBeNull();
+    });
+  });
+
   // AIDEV-NOTE: their own password, end to end from the page - which until now was an operator at a
   // terminal, and so was nothing the person whose password it is could do.
   describe('changing your own password', () => {

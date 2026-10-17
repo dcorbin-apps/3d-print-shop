@@ -72,6 +72,11 @@ export interface Shop {
   /** Let a held job through. It is queued like any other from that moment. */
   letThrough(id: number): Promise<Job>;
   /**
+   * Put a queued job at the front of its filament's queue, ahead of any promoted before it. An
+   * admin's to do, because it puts the job ahead of everybody's. Refused on a job a printer is holding.
+   */
+  promote(id: number): Promise<Job>;
+  /**
    * Be rid of a job, which is a different act depending on what it is doing.
    *
    * A QUEUED one is forgotten - the record, the gcode, all of it. A PRINTING one is cancelled on the

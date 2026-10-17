@@ -39,6 +39,7 @@ describe('every path this client asks the shop for', () => {
       anyway(shop.rename(1, 'Clamp Dock')),
       anyway(shop.hold(1)),
       anyway(shop.letThrough(1)),
+      anyway(shop.promote(1)),
       anyway(shop.remove(1)),
       anyway(shop.waitingOn()),
       anyway(shop.waitingOn('mk4')),

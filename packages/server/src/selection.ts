@@ -1,3 +1,4 @@
+import { inQueueOrder } from '@3d-print-shop/client';
 import type { FilamentDemand } from '@3d-print-shop/client';
 import type { Job } from './Job.js';
 import { canTake } from './Printer.js';
@@ -35,13 +36,14 @@ export function printableNow(jobs: Job[], printer: RegisteredPrinter): Job[] {
       .filter((job) => job.heldBack === undefined)
       .filter((job) => canTake(printer, job))
       .filter((job) => printer.loaded.includes(startsWith(job)))
-      .sort((a, b) => a.id - b.id)
+      .sort(inQueueOrder)
   );
 }
 
 /**
  * The one to print, or nothing if what is loaded cannot print anything. Submission order among
- * equals, because ids ARE submission order and nothing here knows enough to be cleverer.
+ * equals, because ids ARE submission order and nothing here knows enough to be cleverer - unless an
+ * admin promoted one, which is somebody who does.
  */
 export function nextToPrint(jobs: Job[], printer: RegisteredPrinter): Job | undefined {
   return printableNow(jobs, printer)[0];
