@@ -91,6 +91,15 @@ describe('what can be done with a job', () => {
     });
   });
 
+  // The shop refuses it: a verdict is how a print waiting for one leaves.
+  describe('a print waiting for a verdict', () => {
+    it('is offered neither a delete nor a cancel', () => {
+      show({ state: 'awaiting-approval', heldBy: 'mk4', lastPrinterOutcome: 'finished' });
+
+      expect(screen.queryByRole('button', { name: /^(Delete|Cancel) job 7$/ })).toBeNull();
+    });
+  });
+
   // A mark is only as good as the word beside it, and these have no word until somebody hovers.
   describe('what each mark says it is', () => {
     it.each([

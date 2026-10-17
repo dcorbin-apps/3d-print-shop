@@ -26,7 +26,8 @@ interface JobControlsProps {
 //
 // What is offered is decided here and refused again by the shop, which is the same manners the `+`
 // on the printer row keeps. No pause on a print that has started: a pause keeps a job from STARTING,
-// and saying otherwise would have somebody believe they had stopped a print they had not.
+// and saying otherwise would have somebody believe they had stopped a print they had not. No delete on
+// a print waiting for a verdict: the verdict is how it leaves.
 export function JobControls({ job, actions, confirm = window.confirm.bind(window) }: JobControlsProps): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | undefined>(undefined);
@@ -81,16 +82,18 @@ export function JobControls({ job, actions, confirm = window.confirm.bind(window
           </button>
         )}
 
-        <button
-          type="button"
-          className="remove"
-          data-says={printing ? 'Cancel' : 'Delete'}
-          aria-label={`${printing ? 'Cancel' : 'Delete'} job ${job.id}`}
-          disabled={busy}
-          onClick={remove}
-        >
-          {printing ? <StopMark /> : <DeleteMark />}
-        </button>
+        {(queued || printing) && (
+          <button
+            type="button"
+            className="remove"
+            data-says={printing ? 'Cancel' : 'Delete'}
+            aria-label={`${printing ? 'Cancel' : 'Delete'} job ${job.id}`}
+            disabled={busy}
+            onClick={remove}
+          >
+            {printing ? <StopMark /> : <DeleteMark />}
+          </button>
+        )}
       </span>
 
       {refused !== undefined && <p className="job-refused">{refused}</p>}
