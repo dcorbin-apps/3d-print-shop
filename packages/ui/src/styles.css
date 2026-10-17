@@ -9,7 +9,7 @@
   --live-edge: #3e82cc;
   --wants-somebody: #ffb547;
   --wrong: #ff6b6b;
-  --gallery-height: 250px;
+  --gallery-height: 290px;
 
   color-scheme: dark;
 }
@@ -164,11 +164,11 @@ body {
   flex: 1 1 auto;
 }
 
-.printer-slot.editable .loaded {
-  padding-right: 104px;
+/* A row of the tile's own for the buttons, below its text - never over the text, never over the camera. */
+.printer-slot.editable > .printer-tile {
+  padding-bottom: 40px;
 }
 
-/* Level with the loaded line at the foot of the tile, which leaves it room - never over the camera. */
 .printer-actions {
   position: absolute;
   right: 10px;
@@ -204,8 +204,9 @@ body {
   opacity: 0.5;
 }
 
+/* The camera gives up the room the text needs, rather than the text being clipped to keep it. */
 .camera {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   width: 100%;
   min-height: 0;
   object-fit: cover;
@@ -224,6 +225,7 @@ body {
 }
 
 .tile-foot {
+  flex: none;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -263,6 +265,7 @@ body {
 
 .why,
 .loaded {
+  flex: none;
   margin: 0;
   font-size: 12px;
   color: var(--dim);
