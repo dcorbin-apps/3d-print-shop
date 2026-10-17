@@ -879,3 +879,27 @@ body {
 .dialog .buttons {
   margin-top: 8px;
 }
+
+/* Apart from Save and Cancel, below a rule, and in the colour of something that cannot be undone. */
+.remove-printer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--edge);
+}
+
+.remove-printer button {
+  padding: 5px 12px;
+  color: var(--wrong);
+  font: inherit;
+  font-size: 13px;
+  background: transparent;
+  border: 1px solid var(--wrong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.remove-printer button:disabled {
+  color: var(--dim);
+  border-color: var(--edge);
+  cursor: default;
+}

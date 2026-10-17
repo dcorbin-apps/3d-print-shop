@@ -44,10 +44,20 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
     askAgain();
   };
 
-  // The machine is free to take the next plate, so this asks again straight away too.
-  const retry = async (name: string): Promise<void> => {
-    await shop.resume(name);
-    askAgain();
+  // Each of these changes what a machine can take, so the page asks again straight away too.
+  const printerActs = {
+    onStop: async (name: string, reason: string): Promise<void> => {
+      await shop.pause(name, reason);
+      askAgain();
+    },
+    onStart: async (name: string): Promise<void> => {
+      await shop.resume(name);
+      askAgain();
+    },
+    onRemove: async (name: string): Promise<void> => {
+      await shop.removePrinter(name);
+      askAgain();
+    },
   };
 
   // AIDEV-NOTE: asked for again straight away rather than waiting for the next tick, because a
@@ -129,7 +139,7 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
         onSelect={setChosen}
         onSave={admin ? savePrinter : undefined}
         onLoad={admin ? load : undefined}
-        onRetry={admin ? retry : undefined}
+        {...(admin ? printerActs : {})}
         waitingFor={waitingFor}
       />
       <JobsByFilament

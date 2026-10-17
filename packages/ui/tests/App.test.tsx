@@ -285,44 +285,74 @@ describe('the page, against a shop that answers', () => {
     });
   });
 
-  // The wire end of trying again: the same PUT the operator's `printer start` makes, and only for an admin.
-  describe('trying a refused printer again', () => {
-    const refusedMk4 = (as: Role): void => {
-      const mk4 = {
-        name: 'mk4',
-        buildVolume: { x: 250, y: 210, z: 220 },
-        api: 'octoprint',
-        address: 'http://prusa.local',
-        loaded: [],
-        refused: { reason: 'Prusa Mk4 refused the file', since: '2026-10-17T09:00:00Z' },
-      };
+  // The wire end of stopping, starting and removing: the same requests the operator's `printer stop`,
+  // `printer start` and `printer remove` make, and only for an admin.
+  describe('stopping, starting and removing a printer', () => {
+    const asking = window.confirm;
+
+    afterEach(() => {
+      window.confirm = asking;
+    });
+
+    const withMk4 = (as: Role, trouble: Record<string, unknown> = {}): void => {
+      const mk4 = { name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://prusa.local', loaded: [], ...trouble };
       fetching.mockImplementation((where: Parameters<typeof fetch>[0], sent?: RequestInit) => {
         const path = String(where);
         if (path.endsWith('/me')) return Promise.resolve(answered({ id: 'dave', name: 'dave', role: as }));
         if (path.endsWith('/printers')) return Promise.resolve(answered([mk4]));
-        if (sent?.method === 'PUT') return Promise.resolve(answered({ ...mk4, refused: undefined }));
+        if (sent?.method === 'PUT') return Promise.resolve(answered(mk4));
+        if (sent?.method === 'DELETE') return Promise.resolve({ ok: true, status: 204 } as Response);
 
         return Promise.resolve(answered({ accessibleJobs: [], totalJobs: 0 }));
       });
     };
 
-    it('tells the shop to start the printer again', async () => {
-      refusedMk4('admin');
-      render(<App />);
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Try mk4 again' })).toBeDefined());
+    const pressWhenThere = async (name: string): Promise<void> => {
+      await waitFor(() => expect(screen.getByRole('button', { name })).toBeDefined());
+      fireEvent.click(screen.getByRole('button', { name }));
+    };
 
-      fireEvent.click(screen.getByRole('button', { name: 'Try mk4 again' }));
+    const statusSent = (): unknown => JSON.parse(String(asked('PUT', '/printers/mk4/status')?.body));
+
+    it('tells the shop a printer refused a plate may try again', async () => {
+      withMk4('admin', { refused: { reason: 'Prusa Mk4 refused the file', since: '2026-10-17T09:00:00Z' } });
+      render(<App />);
+
+      await pressWhenThere('Try mk4 again');
 
       await waitFor(() => expect(asked('PUT', '/printers/mk4/status')).toBeDefined());
-      expect(JSON.parse(String(asked('PUT', '/printers/mk4/status')?.body))).toEqual({ stopped: false });
+      expect(statusSent()).toEqual({ stopped: false });
     });
 
-    it('is not offered to a user', async () => {
-      refusedMk4('user');
+    it('tells the shop to stop a printer, and why', async () => {
+      withMk4('admin');
+      render(<App />);
+      await pressWhenThere('Stop mk4');
+
+      fireEvent.change(screen.getByLabelText('Why it is stopping'), { target: { value: 'clearing a jam' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+
+      await waitFor(() => expect(asked('PUT', '/printers/mk4/status')).toBeDefined());
+      expect(statusSent()).toEqual({ stopped: true, reason: 'clearing a jam' });
+    });
+
+    it('tells the shop to take a printer out', async () => {
+      window.confirm = (): boolean => true;
+      withMk4('admin');
+      render(<App />);
+      await pressWhenThere('Edit mk4');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove mk4' }));
+
+      await waitFor(() => expect(asked('DELETE', '/printers/mk4')).toBeDefined());
+    });
+
+    it('offers a user none of it', async () => {
+      withMk4('user', { paused: { reason: 'clearing the bed', since: '2026-10-17T09:30:00Z' } });
       render(<App />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /mk4/ })).toBeDefined());
-      expect(screen.queryByRole('button', { name: 'Try mk4 again' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^(Start|Stop|Edit) mk4$/ })).toBeNull();
     });
   });
 
