@@ -4,6 +4,7 @@ import { AddPrinterTile } from './AddPrinterTile.js';
 import { EditPrinterDialog } from './EditPrinterDialog.js';
 import { LoadFilamentDialog } from './LoadFilamentDialog.js';
 import { PrinterTile } from './PrinterTile.js';
+import { stateOf } from '../shopSummary.js';
 
 interface PrinterGalleryProps {
   printers: RegisteredPrinter[];
@@ -18,16 +19,20 @@ interface PrinterGalleryProps {
   onSave?: (record: PrinterRecord, key: string | undefined) => Promise<void>;
   /** How what is on a machine is changed, when this caller may. Withheld on the same terms as onSave. */
   onLoad?: (name: string, filaments: string[]) => Promise<void>;
+  // AIDEV-NOTE: the shop's `resume`, which lifts a person's stop as well - so it is offered only where
+  // the refusal is what the machine is held by, and never on one somebody stopped.
+  /** How a machine that refused a plate is tried again, when this caller may. Withheld on the same terms as onSave. */
+  onRetry?: (name: string) => Promise<void>;
   /** The filaments queued work is waiting for, suggested when somebody loads a machine. */
   waitingFor?: string[];
 }
 
-export function PrinterGallery({ printers, selected, onSelect, onSave, onLoad, waitingFor = [] }: PrinterGalleryProps): React.JSX.Element {
+export function PrinterGallery({ printers, selected, onSelect, onSave, onLoad, onRetry, waitingFor = [] }: PrinterGalleryProps): React.JSX.Element {
   const [editing, setEditing] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState<string | undefined>(undefined);
   const beingEdited = printers.find((printer) => printer.name === editing);
   const beingLoaded = printers.find((printer) => printer.name === loading);
-  const acts = onSave !== undefined || onLoad !== undefined;
+  const acts = onSave !== undefined || onLoad !== undefined || onRetry !== undefined;
 
   // An empty shop is the one place the add tile matters most, so it is said beside it rather than
   // instead of it.
@@ -48,6 +53,7 @@ export function PrinterGallery({ printers, selected, onSelect, onSave, onLoad, w
           <PrinterTile printer={printer} selected={printer.name === selected} onSelect={onSelect} />
           {acts && (
             <span className="printer-actions">
+              {onRetry !== undefined && stateOf(printer).condition === 'refused' && <TryAgain name={printer.name} onRetry={onRetry} />}
               {onLoad !== undefined && (
                 // A spool is not changed under a print that is running.
                 <button
@@ -76,6 +82,33 @@ export function PrinterGallery({ printers, selected, onSelect, onSave, onLoad, w
         <LoadFilamentDialog printer={beingLoaded} waitingFor={waitingFor} onLoad={onLoad} onClose={() => setLoading(undefined)} />
       )}
     </section>
+  );
+}
+
+function TryAgain({ name, onRetry }: { name: string; onRetry: (name: string) => Promise<void> }): React.JSX.Element {
+  const [trying, setTrying] = useState(false);
+  const [refused, setRefused] = useState<string | undefined>(undefined);
+
+  const retry = async (): Promise<void> => {
+    setTrying(true);
+    setRefused(undefined);
+
+    try {
+      await onRetry(name);
+    } catch (failure) {
+      setRefused((failure as Error).message);
+    } finally {
+      setTrying(false);
+    }
+  };
+
+  return (
+    <>
+      <button type="button" aria-label={`Try ${name} again`} disabled={trying} onClick={() => void retry()}>
+        Try again
+      </button>
+      {refused !== undefined && <span className="refused">{refused}</span>}
+    </>
   );
 }
 

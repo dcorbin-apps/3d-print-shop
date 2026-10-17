@@ -44,6 +44,12 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
     askAgain();
   };
 
+  // The machine is free to take the next plate, so this asks again straight away too.
+  const retry = async (name: string): Promise<void> => {
+    await shop.resume(name);
+    askAgain();
+  };
+
   // AIDEV-NOTE: asked for again straight away rather than waiting for the next tick, because a
   // verdict frees a bed - the printer holding it becomes free and the next job starts, and the page
   // somebody just judged on should show that rather than the last poll's answer.
@@ -123,6 +129,7 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
         onSelect={setChosen}
         onSave={admin ? savePrinter : undefined}
         onLoad={admin ? load : undefined}
+        onRetry={admin ? retry : undefined}
         waitingFor={waitingFor}
       />
       <JobsByFilament

@@ -142,6 +142,60 @@ describe('the gallery of printers', () => {
   });
 
   // AIDEV-NOTE: what is on a machine is an admin's to say, offered on the same terms as Edit.
+  // AIDEV-NOTE: the shop waits for a person after a machine refuses a plate, because asking again
+  // re-sends a whole plate for the same no. This is that person, without a terminal.
+  describe('the way to try a refused one again', () => {
+    const retries = jest.fn<(name: string) => Promise<void>>();
+    const tryAgain = (name: string): HTMLElement | null => screen.queryByRole('button', { name: `Try ${name} again` });
+    const refused = { reason: 'Prusa Mk4 refused the file', since: new Date('2026-10-17T09:00:00Z') };
+
+    beforeEach(() => {
+      retries.mockReset();
+      retries.mockResolvedValue(undefined);
+    });
+
+    const retrying = (on: RegisteredPrinter): void => {
+      render(<PrinterGallery printers={[on]} onSelect={nobodyChooses} onRetry={retries} />);
+    };
+
+    it('asks the shop to try that printer again', async () => {
+      retrying(printer('mk4', { refused }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Try mk4 again' }));
+
+      await waitFor(() => expect(retries).toHaveBeenCalledWith('mk4'));
+    });
+
+    it('is not offered on a printer nothing refused', () => {
+      retrying(printer('mk4'));
+
+      expect(tryAgain('mk4')).toBeNull();
+    });
+
+    // Trying again is lifting what is held against the machine, and a person's stop is not this
+    // button's to lift.
+    it('is not offered on a refused printer somebody also stopped', () => {
+      retrying(printer('mk4', { refused, paused: { reason: 'clearing the bed', since: new Date('2026-10-17T09:30:00Z') } }));
+
+      expect(tryAgain('mk4')).toBeNull();
+    });
+
+    it('is not offered to a caller who was given no way to try again', () => {
+      render(<PrinterGallery printers={[printer('mk4', { refused })]} onSelect={nobodyChooses} />);
+
+      expect(tryAgain('mk4')).toBeNull();
+    });
+
+    it('says what the shop said when it will not', async () => {
+      retries.mockRejectedValue(new Error('the shop has no printer named mk4'));
+      retrying(printer('mk4', { refused }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Try mk4 again' }));
+
+      await waitFor(() => expect(screen.getByText('the shop has no printer named mk4')).toBeDefined());
+    });
+  });
+
   describe('the way to load one', () => {
     const loads = jest.fn<(name: string, filaments: string[]) => Promise<void>>();
     const dialog = (name: string): HTMLElement | null => screen.queryByRole('dialog', { name: `Load ${name}` });

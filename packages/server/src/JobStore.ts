@@ -470,7 +470,7 @@ export class JobStore {
 
   // AIDEV-NOTE: not retried, unlike everything else the shop writes about a machine. The printer
   // ANSWERED - a bad path, a full disk, a name it will not store - and asking again re-sends a whole
-  // plate to get the same no. It waits for a person, and `printer start` is how a person says so.
+  // plate to get the same no. It waits for a person: `printer start`, or Try again on the page.
   /** The machine would not take the file. */
   async wouldNotTake(printer: RegisteredPrinter, reason: string): Promise<void> {
     await this.changeStatus(printer, (status) => ({ ...status, refused: { reason, since: new Date() } }));

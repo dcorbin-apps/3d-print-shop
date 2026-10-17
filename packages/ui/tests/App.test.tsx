@@ -285,6 +285,47 @@ describe('the page, against a shop that answers', () => {
     });
   });
 
+  // The wire end of trying again: the same PUT the operator's `printer start` makes, and only for an admin.
+  describe('trying a refused printer again', () => {
+    const refusedMk4 = (as: Role): void => {
+      const mk4 = {
+        name: 'mk4',
+        buildVolume: { x: 250, y: 210, z: 220 },
+        api: 'octoprint',
+        address: 'http://prusa.local',
+        loaded: [],
+        refused: { reason: 'Prusa Mk4 refused the file', since: '2026-10-17T09:00:00Z' },
+      };
+      fetching.mockImplementation((where: Parameters<typeof fetch>[0], sent?: RequestInit) => {
+        const path = String(where);
+        if (path.endsWith('/me')) return Promise.resolve(answered({ id: 'dave', name: 'dave', role: as }));
+        if (path.endsWith('/printers')) return Promise.resolve(answered([mk4]));
+        if (sent?.method === 'PUT') return Promise.resolve(answered({ ...mk4, refused: undefined }));
+
+        return Promise.resolve(answered({ accessibleJobs: [], totalJobs: 0 }));
+      });
+    };
+
+    it('tells the shop to start the printer again', async () => {
+      refusedMk4('admin');
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Try mk4 again' })).toBeDefined());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Try mk4 again' }));
+
+      await waitFor(() => expect(asked('PUT', '/printers/mk4/status')).toBeDefined());
+      expect(JSON.parse(String(asked('PUT', '/printers/mk4/status')?.body))).toEqual({ stopped: false });
+    });
+
+    it('is not offered to a user', async () => {
+      refusedMk4('user');
+      render(<App />);
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /mk4/ })).toBeDefined());
+      expect(screen.queryByRole('button', { name: 'Try mk4 again' })).toBeNull();
+    });
+  });
+
   // AIDEV-NOTE: the verdict end to end from the page - the one thing that frees a bed, which until
   // now meant walking to a terminal while the machine that finished stood holding it.
   describe('judging a print that has finished', () => {
