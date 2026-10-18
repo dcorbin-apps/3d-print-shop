@@ -18,12 +18,29 @@ describe('what a sliced plate says about itself', () => {
   };
 
   describe('when it is a plate the shop reads', () => {
-    it('names the filament the plate was sliced for', () => {
-      expect(readingOf('; filament_type = PLA').filaments).toEqual(['PLA']);
+    it('names the filament profile the plate was sliced with', () => {
+      expect(readingOf('; filament_settings_id = PLA-SpaceGray').filaments).toEqual(['PLA-SpaceGray']);
+    });
+
+    it('names a profile without the quotes a name with a space in it is written in', () => {
+      expect(readingOf('; filament_settings_id = "Generic PLA @PGIS"').filaments).toEqual(['Generic PLA @PGIS']);
     });
 
     it('keeps every filament named, in the order they were named', () => {
-      expect(readingOf('; filament_type = PETG;PLA;ABS').filaments).toEqual(['PETG', 'PLA', 'ABS']);
+      expect(readingOf('; filament_settings_id = "Generic PETG";PLA-Red;"Generic ABS"').filaments).toEqual([
+        'Generic PETG',
+        'PLA-Red',
+        'Generic ABS',
+      ]);
+    });
+
+    it('keeps a comma inside a profile name', () => {
+      expect(readingOf('; filament_settings_id = "PLA, matte"').filaments).toEqual(['PLA, matte']);
+    });
+
+    // The material class is what every PLA on the shelf shares, which is not the filament asked for.
+    it('does not take the material class for the filament', () => {
+      expect(readingOf('; filament_type = PLA').filaments).toEqual([]);
     });
 
     it('names none when the plate says nothing about filament', () => {
@@ -59,11 +76,11 @@ describe('what a sliced plate says about itself', () => {
     // The head of a plate and its trailing block are handed over together, so the same setting
     // arrives twice and which one counts cannot be left to how much tail was read.
     it('keeps the first answer when a setting is written twice', () => {
-      expect(readingOf('; filament_type = PLA', 'G1 X1', '; filament_type = PETG').filaments).toEqual(['PLA']);
+      expect(readingOf('; filament_settings_id = PLA-Red', 'G1 X1', '; filament_settings_id = PETG-Blue').filaments).toEqual(['PLA-Red']);
     });
 
     it('reads nothing out of a line that is not a comment', () => {
-      expect(readingOf('filament_type = PLA').filaments).toEqual([]);
+      expect(readingOf('filament_settings_id = PLA-Red').filaments).toEqual([]);
     });
   });
 

@@ -26,7 +26,7 @@ describe('what a plate a real tool wrote actually says', () => {
   it('is read for its filament, its estimate and the bed it was sliced for', async () => {
     expect(slicedPlate(await endsOf(PLATE))).toEqual({
       read: true,
-      filaments: ['PLA'],
+      filaments: ['Generic PLA @PGIS'],
       estimatedPrintSeconds: 359,
       requiredBuildVolume: { x: 250, y: 210, z: 220 },
     });
@@ -43,19 +43,18 @@ describe('what a plate a real tool wrote actually says', () => {
   // What the window costs is bounded; what it has to reach is not, and only a real file says which.
   it('keeps everything worth reading inside the window the shop reads', async () => {
     const { size } = await stat(PLATE);
-    const settingsAt = (await endsOf(PLATE)).indexOf('; filament_type = ');
+    const settingsAt = (await endsOf(PLATE)).indexOf('; filament_settings_id = ');
 
     expect(size).toBeGreaterThan(ENDS_BYTES);
     expect(settingsAt).toBeGreaterThan(-1);
   });
 
-  // The profile's name sits beside the material's and is not it. It is quoted, it names settings in
-  // somebody else's namespace, and a job that waited for it would wait for ever.
-  it('carries a settings profile beside the material, which is not taken for one', async () => {
+  // The material class sits beside the profile's name and is not it: every PLA on the shelf shares it.
+  it('carries a material class beside the profile, which is not taken for the filament', async () => {
     const ends = await endsOf(PLATE);
 
-    expect(ends).toContain('; filament_settings_id = ');
-    expect(slicedPlate(ends)).toMatchObject({ read: true, filaments: ['PLA'] });
+    expect(ends).toContain('; filament_type = PLA');
+    expect(slicedPlate(ends)).toMatchObject({ read: true, filaments: ['Generic PLA @PGIS'] });
   });
 });
 
@@ -74,6 +73,6 @@ describe('what a plate with a colour change in it actually says', () => {
   });
 
   it('is read for its filament like any other plate', async () => {
-    expect(slicedPlate(await endsOf(path.resolve(HERE, 'aColourChangePlate.gcode')))).toMatchObject({ read: true, filaments: ['PLA'] });
+    expect(slicedPlate(await endsOf(path.resolve(HERE, 'aColourChangePlate.gcode')))).toMatchObject({ read: true, filaments: ['PLA-Red'] });
   });
 });
