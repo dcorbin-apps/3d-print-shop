@@ -9,6 +9,8 @@
   --live-edge: #3e82cc;
   --wants-somebody: #ffb547;
   --wrong: #ff6b6b;
+  /* Lighter than anything else on a card, so a print waiting for somebody is the first thing seen. */
+  --wants-a-verdict: #4b5561;
   --gallery-height: 290px;
 
   color-scheme: dark;
@@ -499,13 +501,17 @@ body {
   font-size: 11px;
 }
 
-/* The row is `id name state`; the buttons go under all three, for the job whose turn it is. */
+/* The row is `id name state`; the buttons go under all three, for the job whose turn it is - on a
+   bar of their own across the whole row, because a bed is held until somebody presses one. */
 .verdicts {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 4px 0 2px;
+  margin: 4px 0 2px;
+  padding: 6px 8px;
+  background: var(--wants-a-verdict);
+  border-radius: 5px;
 }
 
 .verdicts button {
