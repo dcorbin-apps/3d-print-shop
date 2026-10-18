@@ -258,11 +258,13 @@ describe('the gallery of printers', () => {
       expect(screen.queryByRole('button', { name: 'Load mk4' })).toBeNull();
     });
 
+    // A machine that paused itself mid-print - for a colour change, say - is waiting for exactly this.
     it.each([
-      ['printing', true],
-      ['awaiting-approval', false],
-    ] as const)('is disabled only while the machine is printing - %s', (phase, disabled) => {
-      render(<PrinterGallery printers={[printer('mk4', { holding: { job: 1, phase } })]} onSelect={nobodyChooses} onLoad={loads} />);
+      ['printing', { job: 1, phase: 'printing' }, true],
+      ['paused by the machine', { job: 1, phase: 'printing', machinePausedSince: new Date('2026-10-18T18:00:00Z') }, false],
+      ['awaiting a verdict', { job: 1, phase: 'awaiting-approval' }, false],
+    ] as const)('is disabled only while the machine is actively printing - %s', (_what, holding, disabled) => {
+      render(<PrinterGallery printers={[printer('mk4', { holding })]} onSelect={nobodyChooses} onLoad={loads} />);
 
       expect((screen.getByRole('button', { name: 'Load mk4' }) as HTMLButtonElement).disabled).toBe(disabled);
     });

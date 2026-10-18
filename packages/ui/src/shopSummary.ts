@@ -38,6 +38,13 @@ export function stateOf(printer: RegisteredPrinter): PrinterState {
   return { condition: 'idle' };
 }
 
+// AIDEV-NOTE: a print the MACHINE has paused - for a colour change, most often - is still a print
+// the shop holds, but the spool is exactly what somebody is standing there to change.
+/** Whether a spool change now would be under a print that is moving. */
+export function isActivelyPrinting(printer: RegisteredPrinter): boolean {
+  return printer.holding?.phase === 'printing' && printer.holding.machinePausedSince === undefined;
+}
+
 /** What the whole shop is doing, counted rather than judged - the shop itself says nothing yet. */
 export interface ShopSummary {
   printers: number;

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Job, RegisteredPrinter, Verdict } from '@3d-print-shop/client/browser';
 import { asPrintingTime, byFilament } from '../byFilament.js';
+import { isActivelyPrinting } from '../shopSummary.js';
 import type { FilamentGroup } from '../byFilament.js';
 import { JobControls } from './JobControls.js';
 import { JobName } from './JobName.js';
@@ -94,8 +95,8 @@ function LoadHere({ filament, printer, onLoad }: { filament: string; printer: Re
 
   return (
     <>
-      {/* A spool is not changed under a print that is running. */}
-      <button type="button" className="load-here" disabled={loading || printer.holding?.phase === 'printing'} onClick={() => void load()}>
+      {/* A spool is not changed under a print that is moving. */}
+      <button type="button" className="load-here" disabled={loading || isActivelyPrinting(printer)} onClick={() => void load()}>
         Load on {printer.name}
       </button>
       {refused !== undefined && <span className="refused">{refused}</span>}

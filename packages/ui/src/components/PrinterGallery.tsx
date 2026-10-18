@@ -5,7 +5,7 @@ import { EditPrinterDialog } from './EditPrinterDialog.js';
 import { LoadFilamentDialog } from './LoadFilamentDialog.js';
 import { PrinterTile } from './PrinterTile.js';
 import { StopPrinterDialog } from './StopPrinterDialog.js';
-import { stateOf } from '../shopSummary.js';
+import { isActivelyPrinting, stateOf } from '../shopSummary.js';
 
 interface PrinterGalleryProps {
   printers: RegisteredPrinter[];
@@ -86,11 +86,11 @@ export function PrinterGallery({
                   </button>
                 )}
                 {onLoad !== undefined && (
-                  // A spool is not changed under a print that is running.
+                  // A spool is not changed under a print that is moving.
                   <button
                     type="button"
                     aria-label={`Load ${printer.name}`}
-                    disabled={printer.holding?.phase === 'printing'}
+                    disabled={isActivelyPrinting(printer)}
                     onClick={() => setLoading(printer.name)}
                   >
                     Load

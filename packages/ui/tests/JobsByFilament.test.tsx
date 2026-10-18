@@ -185,11 +185,13 @@ describe('the work the shop is holding', () => {
       await waitFor(() => expect(loads).toHaveBeenCalledWith('mk4', ['PLA-Blue']));
     });
 
+    // A machine that paused itself mid-print - for a colour change, say - is waiting for exactly this.
     it.each([
-      ['printing', true],
-      ['awaiting-approval', false],
-    ] as const)('is disabled only while the machine is printing - %s', (phase, disabled) => {
-      offering([job(1, ['PLA-Blue'])], { ...mk4, holding: { job: 9, phase } });
+      ['printing', { job: 1, phase: 'printing' }, true],
+      ['paused by the machine', { job: 1, phase: 'printing', machinePausedSince: new Date('2026-10-18T18:00:00Z') }, false],
+      ['awaiting a verdict', { job: 1, phase: 'awaiting-approval' }, false],
+    ] as const)('is disabled only while the machine is actively printing - %s', (_what, holding, disabled) => {
+      offering([job(1, ['PLA-Blue'])], { ...mk4, holding });
 
       expect((screen.getByRole('button', { name: 'Load on mk4' }) as HTMLButtonElement).disabled).toBe(disabled);
     });
