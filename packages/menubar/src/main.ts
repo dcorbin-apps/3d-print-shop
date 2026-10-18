@@ -11,6 +11,7 @@ const fromHere = (relative: string): string => fileURLToPath(new URL(relative, i
 
 // A macOS template image: black on transparent, and the menu bar recolours it for light and dark.
 const trayIconPath = fromHere('../assets/trayTemplate.png');
+const appIconPath = fromHere('../assets/icon.png');
 const settingsPagePath = fromHere('../assets/settings.html');
 const settingsPreloadPath = fromHere('./settingsPreload.cjs');
 const settingsFile = join(app.getPath('userData'), 'settings.json');
@@ -33,10 +34,19 @@ let shopWindow: BrowserWindow | undefined;
 let settingsWindow: BrowserWindow | undefined;
 let tray: Tray | undefined;
 
+// AIDEV-NOTE: macOS's app switcher lists only apps with a Dock icon, so the icon is shown while a
+// window is open and hidden again once the last one closes - a menu-bar app the rest of the time.
+// The app is run from a checkout rather than packaged, so there is no bundle for macOS to take an icon
+// from - it is handed over here, each time the Dock icon appears.
 function bringForward(window: BrowserWindow): void {
+  void app.dock?.show().then(() => app.dock?.setIcon(appIconPath));
   window.show();
-  // With no dock icon the app is an accessory, and showing its window does not bring it forward.
+  // Showing the Dock icon does not make the app active, and its window would open behind.
   app.focus({ steal: true });
+}
+
+function leaveTheSwitcherIfNothingIsOpen(): void {
+  if (shopWindow === undefined && settingsWindow === undefined) app.dock?.hide();
 }
 
 // AIDEV-NOTE: hidden until the page has painted, on the page's own ground (--ground in the ui's
@@ -52,6 +62,7 @@ function openShopWindow(): void {
     width: 1280,
     height: 900,
     title: '3D Print Shop',
+    icon: appIconPath,
     show: false,
     backgroundColor: SHOP_PAGE_GROUND,
     webPreferences: { sandbox: true },
@@ -60,6 +71,7 @@ function openShopWindow(): void {
   window.once('ready-to-show', () => bringForward(window));
   window.on('closed', () => {
     shopWindow = undefined;
+    leaveTheSwitcherIfNothingIsOpen();
   });
   void window.loadURL(shopUrl);
 }
@@ -73,10 +85,12 @@ function openSettingsWindow(): void {
       minimizable: false,
       maximizable: false,
       title: 'Settings',
+      icon: appIconPath,
       webPreferences: { preload: settingsPreloadPath, sandbox: true },
     });
     settingsWindow.on('closed', () => {
       settingsWindow = undefined;
+      leaveTheSwitcherIfNothingIsOpen();
     });
     void settingsWindow.loadFile(settingsPagePath);
   }
@@ -114,6 +128,29 @@ function installTray(): void {
   tray.on('right-click', () => tray?.popUpContextMenu(menu));
 }
 
+// AIDEV-NOTE: Electron's default menu quits on Cmd-Q whenever a window is frontmost - measured as the
+// cause of the app vanishing. Here Cmd-Q closes the window instead; the tray's Quit is the way out.
+function installAppMenu(): void {
+  const menu = Menu.buildFromTemplate([
+    {
+      role: 'appMenu',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { label: 'Close Window', accelerator: 'Command+Q', click: (_item, window) => window?.close() },
+      ],
+    },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]);
+  Menu.setApplicationMenu(menu);
+}
+
 // The user's own setting from System Settings when they have changed it, and macOS's default otherwise.
 function doubleClickIntervalMs(): number {
   const seconds = systemPreferences.getUserDefault('com.apple.mouse.doubleClickThreshold', 'double');
@@ -130,6 +167,7 @@ app.on('window-all-closed', () => {
 void app.whenReady().then(() => {
   if (process.platform === 'darwin') {
     app.dock?.hide();
+    installAppMenu();
     installTray();
     if (chosenShopUrl === undefined) openSettingsWindow();
   } else {
