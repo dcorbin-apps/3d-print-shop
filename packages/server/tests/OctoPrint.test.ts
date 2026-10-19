@@ -775,16 +775,37 @@ describe('OctoPrint', () => {
       await expect(promise).resolves.toBe('finished');
     });
 
-    // Between submit() and the printer actually starting, the printer is idle and the file's
-    // history still holds the previous copy's outcome. Reconciling on every status frame rather
-    // than only the first after an outage would settle the new job from that stale result.
-    it('does not settle a job from a status frame outside an outage', async () => {
+    // Between the upload and the printer actually starting, the printer is idle and the file's
+    // history still holds the previous copy's outcome. Reconciling on a status frame from then
+    // would settle the new job from that stale result.
+    it('does not settle a job from a status frame after it was sent', async () => {
+      respondTo({ [TRAY_FILE_URL]: makeOkResponse({ prints: { last: { success: true } } }) });
+      await adapter.send(TRAY_PATH, Readable.from(['G1 X0\n']));
+      const promise = adapter.awaitOutcome(TRAY_PATH);
+
+      sendStatus(mockWs, idleStatus());
+
+      await expectPending(promise);
+    });
+
+    // A shop that restarts picks up the print it was holding, and that print may have ended while
+    // it was down. No event is coming for it, so the first connection has to look, as a reconnect does.
+    it('resolves a print that ended before the first connection was made', async () => {
       const promise = adapter.awaitOutcome(TRAY_PATH);
       respondTo({ [TRAY_FILE_URL]: makeOkResponse({ prints: { last: { success: true } } }) });
 
       sendStatus(mockWs, idleStatus());
 
-      await expectPending(promise);
+      await expect(promise).resolves.toBe('finished');
+    });
+
+    // AIDEV-NOTE: seen for real - OctoPrint dropped the shop's login, the socket stayed open and was
+    // sent nothing, and a print that finished was held as printing until somebody noticed. Closing
+    // it hands it to the reconnect, which logs in again and reconciles what it missed.
+    it('closes a socket OctoPrint says must log in again, so that it does', () => {
+      mockWs.onmessage!(JSON.stringify({ reauthRequired: { reason: 'stale' } }));
+
+      expect(mockWs.close).toHaveBeenCalled();
     });
 
     // 'history' is what OctoPrint sends on connect, but a 'current' frame can land first and

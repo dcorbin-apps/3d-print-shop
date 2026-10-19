@@ -207,6 +207,7 @@ interface OctoPrintPushMessage {
   };
   current?: OctoPrintStatusPayload;
   history?: OctoPrintStatusPayload;
+  reauthRequired?: { reason?: string };
 }
 
 interface OctoPrintStatusPayload {
@@ -302,7 +303,10 @@ export class OctoPrint implements Printer {
     this.stopWaiting = new AbortController();
     this.reconnectAttempt = 0;
     this.lostContactAt = null;
-    this.reconcileOnNextStatus = false;
+    // AIDEV-NOTE: a first connection is reconciled like a reconnect, because a shop that restarts
+    // picks up a print that may have ended while it was down - and no event is coming for that one.
+    // A connection made to SEND is safe: `send` drops this once the upload is taken.
+    this.reconcileOnNextStatus = true;
     this.sinceOutage = null;
     return this.openSocket();
   }
@@ -402,6 +406,7 @@ export class OctoPrint implements Printer {
     // thing awaited would be settled against a status from before it started - and the file's
     // history still holds the PREVIOUS copy's outcome, which is the wrong print's answer.
     this.sinceOutage = null;
+    this.reconcileOnNextStatus = false;
 
     return filedAt(await response.json().catch(() => undefined), remotePath);
   }
@@ -578,6 +583,15 @@ export class OctoPrint implements Printer {
     // one is answered with silence, not an error - so this, not the socket opening, is what ends an
     // outage. See the passiveLogin() note on how a bad auth frame used to hang every job.
     this.lostContactAt = null;
+
+    // AIDEV-NOTE: OctoPrint has dropped this socket's login - a logout, a stale session - and an
+    // anonymous socket is sent no status and no events while staying open. Left alone it went on
+    // looking alive and never heard a print end. Closed instead, so the reconnect logs in again and
+    // reconciles whatever ended while it was deaf.
+    if (message.reauthRequired) {
+      this.socket?.close();
+      return;
+    }
 
     if (message.event) {
       this.handleCompletionEvent(message.event.type, message.event.payload?.path);
