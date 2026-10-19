@@ -436,6 +436,52 @@ describe('the gallery of printers', () => {
         expect(screen.getByText('no picture')).toBeDefined();
       });
     });
+
+    // A window left in the background stops drawing the stream, and says nothing about it.
+    describe('when the page is looked at again', () => {
+      const pageIs = (state: DocumentVisibilityState): void => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: state });
+        act(() => void document.dispatchEvent(new Event('visibilitychange')));
+      };
+
+      afterEach(() => {
+        jest.useRealTimers();
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      });
+
+      it('asks for the stream afresh, at the address the shop gave', () => {
+        render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+        const first = screen.getByRole('img').getAttribute('src');
+
+        pageIs('hidden');
+        pageIs('visible');
+
+        expect(screen.getByRole('img').getAttribute('src')).not.toBe(first);
+        expect(screen.getByRole('img').getAttribute('src')).toContain('action=stream');
+      });
+
+      it('leaves it alone for being put in the background', () => {
+        render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+        const first = screen.getByRole('img').getAttribute('src');
+
+        pageIs('hidden');
+
+        expect(screen.getByRole('img').getAttribute('src')).toBe(first);
+      });
+
+      it('tries again on a camera it had given up on', () => {
+        jest.useFakeTimers();
+        render(<PrinterGallery printers={[printer('mk4')]} onSelect={nobodyChooses} />);
+        for (let attempt = 0; attempt < TRIES; attempt += 1) {
+          act(() => void fireEvent.error(screen.getByRole('img')));
+          act(() => void jest.advanceTimersByTime(BEFORE_TRYING_AGAIN_MS));
+        }
+
+        pageIs('visible');
+
+        expect(screen.getByRole('img')).toBeDefined();
+      });
+    });
   });
 
   describe('what a tile says about the machine', () => {

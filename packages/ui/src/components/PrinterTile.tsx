@@ -42,6 +42,11 @@ export function PrinterTile({ printer, selected, onSelect }: PrinterTileProps): 
 // and a stream has more ways of failing once than of being unavailable: a machine still booting, a
 // connection dropped, a moment when something else had it. Latching on one of those left a tile
 // saying "no picture" at a camera that was working, until somebody reloaded the page.
+//
+// AIDEV-NOTE: and it starts the stream AFRESH when the page is looked at again. A window left in the
+// background has its <img> stop drawing - seen in the menu-bar app - with no error to say so, so the
+// tries above never notice and the tile sits black until a reload. Coming back is also a new look at
+// a camera it had given up on.
 export const TRIES = 4;
 export const BEFORE_TRYING_AGAIN_MS = 3000;
 
@@ -50,12 +55,26 @@ function CameraView({ printer }: { printer: RegisteredPrinter }): React.JSX.Elem
   // equal while one is being watched, and differ for as long as the next is being waited for.
   const [showing, setShowing] = useState(0);
   const [failed, setFailed] = useState(0);
+  const [looks, setLooks] = useState(0);
 
   // A new camera is a new question - a printer moved to another address deserves its own tries.
   useEffect(() => {
     setShowing(0);
     setFailed(0);
   }, [printer.camera]);
+
+  useEffect(() => {
+    const lookedAgain = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      setLooks((before) => before + 1);
+      setShowing(0);
+      setFailed(0);
+    };
+
+    document.addEventListener('visibilitychange', lookedAgain);
+
+    return () => document.removeEventListener('visibilitychange', lookedAgain);
+  }, []);
 
   useEffect(() => {
     if (failed === showing || failed >= TRIES) return undefined;
@@ -76,7 +95,7 @@ function CameraView({ printer }: { printer: RegisteredPrinter }): React.JSX.Elem
   return (
     <img
       className="camera"
-      src={showing === 0 ? printer.camera : askingAgain(printer.camera, showing)}
+      src={showing === 0 && looks === 0 ? printer.camera : askingAgain(printer.camera, `${looks}.${showing}`)}
       alt={`${printer.name} now`}
       onError={() => setFailed(showing + 1)}
     />
@@ -86,9 +105,9 @@ function CameraView({ printer }: { printer: RegisteredPrinter }): React.JSX.Elem
 // AIDEV-NOTE: the same URL would not be fetched again - a browser that has just failed one has it
 // cached as a failure - so each try carries a number that makes it a different one. Built through
 // URL so that a camera whose address already has a query keeps it.
-function askingAgain(camera: string, tried: number): string {
+function askingAgain(camera: string, tried: string): string {
   const asking = new URL(camera);
-  asking.searchParams.set('try', String(Math.floor(tried)));
+  asking.searchParams.set('try', tried);
 
   return asking.toString();
 }
