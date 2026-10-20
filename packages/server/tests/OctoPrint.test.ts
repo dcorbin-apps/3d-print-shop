@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Readable } from 'node:stream';
-import { CouldNotReach, OctoPrint, octoPrintCamera, reconnectAfter, reconnectDelayMs, whySocketFailed, whyUnreachable } from '../src';
+import { CouldNotReach, LOOK_AGAIN_MS, NothingPrinting, OctoPrint, octoPrintCamera, reconnectAfter, reconnectDelayMs, whySocketFailed, whyUnreachable } from '../src';
 import type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from '../src';
 import type { Log } from '../src/log';
 
@@ -603,8 +603,14 @@ describe('OctoPrint', () => {
     });
 
     it('throws when response is not ok', async () => {
+      mockHttpClient.mockResolvedValue(makeErrorResponse(500, 'Internal Server Error'));
+      await expect(adapter.cancel()).rejects.toThrow('OctoPrint cancel failed: 500 Internal Server Error');
+    });
+
+    // OctoPrint's 409 is "there is no print to cancel", which is a fact the shop can say plainly.
+    it('says the machine is not printing when OctoPrint has nothing to cancel', async () => {
       mockHttpClient.mockResolvedValue(makeErrorResponse(409, 'Conflict'));
-      await expect(adapter.cancel()).rejects.toThrow('OctoPrint cancel failed: 409 Conflict');
+      await expect(adapter.cancel()).rejects.toThrow(NothingPrinting);
     });
   });
 
@@ -982,6 +988,222 @@ describe('OctoPrint', () => {
 
       sendEvent('PrintDone');
       await expect(promise).resolves.toBe('finished');
+    });
+  });
+
+  // AIDEV-NOTE: (UT) a real OctoPrint stopped sending events altogether while its status frames kept
+  // coming, and a print cancelled at the printer stayed "printing" in the shop. What the status frames
+  // say is the second way to hear a print end - but only one they have SHOWN running.
+  describe('hearing a print end from what the machine says it is doing', () => {
+    const FILE_URL = 'http://octoprint.local/api/files/local/plates/tray.gcode';
+    let nowMs: number;
+
+    const frame = (flags: Record<string, boolean> | undefined, path = REMOTE_PATH): void =>
+      mockWs.onmessage!(JSON.stringify({ current: { state: flags && { flags }, job: { file: { path } } } }));
+    const printing = (): void => frame({ printing: true });
+    const idle = (path = REMOTE_PATH): void => frame({ printing: false }, path);
+    const history = (success: boolean, endedAtMs: number): void => {
+      mockHttpClient.mockImplementation((url) =>
+        Promise.resolve(
+          url === FILE_URL ? makeOkResponse({ prints: { last: { success, date: endedAtMs / 1000 } } }) : makeOkResponse({ name: 'operator', session: 'sess-1' }),
+        ),
+      );
+    };
+
+    beforeEach(async () => {
+      nowMs = 1_000_000;
+      adapter = new OctoPrint(config, mockHttpClient, mockWsFactory, mockReconnectDelay, () => nowMs);
+      await connectAdapter();
+      await adapter.send(REMOTE_PATH, gcode());
+    });
+
+    it('settles a print it saw running and then saw stop', async () => {
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      history(true, nowMs + 60_000);
+
+      idle();
+
+      await expect(outcome).resolves.toBe('finished');
+    });
+
+    // OctoPrint's history cannot tell a cancel from a failure, and neither can this.
+    it('settles one stopped at the machine as failed', async () => {
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      history(false, nowMs + 60_000);
+
+      idle();
+
+      await expect(outcome).resolves.toBe('failed');
+    });
+
+    it('settles one when the machine moves on to printing something else', async () => {
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      history(true, nowMs + 60_000);
+
+      frame({ printing: true }, 'plates/other.gcode');
+
+      await expect(outcome).resolves.toBe('finished');
+    });
+
+    // The moment after an upload, when the machine is idle and the history is the previous copy's.
+    it('leaves alone a print it has never seen running', async () => {
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      history(true, nowMs - 60_000);
+
+      idle();
+
+      await expectPending(outcome);
+    });
+
+    it('does not take the previous copy for this one', async () => {
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      history(true, nowMs - 60_000);
+
+      idle();
+
+      await expectPending(outcome);
+    });
+
+    it('looks again once the history has caught up', async () => {
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      history(true, nowMs - 60_000);
+      idle();
+      await settle();
+      history(true, nowMs + 60_000);
+      nowMs += LOOK_AGAIN_MS;
+
+      idle();
+
+      await expect(outcome).resolves.toBe('finished');
+    });
+
+    it('does not ask the history on every frame while it waits for it', async () => {
+      void adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      history(true, nowMs - 60_000);
+      idle();
+      await settle();
+      mockHttpClient.mockClear();
+
+      idle();
+      await settle();
+
+      expect(mockHttpClient).not.toHaveBeenCalled();
+    });
+
+    it('settles one it saw running before anything waited for it', async () => {
+      printing();
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      history(true, nowMs + 60_000);
+
+      idle();
+
+      await expect(outcome).resolves.toBe('finished');
+    });
+
+    // Dated by the machine's clock, which can be behind this one's: the end is still after the print
+    // was first seen running, even when it is before the last time it was.
+    it('takes an ending dated after the print was first seen running', async () => {
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      const firstSeen = nowMs;
+      printing();
+      nowMs += 120_000;
+      printing();
+      history(true, firstSeen + 60_000);
+
+      idle();
+
+      await expect(outcome).resolves.toBe('finished');
+    });
+
+    // The event and the lookup can both arrive. The lookup's answer, landing second, must not be kept
+    // for the next copy of the same file to be handed.
+    it('keeps nothing from a lookup the event beat to it', async () => {
+      void adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      let answer: (response: Response) => void = () => undefined;
+      mockHttpClient.mockImplementation(() => new Promise<Response>((given) => (answer = given)));
+      idle();
+      sendEvent('PrintDone');
+      answer(makeOkResponse({ prints: { last: { success: false, date: (nowMs + 60_000) / 1000 } } }));
+      await settle();
+
+      await expectPending(adapter.awaitOutcome(REMOTE_PATH));
+    });
+
+    // Printed again from the same file - a print that came off the bed unusable - and waited for before
+    // the machine has said anything about the new one.
+    it('does not judge the next copy of a file by when the last one ran', async () => {
+      void adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      sendEvent('PrintDone');
+      await adapter.send(REMOTE_PATH, gcode());
+      const again = adapter.awaitOutcome(REMOTE_PATH);
+      history(true, nowMs + 60_000);
+
+      idle();
+
+      await expectPending(again);
+    });
+
+    it('starts afresh on a new connection', async () => {
+      void adapter.awaitOutcome(REMOTE_PATH).catch(() => undefined);
+      printing();
+      adapter.disconnect();
+      mockWs = makeMockWs();
+      mockWsFactory.mockReturnValue(mockWs);
+      await connectAdapter();
+      await adapter.send(REMOTE_PATH, gcode());
+      const again = adapter.awaitOutcome(REMOTE_PATH);
+      history(true, nowMs + 60_000);
+
+      idle();
+
+      await expectPending(again);
+    });
+
+    it('writes down that it heard the end this way', async () => {
+      const info = jest.fn<Log['info']>();
+      adapter = new OctoPrint({ ...config, log: { info, error: jest.fn<Log['error']>() } }, mockHttpClient, mockWsFactory, mockReconnectDelay, () => nowMs);
+      await connectAdapter();
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      history(false, nowMs + 60_000);
+
+      idle();
+      await outcome;
+
+      expect(info).toHaveBeenCalledWith('a print stopped without OctoPrint saying so', {
+        machine: 'http://octoprint.local',
+        path: REMOTE_PATH,
+        outcome: 'failed',
+      });
+    });
+
+    // A frame this cannot read says nothing about what is running.
+    it('does not take an unreadable frame as the print stopping', async () => {
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      history(true, nowMs + 60_000);
+
+      frame(undefined, 'plates/other.gcode');
+
+      await expectPending(outcome);
+    });
+
+    it('keeps waiting while the machine has paused it', async () => {
+      const outcome = adapter.awaitOutcome(REMOTE_PATH);
+      printing();
+      history(true, nowMs + 60_000);
+
+      frame({ printing: false, paused: true });
+
+      await expectPending(outcome);
     });
   });
 

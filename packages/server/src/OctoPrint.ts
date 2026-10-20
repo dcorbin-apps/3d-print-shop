@@ -4,7 +4,7 @@ import { WebSocket as WsWebSocket, type RawData } from 'ws';
 import type { PrinterOutcome } from './Job.js';
 import { silent } from './log.js';
 import type { Log } from './log.js';
-import { CouldNotReach } from './printing.js';
+import { CouldNotReach, NothingPrinting } from './printing.js';
 import type { Printer } from './printing.js';
 
 export interface OctoPrintConfig {
@@ -88,6 +88,8 @@ export type ReconnectDelay = (attempt: number, cancelled: AbortSignal) => Promis
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const RECONNECT_BACKOFF_UNIT_MS = 500;
 const DEFAULT_LOST_CONTACT_TIMEOUT_MS = 10 * 60_000;
+/** How long before a print seen to stop is looked up again, while its history has not caught up. */
+export const LOOK_AGAIN_MS = 10_000;
 
 export function reconnectDelayMs(attempt: number): number {
   return Math.min(RECONNECT_BACKOFF_UNIT_MS * 2 ** (attempt - 1), MAX_RECONNECT_DELAY_MS);
@@ -233,7 +235,8 @@ interface PrinterStateFlags {
 }
 
 interface OctoPrintFileInfo {
-  prints?: { last?: { success?: boolean } };
+  // `date` is seconds since the epoch, when the print ended.
+  prints?: { last?: { success?: boolean; date?: number } };
 }
 
 interface CompletionWaiter {
@@ -288,6 +291,12 @@ export class OctoPrint implements Printer {
   // that arrived a moment later with nothing to settle it and no further frame coming: the print
   // hung for ever. See tests/OctoPrint.test.ts, "reconciled before anything got round to awaiting it".
   private sinceOutage: OctoPrintStatusPayload | null = null;
+  // AIDEV-NOTE: the prints a status frame has SHOWN running, and when. Seen running and then not is a
+  // print that ended, whatever the events said - seen on a real machine that stopped sending events
+  // at all, and a print cancelled at the printer was held as printing until somebody restarted the
+  // shop. Seen running FIRST is what keeps this from settling a print in the moment after its upload,
+  // when the machine is idle and the file's history is the previous copy's.
+  private readonly seenRunning = new Map<string, { since: number; lookAgainAt: number }>();
 
   // Aborted by disconnect(), so a backoff that is already waiting stops waiting rather than holding
   // the process open until it fires. Replaced on connect(), because an abort is permanent.
@@ -381,6 +390,7 @@ export class OctoPrint implements Printer {
     }
     this.pendingCompletions.clear();
     this.arrivedCompletions.clear();
+    this.seenRunning.clear();
   }
 
   // AIDEV-NOTE: the caller says where it goes. This used to build the folder name itself, which was
@@ -545,12 +555,17 @@ export class OctoPrint implements Printer {
   // AIDEV-NOTE: OctoPrint's print history records a cancelled print as a failure, so a run
   // reconciled after the fact cannot be told apart from a genuine error and reports 'failed'.
   // Only an event delivered live on the socket can report 'cancelled'.
-  private async lastPrintOutcome(path: string): Promise<PrinterOutcome | null> {
+  //
+  // `endedAfter` refuses an entry from before then: the same path is printed once per copy, and the
+  // history can still hold the previous copy's for a moment after this one stops.
+  private async lastPrintOutcome(path: string, endedAfter = 0): Promise<PrinterOutcome | null> {
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
     const info = await this.getJson<OctoPrintFileInfo>(`/api/files/local/${encodedPath}`);
-    const success = info?.prints?.last?.success;
+    const last = info?.prints?.last;
+    const success = last?.success;
 
     if (typeof success !== 'boolean') return null;
+    if ((last?.date ?? 0) * 1000 < endedAfter) return null;
     return success ? 'finished' : 'failed';
   }
 
@@ -673,11 +688,44 @@ export class OctoPrint implements Printer {
   private handleStatus(status: OctoPrintStatusPayload): void {
     this.tellWhatItCanDo(status);
     this.tellWhetherItIsPaused(status);
+    this.noticeWhatStopped(status);
 
     if (!this.reconcileOnNextStatus) return;
 
     this.sinceOutage = status;
     this.reconcileWhatTheOutageHid();
+  }
+
+  private noticeWhatStopped(status: OctoPrintStatusPayload): void {
+    // An unreadable frame says nothing about what is running, and must not read as everything stopping.
+    if (!status.state?.flags) return;
+
+    const running = printIsInFlight(status) ? status.job?.file?.path : undefined;
+    // When it was FIRST seen, so a machine whose clock is behind still dates its ending after it.
+    if (running !== undefined && !this.seenRunning.has(running)) {
+      this.seenRunning.set(running, { since: this.now(), lookAgainAt: 0 });
+    }
+
+    for (const [path, seen] of this.seenRunning) {
+      if (path === running) continue;
+      if (!this.pendingCompletions.has(path)) {
+        this.seenRunning.delete(path);
+        continue;
+      }
+      if (this.now() < seen.lookAgainAt) continue;
+
+      // Asked again later rather than on every frame, while the history has not caught up with it.
+      seen.lookAgainAt = this.now() + LOOK_AGAIN_MS;
+      void this.settleFromHistory(path, seen.since);
+    }
+  }
+
+  private async settleFromHistory(path: string, runningSince: number): Promise<void> {
+    const outcome = await this.lastPrintOutcome(path, runningSince);
+    if (!outcome || !this.pendingCompletions.has(path)) return;
+
+    this.log.info('a print stopped without OctoPrint saying so', { machine: this.config.baseUrl, path, outcome });
+    this.settleCompletion(path, outcome);
   }
 
   // Only the first status frame after an outage reconciles, and only once something is waiting on
@@ -694,6 +742,8 @@ export class OctoPrint implements Printer {
   }
 
   private settleCompletion(path: string, status: PrinterOutcome): void {
+    // Forgotten however it ended, so the next copy of the same file is not judged by when this one ran.
+    this.seenRunning.delete(path);
     const waiter = this.pendingCompletions.get(path);
     if (waiter) {
       this.pendingCompletions.delete(path);
@@ -718,6 +768,8 @@ export class OctoPrint implements Printer {
       body: JSON.stringify({ command: 'cancel' }),
     });
 
+    // OctoPrint's answer when there is no print to cancel.
+    if (response.status === 409) throw new NothingPrinting(`${this.config.baseUrl} is not printing anything`);
     if (!response.ok) {
       throw new Error(`OctoPrint cancel failed: ${response.status} ${response.statusText}`);
     }

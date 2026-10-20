@@ -3,7 +3,7 @@ import type { JobStore } from './JobStore.js';
 import { silent } from './log.js';
 import type { Log } from './log.js';
 import type { Printer } from './printing.js';
-import { CouldNotReach, recordOutcome, startNextPrint } from './printing.js';
+import { CouldNotReach, NothingPrinting, recordOutcome, startNextPrint } from './printing.js';
 import type { RegisteredPrinter } from './Printer.js';
 
 /** How a registration becomes something that can actually be talked to. */
@@ -377,7 +377,12 @@ export class Foreman {
 
     if (machine.cancel === undefined) throw new WrongState(`${name} cannot be told to stop`);
 
-    await machine.cancel();
+    try {
+      await machine.cancel();
+    } catch (failure) {
+      if (failure instanceof NothingPrinting) throw new WrongState(`${name} is not printing anything, so there is nothing to cancel`);
+      throw failure;
+    }
   }
 
   /** Open a line to every machine the shop has, so that each can say how it is. */

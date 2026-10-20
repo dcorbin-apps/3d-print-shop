@@ -59,6 +59,7 @@ export {
 export type { DataLimits } from './JobStore.js';
 export type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from './OctoPrint.js';
 export {
+  LOOK_AGAIN_MS,
   OctoPrint,
   adapting,
   octoPrintCamera,
@@ -84,7 +85,7 @@ export {
   shutDownShop,
 } from './printerAdmin.js';
 export type { PrintAttempt, Printer } from './printing.js';
-export { CouldNotReach, recordOutcome, remotePathFor, startNextPrint } from './printing.js';
+export { CouldNotReach, NothingPrinting, recordOutcome, remotePathFor, startNextPrint } from './printing.js';
 export type { FilamentDemand } from './selection.js';
 export { nextToPrint, printableNow, startsWith, waitingOn } from './selection.js';
 export { DataInUse, claimData, overASocket } from './dataLock.js';

@@ -5,9 +5,9 @@ import { Readable } from 'node:stream';
 import { Foreman } from '../src/Foreman';
 import { silent, toStdout } from '../src/log';
 import type { Machines } from '../src/Foreman';
-import { JobStore } from '../src/JobStore';
+import { JobStore, WrongState } from '../src/JobStore';
 import type { PrinterOutcome } from '../src/Job';
-import { CouldNotReach } from '../src/printing';
+import { CouldNotReach, NothingPrinting } from '../src/printing';
 import type { Printer } from '../src/printing';
 import type { RegisteredPrinter } from '../src/Printer';
 import { aDataDirectory, parentOf } from './aDataDirectory';
@@ -117,6 +117,23 @@ describe('the foreman', () => {
   // `startPrinting` refuses an unreadable printer too - asked in JobStore.test.ts - but by then a
   // whole plate has been read off disk and pushed at a machine, and the answer was always going to
   // be no. This is the shop not looking at it in the first place.
+  // Somebody pressed Cancel on a print the machine had already stopped - at the printer, say - and
+  // this used to answer 500 with OctoPrint's status code in it.
+  describe('cancelling a print the machine is not running', () => {
+    it('is refused, saying which printer has nothing to cancel', async () => {
+      mockReach.mockResolvedValue({ send: mockSend, awaitOutcome: mockAwaitOutcome, cancel: jest.fn<() => Promise<void>>().mockRejectedValue(new NothingPrinting('idle')) });
+
+      await expect(foreman.cancelPrintOn('mk4')).rejects.toThrow(new WrongState('mk4 is not printing anything, so there is nothing to cancel'));
+    });
+
+    it('passes any other failure on as it was', async () => {
+      const failure = new Error('OctoPrint cancel failed: 500');
+      mockReach.mockResolvedValue({ send: mockSend, awaitOutcome: mockAwaitOutcome, cancel: jest.fn<() => Promise<void>>().mockRejectedValue(failure) });
+
+      await expect(foreman.cancelPrintOn('mk4')).rejects.toBe(failure);
+    });
+  });
+
   describe('a printer whose own files it cannot read', () => {
     const said: string[] = [];
 

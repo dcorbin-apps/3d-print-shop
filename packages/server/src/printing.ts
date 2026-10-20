@@ -38,6 +38,9 @@ export interface Printer {
 /** The machine could not be got to at all - nothing listening, no key, a login it would not grant. */
 export class CouldNotReach extends Error {}
 
+/** The machine was asked to stop a print and said it is not printing one. */
+export class NothingPrinting extends Error {}
+
 export type PrintAttempt =
   | { did: 'nothing'; because: 'unreadable' | 'paused' | 'unreachable' | 'refused' | 'busy' | 'nothing-printable' }
   | { did: 'started'; job: Job }
