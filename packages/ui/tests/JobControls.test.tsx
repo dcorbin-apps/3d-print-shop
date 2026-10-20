@@ -166,4 +166,31 @@ describe('what can be done with a job', () => {
 
     await waitFor(() => expect(screen.getByText('job 7 is waiting for a verdict')).toBeDefined());
   });
+
+  describe('what the shop said when it refused', () => {
+    const refusedOnce = async (): Promise<(overrides: Partial<Job>) => void> => {
+      onRemove.mockRejectedValue(new Error('nothing to cancel'));
+      const { rerender } = render(<JobControls job={job({ state: 'printing', heldBy: 'mk4' })} actions={{ onRename, onHold, onRemove }} confirm={confirm} />);
+      press('Cancel job 7');
+      await waitFor(() => expect(screen.getByText('nothing to cancel')).toBeDefined());
+
+      return (overrides) => rerender(<JobControls job={job(overrides)} actions={{ onRename, onHold, onRemove }} confirm={confirm} />);
+    };
+
+    it('stays while the job is as it was', async () => {
+      const showAgain = await refusedOnce();
+
+      showAgain({ state: 'printing', heldBy: 'mk4' });
+
+      expect(screen.queryByText('nothing to cancel')).not.toBeNull();
+    });
+
+    it('goes once the job has moved on', async () => {
+      const showAgain = await refusedOnce();
+
+      showAgain({ state: 'awaiting-approval', heldBy: 'mk4', lastPrinterOutcome: 'failed' });
+
+      expect(screen.queryByText('nothing to cancel')).toBeNull();
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Job } from '@3d-print-shop/client/browser';
 
 /** What a person may do to a job from the list. Absent, the list only reports. */
@@ -38,6 +38,10 @@ export function JobControls({ job, actions, confirm = window.confirm.bind(window
   const queued = job.state === 'queued';
   const printing = job.state === 'printing';
   const promote = actions.onPromote;
+
+  // A refusal is about the job as it was. Left up once it moves on, it sat under a print that was
+  // running fine, saying the shop could not do something nobody was asking any more.
+  useEffect(() => setRefused(undefined), [job.state]);
 
   // The shop's own words for a refusal. This end knows only that something was not done.
   const doing = async (what: () => Promise<void>): Promise<void> => {
