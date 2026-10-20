@@ -1,6 +1,8 @@
 import { OctoPrint } from './OctoPrint.js';
 import type { OctoPrintConfig } from './OctoPrint.js';
 import { PRINTER_KEYS_FILE } from './credentials.js';
+import { silent } from './log.js';
+import type { Log } from './log.js';
 import type { Machines } from './Foreman.js';
 import type { Printer } from './printing.js';
 import type { RegisteredPrinter } from './Printer.js';
@@ -23,7 +25,10 @@ export type MakeMachine = (config: OctoPrintConfig) => Machine;
  * a printer already printing is being watched, and nothing will have sent it anything.
  */
 export class OctoPrintMachines {
-  private readonly reached = new Map<string, { address: string; key: string; machine: Machine }>();
+  // AIDEV-NOTE: kept from the moment it is MADE, with its connection as a promise, rather than once it
+  // has connected. Kept only after, two reaches at once - a restart watching a print while it also
+  // opens a line to every machine - each made a client, and one was left connected with nobody's.
+  private readonly reached = new Map<string, { address: string; key: string; machine: Machine; connected: Promise<void> }>();
 
   // AIDEV-NOTE: a key belongs in neither of a printer's files. `printer add` would put it in shell
   // history and in `ps`, and the data directory is the shop's working one rather than a credential
@@ -36,6 +41,7 @@ export class OctoPrintMachines {
   constructor(
     private readonly keys: () => ReadonlyMap<string, string> = () => new Map(),
     private readonly makeMachine: MakeMachine = (config): Machine => new OctoPrint(config),
+    private readonly log: Log = silent,
   ) {}
 
   // AIDEV-NOTE: a key that has changed is compared here and nowhere else, which is what makes
@@ -46,15 +52,27 @@ export class OctoPrintMachines {
   readonly reach: Machines = async (printer: RegisteredPrinter): Promise<Printer> => {
     const key = this.keyFor(printer.name);
     const already = this.reached.get(printer.name);
-    if (already?.address === printer.address && already.key === key) return already.machine;
+    if (already?.address === printer.address && already.key === key) {
+      await already.connected;
+
+      return already.machine;
+    }
 
     // The operator moved it, or corrected its key. The old client is talking to the wrong machine,
     // or talking to the right one with a key it will not accept.
     already?.machine.disconnect();
 
-    const machine = this.makeMachine({ baseUrl: printer.address, apiKey: key });
-    await machine.connect();
-    this.reached.set(printer.name, { address: printer.address, key, machine });
+    const machine = this.makeMachine({ baseUrl: printer.address, apiKey: key, log: this.log });
+    const making = { address: printer.address, key, machine, connected: machine.connect() };
+    this.reached.set(printer.name, making);
+
+    try {
+      await making.connected;
+    } catch (failure) {
+      // Forgotten, so the next reach tries afresh rather than being handed the same failure.
+      if (this.reached.get(printer.name) === making) this.reached.delete(printer.name);
+      throw failure;
+    }
 
     return machine;
   };

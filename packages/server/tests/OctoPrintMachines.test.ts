@@ -4,6 +4,7 @@ import type { Machine, MakeMachine } from '../src/OctoPrintMachines';
 import type { OctoPrintConfig } from '../src/OctoPrint';
 import type { PrinterOutcome } from '../src/Job';
 import type { RegisteredPrinter } from '../src/Printer';
+import type { Log } from '../src/log';
 
 // AIDEV-NOTE: the whole of octoPrintMachines' acceptance suite said again with the machine handed
 // over rather than built - written to find out what a unit test of this class CAN say. The answer
@@ -75,6 +76,69 @@ describe('reaching a printer', () => {
 
     expect(await machines.reach(mk4)).toBe(first);
     expect(made).toHaveLength(1);
+  });
+
+  // A restart watches a print and opens a line to every machine at the same moment. Each used to
+  // make its own client, and one was left connected with nobody listening to it.
+  it('makes one client for a printer reached twice at once', async () => {
+    const [first, second] = await Promise.all([machines.reach(mk4), machines.reach(mk4)]);
+
+    expect(second).toBe(first);
+    expect(made).toHaveLength(1);
+  });
+
+  // A send on a socket that is not open yet goes nowhere, so the second caller waits as the first does.
+  it('answers the second of two at once only when the client has connected', async () => {
+    let connected: () => void = () => undefined;
+    machines = new OctoPrintMachines(() => keys, (config) => {
+      const machine = aMachine();
+      connectsOf(machine).mockReturnValue(new Promise<void>((done) => (connected = done)));
+      made.push({ config, machine });
+
+      return machine;
+    });
+    let answered = false;
+    void machines.reach(mk4);
+
+    void machines.reach(mk4).then(() => (answered = true));
+    await new Promise((tick) => setImmediate(tick));
+    const before = answered;
+    connected();
+    await new Promise((tick) => setImmediate(tick));
+
+    expect([before, answered]).toEqual([false, true]);
+  });
+
+  it('makes a new client after one that could not connect', async () => {
+    const failing = aMachine();
+    connectsOf(failing).mockRejectedValue(new Error('nothing listening'));
+    let first = true;
+    machines = new OctoPrintMachines(
+      () => keys,
+      (config) => {
+        const machine = first ? failing : aMachine();
+        first = false;
+        made.push({ config, machine });
+
+        return machine;
+      },
+    );
+    await expect(machines.reach(mk4)).rejects.toThrow('nothing listening');
+
+    expect(await machines.reach(mk4)).not.toBe(failing);
+  });
+
+  it('hands the machines it makes the log they write to', async () => {
+    const log: Log = { info: jest.fn<Log['info']>(), error: jest.fn<Log['error']>() };
+    machines = new OctoPrintMachines(() => keys, (config) => {
+      made.push({ config, machine: aMachine() });
+
+      return made[made.length - 1].machine;
+    }, log);
+
+    await machines.reach(mk4);
+
+    expect(made[0].config.log).toBe(log);
   });
 
   // The operator moved the machine. The old client is talking to the wrong address.

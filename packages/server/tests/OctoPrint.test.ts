@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Readable } from 'node:stream';
 import { CouldNotReach, OctoPrint, octoPrintCamera, reconnectAfter, reconnectDelayMs, whySocketFailed, whyUnreachable } from '../src';
 import type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from '../src';
+import type { Log } from '../src/log';
 
 interface MockPushSocket extends PushSocket {
   send: jest.Mock<(frame: string) => void>;
@@ -981,6 +982,77 @@ describe('OctoPrint', () => {
 
       sendEvent('PrintDone');
       await expect(promise).resolves.toBe('finished');
+    });
+  });
+
+  // AIDEV-NOTE: (UT) written when two prints in a row ended on the machine and never in the shop, with
+  // nothing in either log to say where the ending was lost. These are the lines that would have.
+  describe('what it writes down', () => {
+    const info = jest.fn<Log['info']>();
+    const log: Log = { info, error: jest.fn<Log['error']>() };
+    const machine = 'http://octoprint.local';
+
+    beforeEach(async () => {
+      info.mockReset();
+      adapter = new OctoPrint({ ...config, log }, mockHttpClient, mockWsFactory, mockReconnectDelay);
+      await connectAdapter();
+    });
+
+    it('says which print it is waiting to hear the end of', () => {
+      void adapter.awaitOutcome(REMOTE_PATH);
+
+      expect(info).toHaveBeenCalledWith('waiting to hear how a print ends', { machine, path: REMOTE_PATH, heardAlready: undefined });
+    });
+
+    it('says when it heard the end before anything waited for it', () => {
+      sendEvent('PrintDone');
+
+      void adapter.awaitOutcome(REMOTE_PATH);
+
+      expect(info).toHaveBeenCalledWith('waiting to hear how a print ends', { machine, path: REMOTE_PATH, heardAlready: 'finished' });
+    });
+
+    it('says what the machine said about a print, and whether anybody was waiting for it', () => {
+      void adapter.awaitOutcome(REMOTE_PATH);
+
+      sendEvent('PrintDone');
+
+      expect(info).toHaveBeenCalledWith('OctoPrint said', { machine, event: 'PrintDone', path: REMOTE_PATH, awaited: true });
+    });
+
+    it('says so when nobody was waiting for that print', () => {
+      sendEvent('PrintStarted', 'plates/other.gcode');
+
+      expect(info).toHaveBeenCalledWith('OctoPrint said', { machine, event: 'PrintStarted', path: 'plates/other.gcode', awaited: false });
+    });
+
+    // OctoPrint sends an event for every layer and every move; only a print's own are worth a line.
+    it('leaves out events that are not about a print', () => {
+      sendEvent('ZChange');
+
+      expect(info).not.toHaveBeenCalled();
+    });
+
+    it('says when OctoPrint wants it to log in again, and why', () => {
+      mockWs.onmessage!(JSON.stringify({ reauthRequired: { reason: 'stale' } }));
+
+      expect(info).toHaveBeenCalledWith('OctoPrint wants the shop to log in again', { machine, reason: 'stale' });
+    });
+
+    it('says when the connection closed', () => {
+      mockWs.onclose!();
+
+      expect(info).toHaveBeenCalledWith('the connection to OctoPrint closed', { machine, opened: true });
+    });
+
+    it('says what it found out about a print it did not hear end', async () => {
+      const promise = adapter.awaitOutcome(REMOTE_PATH);
+      mockHttpClient.mockResolvedValue(makeOkResponse({ prints: { last: { success: true } } }));
+
+      mockWs.onmessage!(JSON.stringify({ history: { state: { flags: { printing: false } } } }));
+      await promise;
+
+      expect(info).toHaveBeenCalledWith('looked up a print the socket did not hear end', { machine, path: REMOTE_PATH, outcome: 'finished' });
     });
   });
 

@@ -2,6 +2,8 @@ import { basename, dirname } from 'node:path';
 import type { Readable } from 'node:stream';
 import { WebSocket as WsWebSocket, type RawData } from 'ws';
 import type { PrinterOutcome } from './Job.js';
+import { silent } from './log.js';
+import type { Log } from './log.js';
 import { CouldNotReach } from './printing.js';
 import type { Printer } from './printing.js';
 
@@ -14,6 +16,7 @@ export interface OctoPrintConfig {
    * waitForCompletion() before it is told the outcome is unknown.
    */
   lostContactTimeoutMs?: number;
+  log?: Log;
 }
 
 export type HttpClient = (url: string, init?: RequestInit) => Promise<Response>;
@@ -298,6 +301,10 @@ export class OctoPrint implements Printer {
     private readonly now: () => number = Date.now,
   ) {}
 
+  private get log(): Log {
+    return this.config.log ?? silent;
+  }
+
   connect(): Promise<void> {
     this.disconnectRequested = false;
     this.stopWaiting = new AbortController();
@@ -419,6 +426,7 @@ export class OctoPrint implements Printer {
 
   awaitOutcome(remotePath: string): Promise<PrinterOutcome> {
     const arrived = this.arrivedCompletions.get(remotePath);
+    this.log.info('waiting to hear how a print ends', { machine: this.config.baseUrl, path: remotePath, heardAlready: arrived });
     if (arrived !== undefined) {
       this.arrivedCompletions.delete(remotePath);
       return Promise.resolve(arrived);
@@ -480,6 +488,7 @@ export class OctoPrint implements Printer {
       socket.onclose = () => {
         this.connected = false;
         if (this.disconnectRequested) return;
+        this.log.info('the connection to OctoPrint closed', { machine: this.config.baseUrl, opened });
 
         if (!opened) {
           reject(new CouldNotReach(whySocketFailed(failure, this.config.baseUrl)));
@@ -528,6 +537,7 @@ export class OctoPrint implements Printer {
       if (path === inFlightPath) continue;
 
       const outcome = await this.lastPrintOutcome(path);
+      this.log.info('looked up a print the socket did not hear end', { machine: this.config.baseUrl, path, outcome });
       if (outcome) this.settleCompletion(path, outcome);
     }
   }
@@ -589,6 +599,7 @@ export class OctoPrint implements Printer {
     // looking alive and never heard a print end. Closed instead, so the reconnect logs in again and
     // reconciles whatever ended while it was deaf.
     if (message.reauthRequired) {
+      this.log.info('OctoPrint wants the shop to log in again', { machine: this.config.baseUrl, reason: message.reauthRequired.reason });
       this.socket?.close();
       return;
     }
@@ -641,7 +652,13 @@ export class OctoPrint implements Printer {
     this.tellAboutPausing = told;
   }
 
+  // AIDEV-NOTE: every Print* event is logged, not only the endings, because a print the shop never
+  // heard end is otherwise invisible - this says whether the event came, and whether its path was the
+  // one being waited on. Added when two prints in a row were missed with nothing to say why.
   private handleCompletionEvent(type: string | undefined, path: string | undefined): void {
+    if (type?.startsWith('Print')) {
+      this.log.info('OctoPrint said', { machine: this.config.baseUrl, event: type, path, awaited: path !== undefined && this.pendingCompletions.has(path) });
+    }
     if (!type || !path) return;
 
     const status = OUTCOME_BY_EVENT[type];

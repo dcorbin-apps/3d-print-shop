@@ -105,7 +105,7 @@ export function createCLI({ reach, say: told, ask, writing, version, startListen
 
       const { sessions, pickedUp: pickedUpSessions } = await sessionsKeptIn(where, log);
 
-      const machines = new OctoPrintMachines(() => printerKeys);
+      const machines = new OctoPrintMachines(() => printerKeys, undefined, log);
       const foreman = new Foreman(store, machines.reach, log);
 
       const stopAsking = keepReachingForWhatIsLost(() => foreman.reachForWhatIsLost(), RETRY_TICK_MS, log);
