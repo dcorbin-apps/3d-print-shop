@@ -25,7 +25,7 @@ interface JobsByFilamentProps {
 type Loads = (printer: string, filaments: string[]) => Promise<void>;
 
 export function JobsByFilament({ jobs, totalJobs, selected, onVerdict, actions, onLoad }: JobsByFilamentProps): React.JSX.Element {
-  const groups = byFilament(jobs);
+  const groups = byFilament(jobs, selected?.loaded);
   const others = totalJobs - jobs.length;
 
   return (

@@ -48,6 +48,10 @@ describe('the work, by what it needs loaded', () => {
     expect(filaments([job(1, ['red']), job(2, ['blue'])])).toEqual(['blue', 'red']);
   });
 
+  it('puts what is already loaded first, however short its queue', () => {
+    expect(byFilament([job(1, ['blue']), job(2, ['red']), job(3, ['red'])], ['blue']).map((group) => group.filament)).toEqual(['blue', 'red']);
+  });
+
   it('lists the jobs in the order they were submitted', () => {
     expect(byFilament([job(3, ['red']), job(1, ['red'])])[0].jobs.map((held) => held.id)).toEqual([1, 3]);
   });

@@ -13,7 +13,9 @@ export interface FilamentGroup {
 // that has to be on the machine before it can begin, and a job naming more swaps the rest in as it
 // runs. Grouping by anything else would be a second answer to "what do I load", disagreeing with
 // the shop's.
-export function byFilament(jobs: Job[]): FilamentGroup[] {
+//
+// What is already loaded comes first: that queue needs no spool change, so it is the one that can start now.
+export function byFilament(jobs: Job[], loaded: readonly string[] = []): FilamentGroup[] {
   const grouped = new Map<string, Job[]>();
 
   for (const job of jobs) {
@@ -31,7 +33,11 @@ export function byFilament(jobs: Job[]): FilamentGroup[] {
       queued: held.filter((job) => job.state === 'queued').length,
       estimatedPrintSeconds: workIn(held.filter((job) => job.state === 'queued')),
     }))
-    .sort((a, b) => b.queued - a.queued || a.filament.localeCompare(b.filament));
+    .sort((a, b) => onMachine(b) - onMachine(a) || b.queued - a.queued || a.filament.localeCompare(b.filament));
+
+  function onMachine(group: FilamentGroup): number {
+    return loaded.includes(group.filament) ? 1 : 0;
+  }
 }
 
 // The same all-or-nothing rule the shop applies to `waitingOn`: a total summed over the jobs that

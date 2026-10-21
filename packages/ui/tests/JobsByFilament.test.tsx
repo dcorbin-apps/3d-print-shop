@@ -109,6 +109,12 @@ describe('the work the shop is holding', () => {
     expect(screen.getByText('on mk4')).toBeDefined();
   });
 
+  it('shows the filament the chosen machine has on it first', () => {
+    showing([job(1, ['PLA-Blue']), job(2, ['PLA-Blue']), job(3, ['PLA-Red'])], 3, mk4);
+
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['PLA-Redon mk4', 'PLA-Blue']);
+  });
+
   it('marks nothing when no machine is chosen', () => {
     showing([job(1, ['PLA-Red'])]);
 
