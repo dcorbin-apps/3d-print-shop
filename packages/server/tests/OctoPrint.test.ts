@@ -489,6 +489,17 @@ describe('OctoPrint', () => {
       await expect(adapter.awaitOutcome('plates/tray.gcode')).resolves.toBe('finished');
     });
 
+    it('does not settle a print sent again with how the previous one ended', async () => {
+      const cancelled = adapter.awaitOutcome('plates/tray.gcode');
+      sendEvent('PrintCancelled');
+      sendEvent('PrintFailed');
+      await cancelled;
+
+      await adapter.send('plates/tray.gcode', gcode());
+
+      await expectPending(adapter.awaitOutcome('plates/tray.gcode'));
+    });
+
     it('reconnects instead of failing on an unexpected close', async () => {
       const secondWs = makeMockWs();
       mockWsFactory.mockReturnValueOnce(secondWs);

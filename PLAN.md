@@ -24,6 +24,11 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   is on the job record and `startNextPrint` is holding the job when it calls `send` - which avoids
   having to find out what OctoPrint makes of a chunked upload
 
+- [ ] "Print again" asks the machine to print the file it already has rather than uploading it
+  again. A rejected job is re-sent whole by `startNextPrint`, though the printer still holds the
+  same gcode at the same path; OctoPrint can start a stored file with a `select` and `print` on
+  `/api/files/local/<path>`. The upload is the slow part of a large plate, and it is wasted
+
 - [ ] The shop can say when IT is in trouble, rather than only what each printer is doing. A store
   or data-directory fault is nobody's printer's fault and now stops nothing, so a log line is all there is -
   and nothing a client or an operator asks answers "the shop is not well". The contract has no

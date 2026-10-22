@@ -403,6 +403,11 @@ export class OctoPrint implements Printer {
   async send(remotePath: string, gcode: Readable): Promise<string> {
     await this.ensureConnected();
 
+    // AIDEV-NOTE: an ending heard before this print was asked for is an earlier print's. OctoPrint says
+    // a cancel twice - PrintCancelled, then PrintFailed - and the second, kept with nobody waiting,
+    // settled the reprint of the same file as failed the moment it started.
+    this.arrivedCompletions.delete(remotePath);
+
     const folder = dirname(remotePath);
     const form = new FormData();
     form.append('file', new Blob([await readWhole(gcode)], { type: 'text/plain' }), basename(remotePath));
