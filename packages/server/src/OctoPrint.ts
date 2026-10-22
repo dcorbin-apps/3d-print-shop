@@ -644,7 +644,9 @@ export class OctoPrint implements Printer {
     const flags = status.state?.flags;
     if (!flags) return;
 
-    const canPrint = flags.operational === true && flags.closedOrError !== true;
+    // AIDEV-NOTE: a machine still cancelling is operational, and takes an upload marked "print it" - and
+    // then quietly does not start it. Seen with a cancel that took 49s: the next job sat "printing" for good.
+    const canPrint = flags.operational === true && flags.closedOrError !== true && flags.cancelling !== true;
     if (canPrint === this.canPrint) return;
 
     this.canPrint = canPrint;

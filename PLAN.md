@@ -29,6 +29,12 @@ See [design/3d-print-shop.md](design/3d-print-shop.md) for the design this is wo
   same gcode at the same path; OctoPrint can start a stored file with a `select` and `print` on
   `/api/files/local/<path>`. The upload is the slow part of a large plate, and it is wasted
 
+- [ ] A print the machine accepted but never started is answered as one that could not start. OctoPrint
+  takes an upload marked "print it" and says nothing when it does not start it; the shop then waits
+  for an ending that never comes, and since the print was never SEEN running, nothing settles it.
+  A machine still cancelling was one way in, now closed; one that never shows the path running
+  within some time after the upload would catch the rest
+
 - [ ] The shop can say when IT is in trouble, rather than only what each printer is doing. A store
   or data-directory fault is nobody's printer's fault and now stops nothing, so a log line is all there is -
   and nothing a client or an operator asks answers "the shop is not well". The contract has no

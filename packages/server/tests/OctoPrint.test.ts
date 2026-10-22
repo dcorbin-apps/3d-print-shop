@@ -1314,6 +1314,16 @@ describe('OctoPrint', () => {
       expect(said).toEqual([{ canPrint: false, why: 'Offline after error' }]);
     });
 
+    it('says it cannot while it is still cancelling a print, and can once that is done', () => {
+      mockWs.onmessage!(JSON.stringify({ current: fitness({ operational: true, cancelling: true }, 'Cancelling') }));
+      mockWs.onmessage!(JSON.stringify({ current: fitness({ operational: true, cancelling: false }) }));
+
+      expect(said).toEqual([
+        { canPrint: false, why: 'Cancelling' },
+        { canPrint: true, why: 'Operational' },
+      ]);
+    });
+
     // These arrive every second or two, and each one told would be a write to the printer's file.
     it('says nothing when the answer has not changed', () => {
       const frame = JSON.stringify({ current: fitness({ operational: true, closedOrError: false }) });
