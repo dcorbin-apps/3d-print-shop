@@ -90,13 +90,16 @@ describe('reaching a printer', () => {
   // A send on a socket that is not open yet goes nowhere, so the second caller waits as the first does.
   it('answers the second of two at once only when the client has connected', async () => {
     let connected: () => void = () => undefined;
-    machines = new OctoPrintMachines(() => keys, (config) => {
-      const machine = aMachine();
-      connectsOf(machine).mockReturnValue(new Promise<void>((done) => (connected = done)));
-      made.push({ config, machine });
+    machines = new OctoPrintMachines(
+      () => keys,
+      (config) => {
+        const machine = aMachine();
+        connectsOf(machine).mockReturnValue(new Promise<void>((done) => (connected = done)));
+        made.push({ config, machine });
 
-      return machine;
-    });
+        return machine;
+      },
+    );
     let answered = false;
     void machines.reach(mk4);
 
@@ -130,11 +133,15 @@ describe('reaching a printer', () => {
 
   it('hands the machines it makes the log they write to', async () => {
     const log: Log = { info: jest.fn<Log['info']>(), error: jest.fn<Log['error']>() };
-    machines = new OctoPrintMachines(() => keys, (config) => {
-      made.push({ config, machine: aMachine() });
+    machines = new OctoPrintMachines(
+      () => keys,
+      (config) => {
+        made.push({ config, machine: aMachine() });
 
-      return made[made.length - 1].machine;
-    }, log);
+        return made[made.length - 1].machine;
+      },
+      log,
+    );
 
     await machines.reach(mk4);
 

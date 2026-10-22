@@ -170,7 +170,9 @@ describe('what can be done with a job', () => {
   describe('what the shop said when it refused', () => {
     const refusedOnce = async (): Promise<(overrides: Partial<Job>) => void> => {
       onRemove.mockRejectedValue(new Error('nothing to cancel'));
-      const { rerender } = render(<JobControls job={job({ state: 'printing', heldBy: 'mk4' })} actions={{ onRename, onHold, onRemove }} confirm={confirm} />);
+      const { rerender } = render(
+        <JobControls job={job({ state: 'printing', heldBy: 'mk4' })} actions={{ onRename, onHold, onRemove }} confirm={confirm} />,
+      );
       press('Cancel job 7');
       await waitFor(() => expect(screen.getByText('nothing to cancel')).toBeDefined());
 

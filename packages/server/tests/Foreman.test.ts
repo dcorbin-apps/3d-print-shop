@@ -121,14 +121,22 @@ describe('the foreman', () => {
   // this used to answer 500 with OctoPrint's status code in it.
   describe('cancelling a print the machine is not running', () => {
     it('is refused, saying which printer has nothing to cancel', async () => {
-      mockReach.mockResolvedValue({ send: mockSend, awaitOutcome: mockAwaitOutcome, cancel: jest.fn<() => Promise<void>>().mockRejectedValue(new NothingPrinting('idle')) });
+      mockReach.mockResolvedValue({
+        send: mockSend,
+        awaitOutcome: mockAwaitOutcome,
+        cancel: jest.fn<() => Promise<void>>().mockRejectedValue(new NothingPrinting('idle')),
+      });
 
       await expect(foreman.cancelPrintOn('mk4')).rejects.toThrow(new WrongState('mk4 is not printing anything, so there is nothing to cancel'));
     });
 
     it('passes any other failure on as it was', async () => {
       const failure = new Error('OctoPrint cancel failed: 500');
-      mockReach.mockResolvedValue({ send: mockSend, awaitOutcome: mockAwaitOutcome, cancel: jest.fn<() => Promise<void>>().mockRejectedValue(failure) });
+      mockReach.mockResolvedValue({
+        send: mockSend,
+        awaitOutcome: mockAwaitOutcome,
+        cancel: jest.fn<() => Promise<void>>().mockRejectedValue(failure),
+      });
 
       await expect(foreman.cancelPrintOn('mk4')).rejects.toBe(failure);
     });

@@ -679,7 +679,12 @@ export class OctoPrint implements Printer {
   // one being waited on. Added when two prints in a row were missed with nothing to say why.
   private handleCompletionEvent(type: string | undefined, path: string | undefined): void {
     if (type?.startsWith('Print')) {
-      this.log.info('OctoPrint said', { machine: this.config.baseUrl, event: type, path, awaited: path !== undefined && this.pendingCompletions.has(path) });
+      this.log.info('OctoPrint said', {
+        machine: this.config.baseUrl,
+        event: type,
+        path,
+        awaited: path !== undefined && this.pendingCompletions.has(path),
+      });
     }
     if (!type || !path) return;
 

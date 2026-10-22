@@ -295,7 +295,14 @@ describe('the page, against a shop that answers', () => {
     });
 
     const withMk4 = (as: Role, trouble: Record<string, unknown> = {}): void => {
-      const mk4 = { name: 'mk4', buildVolume: { x: 250, y: 210, z: 220 }, api: 'octoprint', address: 'http://prusa.local', loaded: [], ...trouble };
+      const mk4 = {
+        name: 'mk4',
+        buildVolume: { x: 250, y: 210, z: 220 },
+        api: 'octoprint',
+        address: 'http://prusa.local',
+        loaded: [],
+        ...trouble,
+      };
       fetching.mockImplementation((where: Parameters<typeof fetch>[0], sent?: RequestInit) => {
         const path = String(where);
         if (path.endsWith('/me')) return Promise.resolve(answered({ id: 'dave', name: 'dave', role: as }));
@@ -432,7 +439,16 @@ describe('the page, against a shop that answers', () => {
 
         return Promise.resolve(
           answered({
-            accessibleJobs: [{ id: 7, displayName: 'Player Box', filaments: ['PLA-Red'], submittedAt: '2026-09-09T12:00:00Z', gcodeBytes: 1024, state: 'queued' }],
+            accessibleJobs: [
+              {
+                id: 7,
+                displayName: 'Player Box',
+                filaments: ['PLA-Red'],
+                submittedAt: '2026-09-09T12:00:00Z',
+                gcodeBytes: 1024,
+                state: 'queued',
+              },
+            ],
             totalJobs: 1,
           }),
         );

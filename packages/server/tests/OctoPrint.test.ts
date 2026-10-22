@@ -1,6 +1,16 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { Readable } from 'node:stream';
-import { CouldNotReach, LOOK_AGAIN_MS, NothingPrinting, OctoPrint, octoPrintCamera, reconnectAfter, reconnectDelayMs, whySocketFailed, whyUnreachable } from '../src';
+import {
+  CouldNotReach,
+  LOOK_AGAIN_MS,
+  NothingPrinting,
+  OctoPrint,
+  octoPrintCamera,
+  reconnectAfter,
+  reconnectDelayMs,
+  whySocketFailed,
+  whyUnreachable,
+} from '../src';
 import type { HttpClient, OctoPrintConfig, PushSocket, PushSocketFactory, ReconnectDelay } from '../src';
 import type { Log } from '../src/log';
 
@@ -1016,7 +1026,9 @@ describe('OctoPrint', () => {
     const history = (success: boolean, endedAtMs: number): void => {
       mockHttpClient.mockImplementation((url) =>
         Promise.resolve(
-          url === FILE_URL ? makeOkResponse({ prints: { last: { success, date: endedAtMs / 1000 } } }) : makeOkResponse({ name: 'operator', session: 'sess-1' }),
+          url === FILE_URL
+            ? makeOkResponse({ prints: { last: { success, date: endedAtMs / 1000 } } })
+            : makeOkResponse({ name: 'operator', session: 'sess-1' }),
         ),
       );
     };
@@ -1180,7 +1192,13 @@ describe('OctoPrint', () => {
 
     it('writes down that it heard the end this way', async () => {
       const info = jest.fn<Log['info']>();
-      adapter = new OctoPrint({ ...config, log: { info, error: jest.fn<Log['error']>() } }, mockHttpClient, mockWsFactory, mockReconnectDelay, () => nowMs);
+      adapter = new OctoPrint(
+        { ...config, log: { info, error: jest.fn<Log['error']>() } },
+        mockHttpClient,
+        mockWsFactory,
+        mockReconnectDelay,
+        () => nowMs,
+      );
       await connectAdapter();
       const outcome = adapter.awaitOutcome(REMOTE_PATH);
       printing();
