@@ -1,28 +1,41 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { RegisteredPrinter } from '@3d-print-shop/client/browser';
 
 interface LoadFilamentDialogProps {
   printer: RegisteredPrinter;
-  /** The filaments queued work is waiting for, offered as the field is typed in. */
-  waitingFor: string[];
+  /** Every filament the shop knows, asked for when the dialog opens. */
+  known: () => Promise<string[]>;
   onLoad: (name: string, filaments: string[]) => Promise<void>;
   onClose: () => void;
 }
 
-// Offered beside the queue's filaments, because a blank field also means nothing but nobody thinks to clear one.
-const NOTHING = '<Nothing>';
+// Values no filament can have: a name is trimmed and never blank, and none starts with a NUL.
+const NOTHING = '';
+const NEW = '\u0000new';
 
 // AIDEV-NOTE: the shop matches a job's filament to what is loaded by EXACT name, so "PLA-Red" on the
-// machine prints nothing that asked for "PLA". The suggestions are what the queue is waiting for, so
-// the name somebody picks is one that will start something.
-export function LoadFilamentDialog({ printer, waitingFor, onLoad, onClose }: LoadFilamentDialogProps): React.JSX.Element {
-  const [typed, setTyped] = useState(printer.loaded.join(', '));
+// machine prints nothing that asked for "PLA". Picking from what the shop already knows is what keeps
+// a second spelling from being loaded; a new name is the deliberate exception.
+//
+// ONE filament, though the shop takes a list: every printer here has one extruder. See PLAN.md on
+// positional filaments for when that changes.
+export function LoadFilamentDialog({ printer, known, onLoad, onClose }: LoadFilamentDialogProps): React.JSX.Element {
+  const [names, setNames] = useState<string[]>([]);
+  const [chosen, setChosen] = useState(printer.loaded[0] ?? NOTHING);
+  const [named, setNamed] = useState('');
   const [refused, setRefused] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
-  const suggestions = `waiting-for-${printer.name}`;
 
-  const load = async (filaments: string[]): Promise<void> => {
+  useEffect(() => {
+    known().then(setNames, (failure: unknown) => setRefused((failure as Error).message));
+  }, [known]);
+
+  // What is on the machine is offered even before the shop has answered, so the choice starts there.
+  const offered = [...new Set([...names, ...printer.loaded])];
+  const filaments = chosen === NOTHING ? [] : [chosen === NEW ? named.trim() : chosen];
+
+  const load = async (): Promise<void> => {
     setLoading(true);
     setRefused(undefined);
 
@@ -48,31 +61,36 @@ export function LoadFilamentDialog({ printer, waitingFor, onLoad, onClose }: Loa
           className="printer-form"
           onSubmit={(submitted) => {
             submitted.preventDefault();
-            void load(filamentsIn(typed));
+            void load();
           }}
         >
           <span className="printer-name">{printer.name}</span>
 
           <label>
             Filament loaded
-            <input value={typed} onChange={(typing) => setTyped(typing.target.value)} list={suggestions} placeholder="nothing" autoFocus />
+            <select value={chosen} onChange={(choosing) => setChosen(choosing.target.value)} autoFocus>
+              <option value={NOTHING}>&lt;Nothing&gt;</option>
+              {offered.map((filament) => (
+                <option key={filament} value={filament}>
+                  {filament}
+                </option>
+              ))}
+              <option value={NEW}>&lt;New Filament&gt;</option>
+            </select>
           </label>
-          <datalist id={suggestions}>
-            <option value={NOTHING} />
-            {waitingFor.map((filament) => (
-              <option key={filament} value={filament} />
-            ))}
-          </datalist>
+
+          {chosen === NEW && (
+            <label>
+              New filament name
+              <input value={named} onChange={(typing) => setNamed(typing.target.value)} autoFocus />
+            </label>
+          )}
 
           {refused !== undefined && <p className="refused">{refused}</p>}
 
           <span className="buttons">
-            <button type="submit" disabled={loading}>
+            <button type="submit" disabled={loading || filaments.includes('')}>
               {loading ? 'Loading...' : 'Load'}
-            </button>
-            {/* Clearing the field says the same, but nobody looking for "empty" thinks to do that. */}
-            <button type="button" disabled={loading} onClick={() => void load([])}>
-              Nothing loaded
             </button>
             <button type="button" className="quiet" onClick={onClose}>
               Cancel
@@ -83,12 +101,4 @@ export function LoadFilamentDialog({ printer, waitingFor, onLoad, onClose }: Loa
     </div>,
     document.body,
   );
-}
-
-// More than one is a head sliced for several virtual extruders, in order. Blank is nothing loaded.
-export function filamentsIn(typed: string): string[] {
-  return typed
-    .split(',')
-    .map((filament) => filament.trim())
-    .filter((filament) => filament !== '' && filament !== NOTHING);
 }

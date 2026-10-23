@@ -132,6 +132,14 @@ export class HttpShop implements Shop {
     return (await this.answered('GET', `/filaments${forPrinter}`)) as FilamentDemand[];
   }
 
+  async knownFilaments(): Promise<string[]> {
+    return (await this.answered('GET', '/filaments/known')) as string[];
+  }
+
+  async forgetFilament(name: string): Promise<void> {
+    await this.reach('DELETE', `/filaments/known/${encodeURIComponent(name)}`);
+  }
+
   async printers(): Promise<RegisteredPrinter[]> {
     return ((await this.answered('GET', '/printers')) as WirePrinter[]).map(asPrinter);
   }

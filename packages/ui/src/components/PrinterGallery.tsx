@@ -29,8 +29,8 @@ interface PrinterGalleryProps {
   onStart?: (name: string) => Promise<void>;
   /** How a printer is taken out of the shop, offered from its Edit dialog. Withheld on the same terms as onSave. */
   onRemove?: (name: string) => Promise<void>;
-  /** The filaments queued work is waiting for, suggested when somebody loads a machine. */
-  waitingFor?: string[];
+  /** Every filament the shop knows, offered when somebody loads a machine. */
+  known?: () => Promise<string[]>;
 }
 
 export function PrinterGallery({
@@ -42,7 +42,7 @@ export function PrinterGallery({
   onStop,
   onStart,
   onRemove,
-  waitingFor = [],
+  known = nothingKnown,
 }: PrinterGalleryProps): React.JSX.Element {
   const [editing, setEditing] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState<string | undefined>(undefined);
@@ -111,7 +111,7 @@ export function PrinterGallery({
         <EditPrinterDialog printer={beingEdited} onSave={onSave} onRemove={onRemove} onClose={() => setEditing(undefined)} />
       )}
       {onLoad !== undefined && beingLoaded !== undefined && (
-        <LoadFilamentDialog printer={beingLoaded} waitingFor={waitingFor} onLoad={onLoad} onClose={() => setLoading(undefined)} />
+        <LoadFilamentDialog printer={beingLoaded} known={known} onLoad={onLoad} onClose={() => setLoading(undefined)} />
       )}
       {onStop !== undefined && beingStopped !== undefined && (
         <StopPrinterDialog printer={beingStopped} onStop={onStop} onClose={() => setStopping(undefined)} />
@@ -119,6 +119,9 @@ export function PrinterGallery({
     </section>
   );
 }
+
+// Module level, so a gallery not told one hands the dialog the same function every render.
+const nothingKnown = (): Promise<string[]> => Promise.resolve([]);
 
 interface StartProps {
   name: string;

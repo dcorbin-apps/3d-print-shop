@@ -204,7 +204,9 @@ describe('the page, against a shop that answers', () => {
         const path = String(where);
         if (path.endsWith('/me')) return Promise.resolve(answered({ id: 'dave', name: 'dave', role: as }));
         if (path.endsWith('/printers')) return Promise.resolve(answered([mk4]));
+        if (path.endsWith('/filaments/known')) return Promise.resolve(answered(['PLA', 'PLA-Red']));
         if (sent?.method === 'PUT') return Promise.resolve(answered({ ...mk4, loaded: ['PLA'] }));
+        if (sent?.method === 'DELETE') return Promise.resolve(answered(undefined));
 
         return Promise.resolve(
           answered({
@@ -233,6 +235,7 @@ describe('the page, against a shop that answers', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: 'Load mk4' })).toBeDefined());
 
       fireEvent.click(screen.getByRole('button', { name: 'Load mk4' }));
+      await waitFor(() => expect(screen.getByRole('option', { name: 'PLA' })).toBeDefined());
       fireEvent.change(screen.getByLabelText('Filament loaded'), { target: { value: 'PLA' } });
       fireEvent.click(screen.getByRole('button', { name: 'Load' }));
 
@@ -240,16 +243,43 @@ describe('the page, against a shop that answers', () => {
       expect(JSON.parse(String(asked('PUT', '/printers/mk4/filament')?.body))).toEqual({ loaded: ['PLA'] });
     });
 
-    // A print waiting for a verdict needs nothing loaded, so its filament is not suggested.
-    it('suggests only what queued work is waiting for', async () => {
+    it('offers the filaments the shop knows', async () => {
       withMk4('admin');
       render(<App />);
-      await waitFor(() => expect(screen.getByText('Markers')).toBeDefined());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Load mk4' })).toBeDefined());
 
       fireEvent.click(screen.getByRole('button', { name: 'Load mk4' }));
-      const field = screen.getByLabelText('Filament loaded') as HTMLInputElement;
 
-      expect([...(field.list?.options ?? [])].map((option) => option.value)).toEqual(['<Nothing>', 'PLA']);
+      await waitFor(() => expect(screen.getByRole('option', { name: 'PLA-Red' })).toBeDefined());
+    });
+
+    describe('the filaments the shop knows', () => {
+      it('are offered to an admin to look after', async () => {
+        withMk4('admin');
+        render(<App />);
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Filaments' })).toBeDefined());
+      });
+
+      it('are not offered to anybody else', async () => {
+        withMk4('user');
+        render(<App />);
+        await waitFor(() => expect(screen.getByRole('button', { name: /dave/ })).toBeDefined());
+
+        expect(screen.queryByRole('button', { name: 'Filaments' })).toBeNull();
+      });
+
+      it('lose one an admin removes, at the shop', async () => {
+        withMk4('admin');
+        render(<App />);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Filaments' })).toBeDefined());
+
+        fireEvent.click(screen.getByRole('button', { name: 'Filaments' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Remove PLA-Red' })).toBeDefined());
+        fireEvent.click(screen.getByRole('button', { name: 'Remove PLA-Red' }));
+
+        await waitFor(() => expect(asked('DELETE', '/filaments/known/PLA-Red')).toBeDefined());
+      });
     });
 
     it('loads what a group waits for on the chosen machine', async () => {

@@ -104,6 +104,11 @@ export interface Shop {
    */
   waitingOn(printer?: string): Promise<FilamentDemand[]>;
 
+  /** Every filament the shop has heard of - loaded on a machine, named by a job, or remembered from either - by name. */
+  knownFilaments(): Promise<string[]>;
+  /** Forget one. Refused while a printer has it loaded or a job the shop holds names it. */
+  forgetFilament(name: string): Promise<void>;
+
   printers(): Promise<RegisteredPrinter[]>;
   // AIDEV-NOTE: the key is a second ARGUMENT and not a field of the record, because it is not part
   // of what a printer IS - the shop keeps it in a different file, and one that reached a record

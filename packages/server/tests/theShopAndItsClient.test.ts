@@ -118,6 +118,28 @@ describe('the shop and its client', () => {
     });
   });
 
+  describe('the filaments', () => {
+    beforeEach(async () => {
+      await shop.addPrinter(MK4);
+    });
+
+    it('knows one once it is loaded, and forgets it once nothing uses it', async () => {
+      await shop.load('mk4', ['PLA/Red #2']);
+      await shop.load('mk4', []);
+      expect(await shop.knownFilaments()).toEqual(['PLA/Red #2']);
+
+      await shop.forgetFilament('PLA/Red #2');
+
+      expect(await shop.knownFilaments()).toEqual([]);
+    });
+
+    it('repeats why it will not forget one in use', async () => {
+      await shop.load('mk4', ['PLA-Red']);
+
+      await expect(shop.forgetFilament('PLA-Red')).rejects.toThrow('PLA-Red is loaded on mk4');
+    });
+  });
+
   describe('the jobs', () => {
     beforeEach(async () => {
       await shop.addPrinter(MK4);

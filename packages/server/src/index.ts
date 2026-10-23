@@ -50,6 +50,7 @@ export {
   MAX_GCODE_ENV,
   defaultMaxGcodeBytes,
   NoPrinterCanTakeIt,
+  NoSuchFilament,
   NoSuchJob,
   NoSuchPrinter,
   DataUnavailable,

@@ -233,18 +233,29 @@ describe('the gallery of printers', () => {
 
   describe('the way to load one', () => {
     const loads = jest.fn<(name: string, filaments: string[]) => Promise<void>>();
+    const known = jest.fn<() => Promise<string[]>>();
     const dialog = (name: string): HTMLElement | null => screen.queryByRole('dialog', { name: `Load ${name}` });
-    const field = (): HTMLInputElement => screen.getByLabelText('Filament loaded') as HTMLInputElement;
+    const field = (): HTMLSelectElement => screen.getByLabelText('Filament loaded') as HTMLSelectElement;
+    const offered = (): string[] => [...field().options].map((option) => option.text);
+    const chosen = (): string | undefined => field().selectedOptions[0]?.text;
 
     beforeEach(() => {
       loads.mockReset();
       loads.mockResolvedValue(undefined);
+      known.mockReset();
+      known.mockResolvedValue(['PETG-Black', 'PLA-Red']);
     });
 
-    const loading = (on: RegisteredPrinter, waitingFor: string[] = []): void => {
-      render(<PrinterGallery printers={[on]} onSelect={nobodyChooses} onLoad={loads} waitingFor={waitingFor} />);
+    const loading = (on: RegisteredPrinter): void => {
+      render(<PrinterGallery printers={[on]} onSelect={nobodyChooses} onLoad={loads} known={known} />);
       fireEvent.click(screen.getByRole('button', { name: `Load ${on.name}` }));
     };
+
+    async function choosing(text: string): Promise<void> {
+      await waitFor(() => expect(offered()).toContain(text));
+      const option = [...field().options].find((offer) => offer.text === text);
+      fireEvent.change(field(), { target: { value: option?.value } });
+    }
 
     it('is not offered to a caller who was given no way to load one', () => {
       render(
@@ -269,56 +280,77 @@ describe('the gallery of printers', () => {
       expect((screen.getByRole('button', { name: 'Load mk4' }) as HTMLButtonElement).disabled).toBe(disabled);
     });
 
-    it('starts from what is on the machine now', () => {
-      loading(printer('mk4', { loaded: ['PLA', 'PETG'] }));
-
-      expect(field().value).toBe('PLA, PETG');
-    });
-
-    // The shop matches by exact name, so the names worth typing are the ones queued work waits for.
-    it('suggests nothing at all, and what queued work is waiting for', () => {
-      loading(printer('mk4'), ['PLA', 'PETG-Black']);
-
-      const suggested = [...(field().list?.options ?? [])].map((option) => option.value);
-
-      expect(suggested).toEqual(['<Nothing>', 'PLA', 'PETG-Black']);
-    });
-
-    it('hands the shop each filament typed, in order, and closes once it is taken', async () => {
+    it('offers nothing, every filament the shop knows, and a new one', async () => {
       loading(printer('mk4'));
-      fireEvent.change(field(), { target: { value: ' PLA ,, PETG ' } });
+
+      await waitFor(() => expect(offered()).toEqual(['<Nothing>', 'PETG-Black', 'PLA-Red', '<New Filament>']));
+    });
+
+    it('starts from what is on the machine, before the shop has even answered', () => {
+      known.mockReturnValue(new Promise<string[]>(() => undefined));
+      loading(printer('mk4', { loaded: ['PLA-Gray'] }));
+
+      expect(chosen()).toBe('PLA-Gray');
+    });
+
+    it('starts from nothing on an empty machine', () => {
+      loading(printer('mk4'));
+
+      expect(chosen()).toBe('<Nothing>');
+    });
+
+    it('puts the chosen filament, and only it, on the machine, and closes once it is taken', async () => {
+      loading(printer('mk4'));
+      await choosing('PETG-Black');
 
       fireEvent.click(screen.getByRole('button', { name: 'Load' }));
 
       await waitFor(() => expect(dialog('mk4')).toBeNull());
-      expect(loads).toHaveBeenCalledWith('mk4', ['PLA', 'PETG']);
-    });
-
-    it('takes everything off the machine when nothing is typed', async () => {
-      loading(printer('mk4', { loaded: ['PLA'] }));
-      fireEvent.change(field(), { target: { value: '  ' } });
-
-      fireEvent.click(screen.getByRole('button', { name: 'Load' }));
-
-      await waitFor(() => expect(loads).toHaveBeenCalledWith('mk4', []));
-    });
-
-    it('takes everything off the machine when told nothing is loaded, whatever is typed', async () => {
-      loading(printer('mk4', { loaded: ['PLA'] }));
-
-      fireEvent.click(screen.getByRole('button', { name: 'Nothing loaded' }));
-
-      await waitFor(() => expect(dialog('mk4')).toBeNull());
-      expect(loads).toHaveBeenCalledWith('mk4', []);
+      expect(loads).toHaveBeenCalledWith('mk4', ['PETG-Black']);
     });
 
     it('takes everything off the machine when nothing is chosen', async () => {
-      loading(printer('mk4', { loaded: ['PLA'] }));
-      fireEvent.change(field(), { target: { value: '<Nothing>' } });
+      loading(printer('mk4', { loaded: ['PLA-Red'] }));
+      await choosing('<Nothing>');
 
       fireEvent.click(screen.getByRole('button', { name: 'Load' }));
 
       await waitFor(() => expect(loads).toHaveBeenCalledWith('mk4', []));
+    });
+
+    describe('a new filament', () => {
+      const name = (): HTMLInputElement | null => screen.queryByLabelText('New filament name');
+
+      it('is not asked for until one is chosen', () => {
+        loading(printer('mk4'));
+
+        expect(name()).toBeNull();
+      });
+
+      it('loads by the name it is given', async () => {
+        loading(printer('mk4'));
+        await choosing('<New Filament>');
+        fireEvent.change(name()!, { target: { value: ' PLA-Teal ' } });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Load' }));
+
+        await waitFor(() => expect(loads).toHaveBeenCalledWith('mk4', ['PLA-Teal']));
+      });
+
+      it('cannot be loaded without a name', async () => {
+        loading(printer('mk4'));
+        await choosing('<New Filament>');
+        fireEvent.change(name()!, { target: { value: '  ' } });
+
+        expect((screen.getByRole('button', { name: 'Load' }) as HTMLButtonElement).disabled).toBe(true);
+      });
+    });
+
+    it('says why when the shop will not say what it knows', async () => {
+      known.mockRejectedValue(new Error('GET /filaments/known is for an admin'));
+      loading(printer('mk4'));
+
+      await waitFor(() => expect(screen.getByText('GET /filaments/known is for an admin')).toBeDefined());
     });
 
     it('stays open with what the shop said when it will not', async () => {

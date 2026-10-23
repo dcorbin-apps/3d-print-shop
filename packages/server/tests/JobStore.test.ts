@@ -6,7 +6,16 @@ import { Readable } from 'node:stream';
 import { InvalidSubmission } from '../src/Job';
 import type { BuildVolume, Job, JobDetails, PrinterOutcome } from '../src/Job';
 import type { Holding, RegisteredPrinter } from '../src/Printer';
-import { JobStore, MAX_GCODE_ENV, NoSuchJob, NoSuchPrinter, DataUnavailable, WrongState, defaultMaxGcodeBytes } from '../src/JobStore';
+import {
+  JobStore,
+  MAX_GCODE_ENV,
+  NoSuchFilament,
+  NoSuchJob,
+  NoSuchPrinter,
+  DataUnavailable,
+  WrongState,
+  defaultMaxGcodeBytes,
+} from '../src/JobStore';
 import { aDataDirectory, parentOf } from './aDataDirectory';
 import { toStdout } from '../src/log';
 import { layoutUnder } from '../src/dataLayout';
@@ -318,6 +327,78 @@ describe('JobStore', () => {
 
   // AIDEV-NOTE: no printer here reports its own filament - SpoolManager existed once and is gone -
   // so this is the operator's word, and the only record of what a machine can print right now.
+  describe('the filaments it knows', () => {
+    const knownFile = (): string => path.join(where.state, 'filaments.json');
+
+    it('knows none until something is loaded or asked for', async () => {
+      expect(await shop.knownFilaments()).toEqual([]);
+    });
+
+    it('knows what is loaded and what jobs ask for, once each, by name', async () => {
+      await shop.load(await the('mk4'), ['PLA-Red']);
+      await submit(details({ filaments: ['PETG-Black', 'PLA-Red'] }), gcode());
+
+      expect(await shop.knownFilaments()).toEqual(['PETG-Black', 'PLA-Red']);
+    });
+
+    it('still knows one after it is taken off the machine', async () => {
+      await shop.load(await the('mk4'), ['PLA-Red']);
+      await shop.load(await the('mk4'), []);
+
+      expect(await shop.knownFilaments()).toEqual(['PLA-Red']);
+    });
+
+    it('still knows one after the job that asked for it has left', async () => {
+      const { id } = await submit(details({ filaments: ['PETG-Black'] }), gcode());
+      await shop.forget(id);
+
+      expect(await shop.knownFilaments()).toEqual(['PETG-Black']);
+    });
+
+    // A shop that had jobs and spools before it kept this list knows them all the same.
+    it('knows what is in use even where nothing remembered it', async () => {
+      await shop.load(await the('mk4'), ['PLA-Red']);
+      await submit(details({ filaments: ['PETG-Black'] }), gcode());
+      await fs.rm(knownFile());
+
+      expect(await shop.knownFilaments()).toEqual(['PETG-Black', 'PLA-Red']);
+    });
+
+    it.each(['not json', '{}'])('reads a list it cannot make sense of as nothing remembered - %s', async (contents) => {
+      await fs.writeFile(knownFile(), contents);
+
+      expect(await shop.knownFilaments()).toEqual([]);
+    });
+
+    describe('forgetting one', () => {
+      it('forgets one nothing uses', async () => {
+        await shop.load(await the('mk4'), ['PLA-Red']);
+        await shop.load(await the('mk4'), []);
+
+        await shop.forgetFilament('PLA-Red');
+
+        expect(await shop.knownFilaments()).toEqual([]);
+      });
+
+      it('refuses while a printer has it loaded, and says which', async () => {
+        await shop.load(await the('mk4'), ['PLA-Red']);
+
+        await expect(shop.forgetFilament('PLA-Red')).rejects.toThrow(new WrongState('PLA-Red is loaded on mk4'));
+      });
+
+      it('refuses while a job still needs it, and says which', async () => {
+        await submit(details({ filaments: ['PLA-Red'] }), gcode());
+        await submit(details({ filaments: ['PLA-Red'] }), gcode());
+
+        await expect(shop.forgetFilament('PLA-Red')).rejects.toThrow(new WrongState('PLA-Red is needed by jobs 1, 2'));
+      });
+
+      it('refuses one it never knew', async () => {
+        await expect(shop.forgetFilament('PLA-Red')).rejects.toThrow(NoSuchFilament);
+      });
+    });
+  });
+
   describe('what is loaded', () => {
     it('has nothing loaded until somebody says otherwise', async () => {
       expect((await shop.printerNamed('mk4')).loaded).toEqual([]);

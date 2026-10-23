@@ -61,6 +61,8 @@ describe('minding the printers', () => {
     logOut: jest.fn<Shop['logOut']>(),
     jobs: jest.fn<Shop['jobs']>(),
     waitingOn: jest.fn<Shop['waitingOn']>(),
+    knownFilaments: jest.fn<Shop['knownFilaments']>(),
+    forgetFilament: jest.fn<Shop['forgetFilament']>(),
     job: jest.fn<Shop['job']>(),
     picture: jest.fn<Shop['picture']>(),
     submit: jest.fn<Shop['submit']>(),

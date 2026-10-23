@@ -11,9 +11,11 @@ interface TopBarProps {
   onOut?: () => void;
   /** Their own, changed from here. Absent, the only way is an operator at a terminal. */
   onChangePassword?: (current: string, password: string) => Promise<void>;
+  /** Opens the list of filaments the shop knows. Absent for a caller who may not change it. */
+  onFilaments?: () => void;
 }
 
-export function TopBar({ summary, trouble, caller, onOut, onChangePassword }: TopBarProps): React.JSX.Element {
+export function TopBar({ summary, trouble, caller, onOut, onChangePassword, onFilaments }: TopBarProps): React.JSX.Element {
   const { printers, printing, needingSomebody, queued, awaitingApproval } = summary;
 
   return (
@@ -30,6 +32,12 @@ export function TopBar({ summary, trouble, caller, onOut, onChangePassword }: To
         <Count label="queued" of={queued} />
         <Count label="to judge" of={awaitingApproval} urgent={awaitingApproval > 0} />
       </dl>
+
+      {onFilaments !== undefined && (
+        <button type="button" className="filaments-button" onClick={onFilaments}>
+          Filaments
+        </button>
+      )}
 
       {caller !== undefined && <WhoIsLookingAtThis caller={caller} onOut={onOut} onChangePassword={onChangePassword} />}
 

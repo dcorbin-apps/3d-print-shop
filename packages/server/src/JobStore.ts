@@ -54,6 +54,7 @@ const FILE_MODE = 0o600;
 
 const PRINTERS_DIR = 'printers';
 const NEXT_ID_FILE = 'next-id';
+const KNOWN_FILAMENTS_FILE = 'filaments.json';
 const RECORD_FILE = 'job.json';
 
 // AIDEV-NOTE: the second file in a job's directory, and it holds ONE kind of thing: a person having
@@ -112,6 +113,7 @@ export class DataUnavailable extends Error {}
 
 /** More than the shop will hold. Not a malformed request - just a bigger one than it takes. */
 export class TooMuchToTake extends Error {}
+export class NoSuchFilament extends Error {}
 
 /**
  * Everything the shop is holding, on disk. One directory per job and one per printer, so reading it
@@ -195,6 +197,7 @@ export class JobStore {
         gcodeBytes,
       };
 
+      await this.remember(details.filaments);
       await this.writeRecord(record);
 
       // Queued because nothing is holding it. Nothing was written to say so.
@@ -509,9 +512,62 @@ export class JobStore {
    * filament, so the shop asks the operator and believes the answer.
    */
   async load(printer: RegisteredPrinter, filaments: string[]): Promise<RegisteredPrinter> {
+    await this.remember(filaments);
     await this.changeStatus(printer, (status) => ({ ...status, loaded: filaments }));
 
     return this.printerNamed(printer.name);
+  }
+
+  // AIDEV-NOTE: what is in USE is read rather than remembered, so it is known however it got here -
+  // a job submitted before this list existed included - and the file only has to keep what has
+  // since gone out of use. Nothing that moves is copied into it; see the one invariant in CLAUDE.md.
+  /** Every filament this shop has heard of: loaded on a machine, named by a job, or remembered from either. */
+  async knownFilaments(): Promise<string[]> {
+    const [remembered, printers, jobs] = await Promise.all([this.rememberedFilaments(), this.printers(), this.all()]);
+    const known = new Set([...remembered, ...printers.flatMap((printer) => printer.loaded), ...jobs.flatMap((job) => job.filaments)]);
+
+    return [...known].sort((a, b) => a.localeCompare(b));
+  }
+
+  /** Forget one nothing uses. Refused while a printer has it loaded or a job this shop holds names it. */
+  async forgetFilament(filament: string): Promise<void> {
+    const loadedOn = (await this.printers()).filter((printer) => printer.loaded.includes(filament)).map((printer) => printer.name);
+    if (loadedOn.length > 0) throw new WrongState(`${filament} is loaded on ${loadedOn.join(', ')}`);
+
+    const neededBy = (await this.all()).filter((job) => job.filaments.includes(filament)).map((job) => job.id);
+    if (neededBy.length > 0) throw new WrongState(`${filament} is needed by job${neededBy.length === 1 ? '' : 's'} ${neededBy.join(', ')}`);
+
+    await this.serialised(async () => {
+      const remembered = await this.rememberedFilaments();
+      if (!remembered.includes(filament)) throw new NoSuchFilament(`this shop knows no filament called ${filament}`);
+
+      await this.writeRemembered(remembered.filter((known) => known !== filament));
+    });
+  }
+
+  private async remember(filaments: string[]): Promise<void> {
+    await this.serialised(async () => {
+      const remembered = await this.rememberedFilaments();
+      await this.writeRemembered([...new Set([...remembered, ...filaments])]);
+    });
+  }
+
+  // A list that will not parse is an empty one: it only holds names nothing is using, and what is in
+  // use is read from the printers and the jobs whatever this says.
+  private async rememberedFilaments(): Promise<string[]> {
+    const contents = await readFile(path.join(this.where.state, KNOWN_FILAMENTS_FILE), 'utf-8').catch(() => '[]');
+
+    try {
+      const stored: unknown = JSON.parse(contents);
+
+      return Array.isArray(stored) ? (stored as string[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async writeRemembered(filaments: string[]): Promise<void> {
+    await writeAtomically(path.join(this.where.state, KNOWN_FILAMENTS_FILE), asJson(filaments));
   }
 
   // AIDEV-NOTE: the one thing in a job's record that a person may change, and the reason that record

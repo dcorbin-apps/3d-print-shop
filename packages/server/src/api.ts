@@ -8,7 +8,7 @@ import type { Verdict } from '@3d-print-shop/client';
 import { serveAsAnOctoPrint } from './asAnOctoPrint.js';
 import { InvalidSubmission, validateDetails } from './Job.js';
 import type { BuildVolume, Job, JobDetails } from './Job.js';
-import { NoSuchJob, NoSuchPrinter, DataUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
+import { NoSuchFilament, NoSuchJob, NoSuchPrinter, DataUnavailable, TooMuchToTake, WrongState } from './JobStore.js';
 import { Attempts } from './attempts.js';
 import { UnusableCredentials } from './credentials.js';
 import type { Callers } from './credentials.js';
@@ -768,6 +768,18 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
     response.json(waitingOn(await shop.all(), printer));
   });
 
+  // Admin, like the rest of /filaments: the one who picks from it is the one who loads a machine.
+  api.get('/filaments/known', async (_request, response) => {
+    response.json(await shop.knownFilaments());
+  });
+
+  api.delete('/filaments/known/:name', async (request, response) => {
+    await shop.forgetFilament(request.params.name);
+    log.info('filament forgotten', { filament: request.params.name, by: request.caller.name });
+
+    response.status(204).end();
+  });
+
   api.get('/printers', async (_request, response) => {
     response.json(await shop.printers());
   });
@@ -1198,7 +1210,7 @@ export function onePrinterName(asked: unknown): string | undefined {
 // rule was enforced and answered "why is in its log", so the one rule there is was never said to
 // anybody. Tabled in tests/api.test.ts, which is the only way a missing row shows up as a missing row.
 export function statusFor(error: unknown): number {
-  if (error instanceof NoSuchJob || error instanceof NoSuchPrinter) return 404;
+  if (error instanceof NoSuchJob || error instanceof NoSuchPrinter || error instanceof NoSuchFilament) return 404;
   if (error instanceof WrongState) return 409;
   // A shop whose data directory is not there was never installed. That is the machine's fault, not the
   // client's, and a client that retries later is doing the right thing.

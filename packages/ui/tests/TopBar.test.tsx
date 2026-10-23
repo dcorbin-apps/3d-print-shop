@@ -50,6 +50,23 @@ describe('the banner and what it says the shop is doing', () => {
     expect(document.querySelectorAll('.urgent')).toHaveLength(0);
   });
 
+  describe('the filaments the shop knows', () => {
+    it('opens them when asked', () => {
+      const opens = jest.fn<() => void>();
+      render(<TopBar summary={quiet} onFilaments={opens} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Filaments' }));
+
+      expect(opens).toHaveBeenCalled();
+    });
+
+    it('offers nothing where the page was given no way to look after them', () => {
+      render(<TopBar summary={quiet} />);
+
+      expect(screen.queryByRole('button', { name: 'Filaments' })).toBeNull();
+    });
+  });
+
   // AIDEV-NOTE: behind the name rather than beside it, because a log out sitting in the banner of a
   // shared screen is a thing to hit by accident - and what somebody goes to the corner of a page
   // looking for is their own name.

@@ -23,7 +23,7 @@ import {
 } from '../src/api';
 import { UnusableCredentials } from '../src/credentials';
 import { InvalidSubmission } from '../src/Job';
-import { DataUnavailable, NoPrinterCanTakeIt, NoSuchJob, NoSuchPrinter, TooMuchToTake, WrongState } from '../src/JobStore';
+import { DataUnavailable, NoPrinterCanTakeIt, NoSuchFilament, NoSuchJob, NoSuchPrinter, TooMuchToTake, WrongState } from '../src/JobStore';
 
 // AIDEV-NOTE: the name in a QUERY string, which is the second of the three ways one arrives - the
 // others being a path segment, checked at the `/printers/:name` mount, and a body, checked in
@@ -577,6 +577,7 @@ describe('the status an error becomes', () => {
   it.each([
     [new NoSuchJob('no job 7'), 404],
     [new NoSuchPrinter('no printer called ender'), 404],
+    [new NoSuchFilament('this shop knows no filament called PLA-Red'), 404],
     [new WrongState('job 7 is queued'), 409],
     [new DataUnavailable('the jobs directory is not there'), 503],
     [new NotAKnownCaller('this shop does not know that token'), 401],

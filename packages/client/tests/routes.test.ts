@@ -43,6 +43,8 @@ describe('every path this client asks the shop for', () => {
       anyway(shop.remove(1)),
       anyway(shop.waitingOn()),
       anyway(shop.waitingOn('mk4')),
+      anyway(shop.knownFilaments()),
+      anyway(shop.forgetFilament('PLA-Red')),
       anyway(shop.printers()),
       anyway(shop.addPrinter({ name: 'mk4', buildVolume: { x: 1, y: 1, z: 1 }, api: 'octoprint', address: 'http://mk4' }, 'a-key')),
       anyway(shop.removePrinter('mk4')),

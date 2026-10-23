@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { PrinterRecord, Verdict } from '@3d-print-shop/client/browser';
-import { byFilament } from './byFilament.js';
+import { FilamentsDialog } from './components/FilamentsDialog.js';
 import { LogIn } from './components/LogIn.js';
 import { JobsByFilament } from './components/JobsByFilament.js';
 import { PrinterGallery, stillHere } from './components/PrinterGallery.js';
@@ -37,6 +37,10 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
     await shop.addPrinter(record, key);
     askAgain();
   };
+
+  // The same function every render, so a dialog that asks with it asks once rather than every poll.
+  const known = useCallback(() => shop.knownFilaments(), [shop]);
+  const [managingFilaments, setManagingFilaments] = useState(false);
 
   // Loading what a queued job waits for starts it, so this asks again straight away too.
   const load = async (name: string, filaments: string[]): Promise<void> => {
@@ -93,9 +97,6 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
   };
 
   const selected = stillHere(printers, chosen);
-  const waitingFor = byFilament(jobs)
-    .filter((group) => group.queued > 0)
-    .map((group) => group.filament);
   const drift = drifted(pageVersion, shopVersion);
 
   // AIDEV-NOTE: written when it SETTLES rather than when it is clicked, so that a printer removed
@@ -127,7 +128,11 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
         caller={caller}
         onOut={() => void shop.logOut().then(askAgain)}
         onChangePassword={(current, password) => shop.changeMyPassword(current, password)}
+        onFilaments={admin ? () => setManagingFilaments(true) : undefined}
       />
+      {admin && managingFilaments && (
+        <FilamentsDialog known={known} onForget={(name) => shop.forgetFilament(name)} onClose={() => setManagingFilaments(false)} />
+      )}
       {drift !== undefined && (
         <p className="drift" role="alert">
           {drift}
@@ -140,7 +145,7 @@ export function App({ pageVersion }: AppProps = {}): React.JSX.Element {
         onSave={admin ? savePrinter : undefined}
         onLoad={admin ? load : undefined}
         {...(admin ? printerActs : {})}
-        waitingFor={waitingFor}
+        known={admin ? known : undefined}
       />
       <JobsByFilament
         jobs={jobs}
