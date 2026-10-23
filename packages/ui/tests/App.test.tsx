@@ -249,7 +249,7 @@ describe('the page, against a shop that answers', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Load mk4' }));
       const field = screen.getByLabelText('Filament loaded') as HTMLInputElement;
 
-      expect([...(field.list?.options ?? [])].map((option) => option.value)).toEqual(['PLA']);
+      expect([...(field.list?.options ?? [])].map((option) => option.value)).toEqual(['<Nothing>', 'PLA']);
     });
 
     it('loads what a group waits for on the chosen machine', async () => {

@@ -10,6 +10,9 @@ interface LoadFilamentDialogProps {
   onClose: () => void;
 }
 
+// Offered beside the queue's filaments, because a blank field also means nothing but nobody thinks to clear one.
+const NOTHING = '<Nothing>';
+
 // AIDEV-NOTE: the shop matches a job's filament to what is loaded by EXACT name, so "PLA-Red" on the
 // machine prints nothing that asked for "PLA". The suggestions are what the queue is waiting for, so
 // the name somebody picks is one that will start something.
@@ -19,12 +22,12 @@ export function LoadFilamentDialog({ printer, waitingFor, onLoad, onClose }: Loa
   const [loading, setLoading] = useState(false);
   const suggestions = `waiting-for-${printer.name}`;
 
-  const load = async (): Promise<void> => {
+  const load = async (filaments: string[]): Promise<void> => {
     setLoading(true);
     setRefused(undefined);
 
     try {
-      await onLoad(printer.name, filamentsIn(typed));
+      await onLoad(printer.name, filaments);
       onClose();
     } catch (failure) {
       setRefused((failure as Error).message);
@@ -45,7 +48,7 @@ export function LoadFilamentDialog({ printer, waitingFor, onLoad, onClose }: Loa
           className="printer-form"
           onSubmit={(submitted) => {
             submitted.preventDefault();
-            void load();
+            void load(filamentsIn(typed));
           }}
         >
           <span className="printer-name">{printer.name}</span>
@@ -55,6 +58,7 @@ export function LoadFilamentDialog({ printer, waitingFor, onLoad, onClose }: Loa
             <input value={typed} onChange={(typing) => setTyped(typing.target.value)} list={suggestions} placeholder="nothing" autoFocus />
           </label>
           <datalist id={suggestions}>
+            <option value={NOTHING} />
             {waitingFor.map((filament) => (
               <option key={filament} value={filament} />
             ))}
@@ -65,6 +69,10 @@ export function LoadFilamentDialog({ printer, waitingFor, onLoad, onClose }: Loa
           <span className="buttons">
             <button type="submit" disabled={loading}>
               {loading ? 'Loading...' : 'Load'}
+            </button>
+            {/* Clearing the field says the same, but nobody looking for "empty" thinks to do that. */}
+            <button type="button" disabled={loading} onClick={() => void load([])}>
+              Nothing loaded
             </button>
             <button type="button" className="quiet" onClick={onClose}>
               Cancel
@@ -82,5 +90,5 @@ export function filamentsIn(typed: string): string[] {
   return typed
     .split(',')
     .map((filament) => filament.trim())
-    .filter((filament) => filament !== '');
+    .filter((filament) => filament !== '' && filament !== NOTHING);
 }

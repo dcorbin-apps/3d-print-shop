@@ -276,12 +276,12 @@ describe('the gallery of printers', () => {
     });
 
     // The shop matches by exact name, so the names worth typing are the ones queued work waits for.
-    it('suggests what queued work is waiting for', () => {
+    it('suggests nothing at all, and what queued work is waiting for', () => {
       loading(printer('mk4'), ['PLA', 'PETG-Black']);
 
       const suggested = [...(field().list?.options ?? [])].map((option) => option.value);
 
-      expect(suggested).toEqual(['PLA', 'PETG-Black']);
+      expect(suggested).toEqual(['<Nothing>', 'PLA', 'PETG-Black']);
     });
 
     it('hands the shop each filament typed, in order, and closes once it is taken', async () => {
@@ -297,6 +297,24 @@ describe('the gallery of printers', () => {
     it('takes everything off the machine when nothing is typed', async () => {
       loading(printer('mk4', { loaded: ['PLA'] }));
       fireEvent.change(field(), { target: { value: '  ' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load' }));
+
+      await waitFor(() => expect(loads).toHaveBeenCalledWith('mk4', []));
+    });
+
+    it('takes everything off the machine when told nothing is loaded, whatever is typed', async () => {
+      loading(printer('mk4', { loaded: ['PLA'] }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Nothing loaded' }));
+
+      await waitFor(() => expect(dialog('mk4')).toBeNull());
+      expect(loads).toHaveBeenCalledWith('mk4', []);
+    });
+
+    it('takes everything off the machine when nothing is chosen', async () => {
+      loading(printer('mk4', { loaded: ['PLA'] }));
+      fireEvent.change(field(), { target: { value: '<Nothing>' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Load' }));
 
