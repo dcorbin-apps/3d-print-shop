@@ -453,17 +453,16 @@ restarted by an update at 2am, and sessions held only in memory made that a wall
 be logged in to in the morning. They go in the shop's STATE, in a file of their own - not in
 `callers.json`, which is a file a person hand-edits, and not among the jobs, which is one directory
 per job and read by a scan of it. What is written is what the shop already holds: the DIGEST of each
-session's secret, whose it is, when it began, and roughly when it was last used. That is what makes
+session's secret, whose it is, and when it began. That is what makes
 the file safe to have at all - a stolen copy says who was logged in and when, which is worth 0600,
 and cannot be turned back into a cookie anybody can present.
 
 It is written the way everything else here is written, beside and renamed over, so a crash part way
 through leaves the old file rather than half of a new one. It is not waited for by anything
 answering a request: a session that outlives a restart is worth less than a login that waits on a
-disk, and a write that fails costs the surviving, not the session. Being seen is written at most
-every few minutes rather than on every request - the cost of that is an idle clock a few minutes
-stale after a restart, and the alternative, leaving it out, is worse than it looks: a session in
-constant use would come back looking untouched since it began and be thrown away as idle.
+disk, and a write that fails costs the surviving, not the session. A session lasts a year from
+logging in and has no idle clock - a workshop screen nobody looks at for days is still meant to be
+logged in - so using one changes nothing that needs writing.
 
 Reading it is the one place that is loud. The file is refused rather than read as far as it goes, and
 what to do about that is the shop's to decide and not the file's: it starts, because jobs waiting to

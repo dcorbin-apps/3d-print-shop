@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { IDLE_MS, KEPT_AT_MOST_EVERY_MS, LONGEST_MS, SESSIONS_FILE, Sessions } from '../src/sessions';
+import { LONGEST_MS, SESSIONS_FILE, Sessions } from '../src/sessions';
 
 describe('the sessions a browser is known by', () => {
   let state: string;
@@ -98,42 +98,35 @@ describe('the sessions a browser is known by', () => {
     });
   });
 
-  // Two clocks, because they answer two different questions: has this person walked away, and has
-  // this been going on long enough that a stolen cookie is still working weeks later.
+  // However much it is used: no amount of activity extends a session.
   describe('and how long one lasts', () => {
-    it('is gone once nobody has used it for long enough', () => {
+    it('lasts a year', () => {
       const sessions = aSessions({ now: at });
       const secret = sessions.begin('dave');
 
-      clock += IDLE_MS + 1;
+      clock += 364 * 24 * 60 * 60 * 1000;
 
-      expect(sessions.whose(secret)).toBeUndefined();
+      expect(sessions.whose(secret)).toBe('dave');
     });
 
-    it('is not gone while somebody keeps using it', () => {
+    it('is not gone while it is younger than the longest a session lasts', () => {
+      const sessions = aSessions({ now: at });
+      const secret = sessions.begin('dave');
+
+      clock += LONGEST_MS;
+
+      expect(sessions.whose(secret)).toBe('dave');
+    });
+
+    it('is gone once it has been going long enough, however much it is used', () => {
       const sessions = aSessions({ now: at });
       const secret = sessions.begin('dave');
 
       for (let asked = 0; asked < 5; asked += 1) {
-        clock += IDLE_MS - 1;
-        expect(sessions.whose(secret)).toBe('dave');
+        clock += LONGEST_MS / 5;
+        sessions.whose(secret);
       }
-    });
-
-    // However much it is used. No amount of activity excuses a session that has been going for a
-    // week - so it is asked about more often than the idle clock, which would otherwise be what ends
-    // it and this test would pass with the longer clock gone altogether.
-    it('is gone once it has been going long enough, however much it is used', () => {
-      const sessions = aSessions({ now: at });
-      const secret = sessions.begin('dave');
-      const begun = clock;
-
-      while (clock + IDLE_MS - begun < LONGEST_MS) {
-        clock += IDLE_MS - 1;
-        expect(sessions.whose(secret)).toBe('dave');
-      }
-
-      clock = begun + LONGEST_MS + 1;
+      clock += 1;
 
       expect(sessions.whose(secret)).toBeUndefined();
     });
@@ -175,7 +168,7 @@ describe('the sessions a browser is known by', () => {
       const secret = before.begin('dave');
       await written(before);
 
-      clock += IDLE_MS + 1;
+      clock += LONGEST_MS + 1;
       const after = aSessions({ now: at, keptIn: kept() });
 
       expect(await after.pickUp()).toBe(0);
@@ -227,23 +220,6 @@ describe('the sessions a browser is known by', () => {
       await expect(aSessions({ now: at, keptIn: kept() }).pickUp()).rejects.toThrow();
     });
 
-    // AIDEV-NOTE: a write per request is what this avoids, and the cost of avoiding it is that the
-    // idle clock can be a few minutes stale after a restart. Leaving lastSeen out altogether was the
-    // other option: a session in constant use would come back looking untouched since it began.
-    it('learns that somebody is still there, without writing every time they ask', async () => {
-      const sessions = aSessions({ now: at, keptIn: kept() });
-      const secret = sessions.begin('dave');
-      const began = (await written(sessions))[0] as { lastSeen: number };
-
-      clock += 1000;
-      sessions.whose(secret);
-      expect(((await written(sessions))[0] as { lastSeen: number }).lastSeen).toBe(began.lastSeen);
-
-      clock += KEPT_AT_MOST_EVERY_MS + 1;
-      sessions.whose(secret);
-      expect(((await written(sessions))[0] as { lastSeen: number }).lastSeen).toBeGreaterThan(began.lastSeen);
-    });
-
     it('does not bring back the ones a changed password ended', async () => {
       const before = aSessions({ now: at, keptIn: kept() });
       const secret = before.begin('dave');
@@ -259,7 +235,7 @@ describe('the sessions a browser is known by', () => {
       const sessions = aSessions({ now: at, keptIn: kept() });
       sessions.begin('dave');
 
-      clock += IDLE_MS + 1;
+      clock += LONGEST_MS + 1;
       sessions.begin('ada');
 
       expect(await written(sessions)).toEqual([expect.objectContaining({ caller: 'ada' })]);
@@ -270,7 +246,7 @@ describe('the sessions a browser is known by', () => {
       const secret = sessions.begin('dave');
       await written(sessions);
 
-      clock += IDLE_MS + 1;
+      clock += LONGEST_MS + 1;
       sessions.whose(secret);
 
       expect(await written(sessions)).toEqual([]);

@@ -6,15 +6,10 @@ import type { Log } from './log.js';
 /** The cookie a browser carries. Nothing else in this shop is named by anything a client sends. */
 export const SESSION_COOKIE = 'print-shop-session';
 
-// AIDEV-NOTE: two clocks, because they answer two different questions. IDLE is "has this person
-// walked away from the machine" - a workshop screen somebody stopped looking at. ABSOLUTE is "has
-// this been going on long enough that a stolen cookie is still working weeks later", which no
-// amount of activity should excuse. A session that fails either is gone.
-export const IDLE_MS = 12 * 60 * 60 * 1000;
-export const LONGEST_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** How often the file is allowed to learn that somebody is still there. */
-export const KEPT_AT_MOST_EVERY_MS = 5 * 60 * 1000;
+// AIDEV-NOTE: one clock, from login, and no idle one: a workshop screen nobody looks at for days is
+// still meant to be logged in. A year is a deliberate choice - a stolen cookie works that long unless
+// somebody logs out on that browser or changes the password - and no amount of activity extends it.
+export const LONGEST_MS = 365 * 24 * 60 * 60 * 1000;
 
 /** What the sessions are kept in, inside the shop's state. */
 export const SESSIONS_FILE = 'sessions.json';
@@ -22,7 +17,6 @@ export const SESSIONS_FILE = 'sessions.json';
 interface Held {
   caller: string;
   began: number;
-  lastSeen: number;
 }
 
 // AIDEV-NOTE: kept in a file of their own, in the shop's STATE - not in callers.json, which is a
@@ -38,8 +32,6 @@ export class Sessions {
   private readonly now: () => number;
   private readonly keptIn: string | undefined;
   private readonly log: Log;
-
-  private wroteAt = 0;
 
   // AIDEV-NOTE: one write at a time, chained. Two of these in flight would be two renames over the
   // same path from two half-written files, and the one that landed second would not be the one that
@@ -89,8 +81,7 @@ export class Sessions {
     this.forgetTheExpired();
 
     const secret = newToken();
-    const at = this.now();
-    this.held.set(digestOf(secret), { caller, began: at, lastSeen: at });
+    this.held.set(digestOf(secret), { caller, began: this.now() });
     this.keep();
 
     return secret;
@@ -108,15 +99,6 @@ export class Sessions {
 
       return undefined;
     }
-
-    held.lastSeen = this.now();
-
-    // AIDEV-NOTE: NOT written every time, which would be a write per request. Written at most every
-    // few minutes, which bounds two things at once: how often this touches the disk, and how wrong
-    // the idle clock can be after a restart. Leaving it out altogether was the other option and it
-    // is worse than it looks - a session in constant use would come back looking untouched since it
-    // began, and be thrown away as idle.
-    if (this.now() - this.wroteAt > KEPT_AT_MOST_EVERY_MS) this.keep();
 
     return held.caller;
   }
@@ -155,7 +137,6 @@ export class Sessions {
 
     const kept = this.keptIn;
     const written = [...this.held.entries()].map(([digest, held]) => ({ digest, ...held }));
-    this.wroteAt = this.now();
 
     this.writing = this.writing
       .catch(() => undefined)
@@ -178,9 +159,7 @@ export class Sessions {
   }
 
   private hasExpired(held: Held): boolean {
-    const at = this.now();
-
-    return at - held.lastSeen > IDLE_MS || at - held.began > LONGEST_MS;
+    return this.now() - held.began > LONGEST_MS;
   }
 
   // Swept when one is begun rather than on a timer: nothing else here holds the event loop open,
