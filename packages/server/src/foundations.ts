@@ -94,8 +94,8 @@ export async function layTheFoundations({ data, etc: said, maxGcode, writing }: 
 // store reads every name in it, so a file of its own there is something the shop would have to know
 // not to read, for ever.
 /** The sessions a shop carries over from the last time it ran, and how many it found. */
-export async function sessionsKeptIn(where: DataLayout, log: Log): Promise<{ sessions: Sessions; pickedUp: number }> {
-  const sessions = new Sessions({ keptIn: path.join(where.state, SESSIONS_FILE), log });
+export async function sessionsKeptIn(where: DataLayout, log: Log, lastsMs?: number): Promise<{ sessions: Sessions; pickedUp: number }> {
+  const sessions = new Sessions({ keptIn: path.join(where.state, SESSIONS_FILE), log, lastsMs });
 
   const pickedUp = await sessions.pickUp().catch((failure: unknown) => {
     log.error('could not read who was logged in, so everybody logs in again', { why: (failure as Error).message });

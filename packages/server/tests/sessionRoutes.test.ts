@@ -5,7 +5,7 @@ import { FREELY } from '../src/attempts';
 import { Callers, UnusableCredentials } from '../src/credentials';
 import { JobStore } from '../src/JobStore';
 import { digestOf, hashPassword } from '../src/secrets';
-import { SESSION_COOKIE } from '../src/sessions';
+import { SESSION_COOKIE, Sessions } from '../src/sessions';
 import { aDataDirectory, parentOf } from './aDataDirectory';
 import { HERE, drive } from './inProcess';
 import type { DataLayout } from '../src/dataLayout';
@@ -78,6 +78,16 @@ describe('the sessions, over the shop routes', () => {
       expect(said).toContain('HttpOnly');
       expect(said).toContain('SameSite=Strict');
       expect(said).not.toContain('Secure');
+    }, 15_000);
+
+    // The browser is told to keep it exactly as long as the shop will honour it, and no longer.
+    it('sets a session the browser keeps for as long as the shop says a session lasts', async () => {
+      const known = await naming({ id: 'dave', password: PASSWORD });
+      const lastingTwoDays = drive(createApi(shop, { callers: () => known, sessions: new Sessions({ lastsMs: 2 * 24 * 60 * 60 * 1000 }) }));
+
+      const answer = await lastingTwoDays('POST', '/sessions', { json: { id: 'dave', password: PASSWORD }, headers: { origin: HERE } });
+
+      expect(answer.header('set-cookie')).toContain(`Max-Age=${2 * 24 * 60 * 60}`);
     }, 15_000);
 
     // AIDEV-NOTE: behind a TLS proxy on the same machine - nginx on odin - every request reaches the

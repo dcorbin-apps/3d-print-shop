@@ -14,7 +14,7 @@ import { UnusableCredentials } from './credentials.js';
 import type { Callers } from './credentials.js';
 import type { Caller } from './credentials.js';
 import { hashPassword, isThePassword, newToken } from './secrets.js';
-import { LONGEST_MS, SESSION_COOKIE, Sessions } from './sessions.js';
+import { SESSION_COOKIE, Sessions } from './sessions.js';
 import { silent } from './log.js';
 import type { Log } from './log.js';
 import type { JobStore } from './JobStore.js';
@@ -465,7 +465,7 @@ export function createApi(shop: JobStore, hooks: ShopHooks, limits: RequestLimit
       sameSite: 'strict',
       secure: request.secure,
       path: '/',
-      maxAge: LONGEST_MS,
+      maxAge: sessions.lastsMs,
     });
 
     response.status(201).json(known.caller);

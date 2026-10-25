@@ -9,9 +9,9 @@ import type { StartListening } from '../src/api';
 import { run } from '../src/cli';
 import { CALLERS_FILE, Callers } from '../src/credentials';
 import { JobStore } from '../src/JobStore';
-import { digestOf } from '../src/secrets';
+import { digestOf, hashPassword } from '../src/secrets';
 import { aDataDirectory, parentOf } from './aDataDirectory';
-import { drive } from './inProcess';
+import { HERE, drive } from './inProcess';
 import type { DataLayout } from '../src/dataLayout';
 
 // AIDEV-NOTE: (UT) the page is installed as a package of its own beside the server, so the two can
@@ -57,12 +57,14 @@ describe('which release a shop says it is', () => {
 // command was only ever reached over a real socket. So the listener is handed in and binds nothing:
 // the app the command built is kept and asked in-process, which is the command's wiring and not a
 // model of it. It is stopped the same way, so nothing it started outlives the test.
-describe('the release a served shop is told', () => {
+// --session-days is asked the same way, for the same reason.
+describe('what a served shop is told by its command', () => {
   let where: DataLayout;
   let etc: string;
   let said: string[];
   let served: Express | undefined;
   const ADMIN = 'dave-token';
+  const PASSWORD = 'a password of some length';
 
   // Enough of a server for the command to read an address off and close. Nothing binds.
   const noSocket: StartListening = (api: Express, _port: number, _address: string, ready: () => void): Server => {
@@ -86,7 +88,17 @@ describe('the release a served shop is told', () => {
     await chmod(etc, 0o700);
     await writeFile(
       path.join(etc, CALLERS_FILE),
-      JSON.stringify([{ id: 'dave', name: 'dave', role: 'admin', credentials: [{ kind: 'token', hash: digestOf(ADMIN) }] }]),
+      JSON.stringify([
+        {
+          id: 'dave',
+          name: 'dave',
+          role: 'admin',
+          credentials: [
+            { kind: 'token', hash: digestOf(ADMIN) },
+            { kind: 'password', hash: await hashPassword(PASSWORD) },
+          ],
+        },
+      ]),
       { mode: 0o600 },
     );
     said = [];
@@ -113,5 +125,19 @@ describe('the release a served shop is told', () => {
     if (served === undefined) throw new Error(`the command never served anything: ${said.join('\n')}`);
 
     expect((await drive(served)('GET', '/version', { token: ADMIN })).body).toEqual({ version: '9.9.9' });
+  }, 15_000);
+
+  it('keeps a login for as long as the command was told to', async () => {
+    await run(['node', 'shop', 'serve', '--data', parentOf(where), '--etc', etc, '--session-days', '2'], () => undefined, {
+      startListening: noSocket,
+      say: (lines) => said.push(...lines),
+      writing: () => undefined,
+    });
+
+    if (served === undefined) throw new Error(`the command never served anything: ${said.join('\n')}`);
+
+    const answer = await drive(served)('POST', '/sessions', { json: { id: 'dave', password: PASSWORD }, headers: { origin: HERE } });
+
+    expect(answer.header('set-cookie')).toContain(`Max-Age=${2 * 24 * 60 * 60}`);
   }, 15_000);
 });

@@ -7,9 +7,20 @@ import type { Log } from './log.js';
 export const SESSION_COOKIE = 'print-shop-session';
 
 // AIDEV-NOTE: one clock, from login, and no idle one: a workshop screen nobody looks at for days is
-// still meant to be logged in. A year is a deliberate choice - a stolen cookie works that long unless
-// somebody logs out on that browser or changes the password - and no amount of activity extends it.
-export const LONGEST_MS = 365 * 24 * 60 * 60 * 1000;
+// still meant to be logged in. A year by default is a deliberate choice - a stolen cookie works that
+// long unless somebody logs out on that browser or changes the password - and no activity extends it.
+const DEFAULT_SESSION_DAYS = 365;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const SESSION_DAYS_ENV = 'PRINT_SHOP_SESSION_DAYS';
+
+/** How long a session lasts from logging in, in milliseconds - said in whole days, by the environment or not at all. */
+export function defaultSessionMs(): number {
+  const said = process.env[SESSION_DAYS_ENV];
+  const days = said !== undefined && /^\d+$/.test(said) && Number(said) > 0 ? Number(said) : DEFAULT_SESSION_DAYS;
+
+  return days * DAY_MS;
+}
 
 /** What the sessions are kept in, inside the shop's state. */
 export const SESSIONS_FILE = 'sessions.json';
@@ -29,6 +40,9 @@ interface Held {
 export class Sessions {
   private readonly held = new Map<string, Held>();
 
+  /** How long a session lasts from logging in, however much it is used. */
+  readonly lastsMs: number;
+
   private readonly now: () => number;
   private readonly keptIn: string | undefined;
   private readonly log: Log;
@@ -38,7 +52,8 @@ export class Sessions {
   // knew the most. It is also what `settled` can be handed to a caller that wants to be sure.
   private writing: Promise<void> = Promise.resolve();
 
-  constructor({ now, keptIn, log }: { now?: () => number; keptIn?: string; log?: Log } = {}) {
+  constructor({ now, keptIn, log, lastsMs }: { now?: () => number; keptIn?: string; log?: Log; lastsMs?: number } = {}) {
+    this.lastsMs = lastsMs ?? defaultSessionMs();
     this.now = now ?? ((): number => Date.now());
     this.keptIn = keptIn;
     this.log = log ?? silent;
@@ -159,7 +174,7 @@ export class Sessions {
   }
 
   private hasExpired(held: Held): boolean {
-    return this.now() - held.began > LONGEST_MS;
+    return this.now() - held.began > this.lastsMs;
   }
 
   // Swept when one is begun rather than on a timer: nothing else here holds the event loop open,

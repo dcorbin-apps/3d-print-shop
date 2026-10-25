@@ -372,7 +372,7 @@ machine; a person changing their own does it from the page.
 **Logging in** is `POST /sessions`, and the session comes back as a cookie that is `HttpOnly` (no
 script on the page can read it), `SameSite=Strict` (no other site can make a browser send it), and
 `Secure` when the request arrived over TLS. It expires a year after logging in, however much
-it is used, a new one is issued on every login, and `DELETE /sessions` ends it at the shop rather than
+it is used (`serve --session-days <days>`, or `PRINT_SHOP_SESSION_DAYS`, says otherwise), a new one is issued on every login, and `DELETE /sessions` ends it at the shop rather than
 only in the browser. Sessions survive a restart - they are kept with the shop's state, by the digest
 of what the browser holds, so an update in the night is not everybody logging in again in the
 morning. A sessions file the shop cannot read logs everybody out, which is the safe direction - and

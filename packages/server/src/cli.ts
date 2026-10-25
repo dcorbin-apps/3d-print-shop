@@ -11,6 +11,7 @@ import { Foreman, RETRY_TICK_MS } from './Foreman.js';
 import { OctoPrintMachines } from './OctoPrintMachines.js';
 import type { PrinterApi } from './Printer.js';
 import { MAX_GCODE_ENV } from './JobStore.js';
+import { SESSION_DAYS_ENV } from './sessions.js';
 import { ETC_ENV, defaultEtc } from './credentials.js';
 import { judgeJob, listJobs, whatToLoadNext } from './jobAdmin.js';
 import { addSomebody, askForANewPassword, changePassword, giveAToken, listCallers, migrateTheCallers } from './callerAdmin.js';
@@ -88,138 +89,149 @@ export function createCLI({ reach, say: told, ask, writing, version, startListen
       `the largest gcode it will take, and the room it keeps spare for one (or ${MAX_GCODE_ENV})`,
       readMegabytes,
     )
+    .option('--session-days <days>', `how long a login lasts, however much it is used (or ${SESSION_DAYS_ENV}; defaults to a year)`, readDays)
     .option('--etc <path>', `where its credentials are kept (or ${ETC_ENV}; defaults to ${defaultEtc()})`)
     // AIDEV-NOTE: a directory, and the server is told nothing else about it. It is the built page,
     // which is a client of this shop - so finding it through the ui package would be the server
     // depending on a client, and that direction never runs.
     .option('--page <path>', 'a directory of files to serve beside the API, so a browser has somewhere to get the page')
-    .action(async (options: { port: number; listen?: string; data?: string; maxGcode?: number; etc?: string; page?: string }) => {
-      // Everything that has to be true before a request is answered, in the order it has to be true
-      // in - and every refusal it can make is asked for directly in tests/foundations.test.ts.
-      const foundations = await layTheFoundations({ ...options, writing });
-      const { where, store, etc, log, releaseData, holding } = foundations;
-      // Both change while the shop runs - a SIGHUP re-reads them, and a printer added over the API
-      // brings a key with it - so they are what this process HOLDS rather than what it read once.
-      let callers = foundations.callers;
-      let printerKeys = foundations.printerKeys;
+    .action(
+      async (options: {
+        port: number;
+        listen?: string;
+        data?: string;
+        maxGcode?: number;
+        sessionDays?: number;
+        etc?: string;
+        page?: string;
+      }) => {
+        // Everything that has to be true before a request is answered, in the order it has to be true
+        // in - and every refusal it can make is asked for directly in tests/foundations.test.ts.
+        const foundations = await layTheFoundations({ ...options, writing });
+        const { where, store, etc, log, releaseData, holding } = foundations;
+        // Both change while the shop runs - a SIGHUP re-reads them, and a printer added over the API
+        // brings a key with it - so they are what this process HOLDS rather than what it read once.
+        let callers = foundations.callers;
+        let printerKeys = foundations.printerKeys;
 
-      const { sessions, pickedUp: pickedUpSessions } = await sessionsKeptIn(where, log);
+        const { sessions, pickedUp: pickedUpSessions } = await sessionsKeptIn(where, log, options.sessionDays);
 
-      const machines = new OctoPrintMachines(() => printerKeys, undefined, log);
-      const foreman = new Foreman(store, machines.reach, log);
+        const machines = new OctoPrintMachines(() => printerKeys, undefined, log);
+        const foreman = new Foreman(store, machines.reach, log);
 
-      const stopAsking = keepReachingForWhatIsLost(() => foreman.reachForWhatIsLost(), RETRY_TICK_MS, log);
-      const lookForWork = lookingForWork(foreman, log);
-      const tryEverythingAgain = tryingAgain(foreman, log);
+        const stopAsking = keepReachingForWhatIsLost(() => foreman.reachForWhatIsLost(), RETRY_TICK_MS, log);
+        const lookForWork = lookingForWork(foreman, log);
+        const tryEverythingAgain = tryingAgain(foreman, log);
 
-      // Answered before it is wired up, because what it closes includes the listener it is given to.
-      const stopTheShop = (): void => stopEverything();
+        // Answered before it is wired up, because what it closes includes the listener it is given to.
+        const stopTheShop = (): void => stopEverything();
 
-      // AIDEV-NOTE: written to the file the shop reads AND put into what this process is holding, in
-      // that order - so a key given while the shop runs needs no signal and no restart. Then the
-      // printer is tried at once, because a machine that had no key is written down as unreachable
-      // and would otherwise serve out a backoff before anyone found out the key was right.
-      //
-      // The log's redactor reads `printerKeys` afresh on every line, so a key that arrives this way
-      // cannot reach a log written after it.
-      const keepKey = keepingTheKey(etc, log, tryEverythingAgain);
-      const keepTheKey = async (printer: string, key: string): Promise<void> => {
-        printerKeys = await keepKey(printer, key);
-        holding(printerKeys);
-      };
+        // AIDEV-NOTE: written to the file the shop reads AND put into what this process is holding, in
+        // that order - so a key given while the shop runs needs no signal and no restart. Then the
+        // printer is tried at once, because a machine that had no key is written down as unreachable
+        // and would otherwise serve out a backoff before anyone found out the key was right.
+        //
+        // The log's redactor reads `printerKeys` afresh on every line, so a key that arrives this way
+        // cannot reach a log written after it.
+        const keepKey = keepingTheKey(etc, log, tryEverythingAgain);
+        const keepTheKey = async (printer: string, key: string): Promise<void> => {
+          printerKeys = await keepKey(printer, key);
+          holding(printerKeys);
+        };
 
-      const keepPassword = keepingTheirPassword(etc);
-      const keepTheirNewPassword = async (id: string, password: string): Promise<void> => {
-        callers = await keepPassword(id, password);
-      };
+        const keepPassword = keepingTheirPassword(etc);
+        const keepTheirNewPassword = async (id: string, password: string): Promise<void> => {
+          callers = await keepPassword(id, password);
+        };
 
-      // AIDEV-NOTE: under the RUNTIME directory, because a plate parked here is not work the shop has
-      // taken on - no record has been written for it - so a crash must leave nothing behind that a
-      // rescan would find. Made here for the same reason the runtime directory is made at all: it is
-      // the one kind the shop creates rather than refuses, because a reboot is meant to empty it.
-      const spool = path.join(where.run, 'spool');
-      await mkdir(spool, { recursive: true, mode: 0o700 });
+        // AIDEV-NOTE: under the RUNTIME directory, because a plate parked here is not work the shop has
+        // taken on - no record has been written for it - so a crash must leave nothing behind that a
+        // rescan would find. Made here for the same reason the runtime directory is made at all: it is
+        // the one kind the shop creates rather than refuses, because a reboot is meant to empty it.
+        const spool = path.join(where.run, 'spool');
+        await mkdir(spool, { recursive: true, mode: 0o700 });
 
-      const shopServer = await serve(
-        store,
-        options.port,
-        {
-          changed: lookForWork,
-          started: tryEverythingAgain,
-          shutDown: stopTheShop,
-          callers: () => callers,
-          sessions,
-          keyGiven: keepTheKey,
-          passwordChanged: keepTheirNewPassword,
-          page: options.page,
-          spool,
-          cancelPrint: (printer: string): Promise<void> => foreman.cancelPrintOn(printer),
+        const shopServer = await serve(
+          store,
+          options.port,
+          {
+            changed: lookForWork,
+            started: tryEverythingAgain,
+            shutDown: stopTheShop,
+            callers: () => callers,
+            sessions,
+            keyGiven: keepTheKey,
+            passwordChanged: keepTheirNewPassword,
+            page: options.page,
+            spool,
+            cancelPrint: (printer: string): Promise<void> => foreman.cancelPrintOn(printer),
+            log,
+            version,
+          },
+          // Not defaulted here: `serve` holds the default, and a second copy of an address is a second
+          // thing to change. Undefined is "wherever serve says", which is loopback.
+          options.listen,
+          startListening,
+        );
+
+        const stopEverything = stoppingTheShop({
+          server: shopServer,
+          stopAsking,
+          foreman,
+          machines,
+          releaseData,
           log,
-          version,
-        },
-        // Not defaulted here: `serve` holds the default, and a second copy of an address is a second
-        // thing to change. Undefined is "wherever serve says", which is loopback.
-        options.listen,
-        startListening,
-      );
+          say,
+        });
 
-      const stopEverything = stoppingTheShop({
-        server: shopServer,
-        stopAsking,
-        foreman,
-        machines,
-        releaseData,
-        log,
-        say,
-      });
+        answerSignals(process, {
+          stop: stopTheShop,
+          reread: () => {
+            void rereadEverything(etc, { callers, printerKeys }, sessions, log).then((held) => {
+              callers = held.callers;
+              printerKeys = held.printerKeys;
+              holding(printerKeys);
+            });
+          },
+        });
 
-      answerSignals(process, {
-        stop: stopTheShop,
-        reread: () => {
-          void rereadEverything(etc, { callers, printerKeys }, sessions, log).then((held) => {
-            callers = held.callers;
-            printerKeys = held.printerKeys;
-            holding(printerKeys);
-          });
-        },
-      });
+        // Where it actually IS, not where it was asked to be. Port 0 means "any free one", and
+        // an operator who used it has no other way to find out which. The address is said too,
+        // because whether this shop can be reached from the network is the difference between the
+        // default and `--listen`, and it is worth being able to see which one is running.
+        const bound = shopServer.address() as AddressInfo;
 
-      // Where it actually IS, not where it was asked to be. Port 0 means "any free one", and
-      // an operator who used it has no other way to find out which. The address is said too,
-      // because whether this shop can be reached from the network is the difference between the
-      // default and `--listen`, and it is worth being able to see which one is running.
-      const bound = shopServer.address() as AddressInfo;
+        // AIDEV-NOTE: both, and they are not the same thing. `say` is the COMMAND answering the person
+        // who typed it - and two test suites read the port back out of that line, so its shape is a
+        // contract. The log line is the running SERVICE's record, which is what a supervisor captures
+        // and what somebody reads days later asking what this process was.
+        // AIDEV-NOTE: which data directory and which credentials, because a process that outlives the run
+        // started it is a process somebody has to identify later - and argv alone was not enough to do
+        // that for two shops found still listening, one of them 14 hours old.
+        log.info('the shop is listening', {
+          address: bound.address,
+          port: bound.port,
+          callers: callers.size,
+          sessions: pickedUpSessions,
+          jobs: where.jobs,
+          state: where.state,
+          etc,
+          page: options.page,
+        });
+        say([`3d-print-shop is listening on ${bound.address}:${bound.port}`, `${callers.size} caller(s) may ask`]);
 
-      // AIDEV-NOTE: both, and they are not the same thing. `say` is the COMMAND answering the person
-      // who typed it - and two test suites read the port back out of that line, so its shape is a
-      // contract. The log line is the running SERVICE's record, which is what a supervisor captures
-      // and what somebody reads days later asking what this process was.
-      // AIDEV-NOTE: which data directory and which credentials, because a process that outlives the run
-      // started it is a process somebody has to identify later - and argv alone was not enough to do
-      // that for two shops found still listening, one of them 14 hours old.
-      log.info('the shop is listening', {
-        address: bound.address,
-        port: bound.port,
-        callers: callers.size,
-        sessions: pickedUpSessions,
-        jobs: where.jobs,
-        state: where.state,
-        etc,
-        page: options.page,
-      });
-      say([`3d-print-shop is listening on ${bound.address}:${bound.port}`, `${callers.size} caller(s) may ask`]);
+        // A restart does not stop a machine. Prints that were already running are picked up first,
+        // then anything that could start now - nothing else will wake this up until a change arrives.
+        const pickedUp = await foreman.resumeWatching();
+        if (pickedUp.length > 0) log.info('prints picked up after a restart', { printers: pickedUp });
 
-      // A restart does not stop a machine. Prints that were already running are picked up first,
-      // then anything that could start now - nothing else will wake this up until a change arrives.
-      const pickedUp = await foreman.resumeWatching();
-      if (pickedUp.length > 0) log.info('prints picked up after a restart', { printers: pickedUp });
+        // A line to every machine, before any work is looked for - so a printer that cannot print says
+        // so before the shop picks one to print on, rather than after a plate has been sent to it.
+        await foreman.keepInTouch();
 
-      // A line to every machine, before any work is looked for - so a printer that cannot print says
-      // so before the shop picks one to print on, rather than after a plate has been sent to it.
-      await foreman.keepInTouch();
-
-      lookForWork();
-    });
+        lookForWork();
+      },
+    );
 
   program
     .command('init')
@@ -506,6 +518,14 @@ export function readMegabytes(value: string): number {
   }
 
   return Number(value) * 1024 * 1024;
+}
+
+export function readDays(value: string): number {
+  if (!/^\d+$/.test(value) || Number(value) === 0) {
+    throw new InvalidArgumentError(`cannot read "${value}" as a number of days`);
+  }
+
+  return Number(value) * 24 * 60 * 60 * 1000;
 }
 
 // The two there are, said back rather than let through as whatever was typed - a role nobody

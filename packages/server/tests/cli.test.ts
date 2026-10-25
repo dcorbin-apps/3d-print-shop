@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { InvalidArgumentError } from 'commander';
-import { createCLI, ourSentenceIn, readJobId, readMegabytes, readPort, readRole, run, unknownCommandIn } from '../src/cli';
+import { createCLI, ourSentenceIn, readDays, readJobId, readMegabytes, readPort, readRole, run, unknownCommandIn } from '../src/cli';
 
 // AIDEV-NOTE: commander answers a --help anywhere in argv before deciding whether the command in
 // front of it exists, so a typo that happens to carry one was answered with help and exit 0 - which
@@ -133,6 +133,20 @@ describe('readMegabytes', () => {
   // Zero would be a shop that refuses every job, which nobody means to ask for.
   it.each([['0'], ['-1'], ['1.5'], ['128MB'], ['']])('refuses %p', (text) => {
     expect(() => readMegabytes(text)).toThrow(InvalidArgumentError);
+  });
+});
+
+describe('readDays', () => {
+  it.each([
+    ['1', 24 * 60 * 60 * 1000],
+    ['30', 30 * 24 * 60 * 60 * 1000],
+  ])('reads %s as that many days', (text, expected) => {
+    expect(readDays(text)).toBe(expected);
+  });
+
+  // Zero would be a login that ends as it begins, which nobody means to ask for.
+  it.each([['0'], ['-1'], ['1.5'], ['30d'], ['']])('refuses %p', (text) => {
+    expect(() => readDays(text)).toThrow(InvalidArgumentError);
   });
 });
 

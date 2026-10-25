@@ -194,6 +194,15 @@ describe('what a shop must have before it serves anything', () => {
       await again.sessions.settled();
     });
 
+    it('lasts as long as it was told to', async () => {
+      const { log } = await laying();
+
+      const told = await sessionsKeptIn(layoutUnder(data), log, 1234);
+
+      expect(told.sessions.lastsMs).toBe(1234);
+      await told.sessions.settled();
+    });
+
     it('is not logged in again by a restart after logging out', async () => {
       const { log } = await laying();
       const first = await sessionsKeptIn(layoutUnder(data), log);

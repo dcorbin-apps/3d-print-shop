@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { LONGEST_MS, SESSIONS_FILE, Sessions } from '../src/sessions';
+import { SESSIONS_FILE, SESSION_DAYS_ENV, Sessions, defaultSessionMs } from '../src/sessions';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 describe('the sessions a browser is known by', () => {
   let state: string;
@@ -15,8 +17,11 @@ describe('the sessions a browser is known by', () => {
   // AIDEV-NOTE: every one of them, so that teardown can wait for the writes still in flight. A write
   // is deliberately not awaited by the code that starts it, and one landing while the directory is
   // being deleted is a test failing somewhere else entirely.
+  // Told how long rather than left to the default, which is the environment's to say.
+  const LASTS_MS = 10 * DAY_MS;
+
   const aSessions = (given: { now?: () => number; keptIn?: string } = { now: at }): Sessions => {
-    const sessions = new Sessions(given);
+    const sessions = new Sessions({ lastsMs: LASTS_MS, ...given });
     made.push(sessions);
 
     return sessions;
@@ -100,20 +105,11 @@ describe('the sessions a browser is known by', () => {
 
   // However much it is used: no amount of activity extends a session.
   describe('and how long one lasts', () => {
-    it('lasts a year', () => {
+    it('is not gone while it is no older than it was told to last', () => {
       const sessions = aSessions({ now: at });
       const secret = sessions.begin('dave');
 
-      clock += 364 * 24 * 60 * 60 * 1000;
-
-      expect(sessions.whose(secret)).toBe('dave');
-    });
-
-    it('is not gone while it is younger than the longest a session lasts', () => {
-      const sessions = aSessions({ now: at });
-      const secret = sessions.begin('dave');
-
-      clock += LONGEST_MS;
+      clock += LASTS_MS;
 
       expect(sessions.whose(secret)).toBe('dave');
     });
@@ -123,12 +119,29 @@ describe('the sessions a browser is known by', () => {
       const secret = sessions.begin('dave');
 
       for (let asked = 0; asked < 5; asked += 1) {
-        clock += LONGEST_MS / 5;
+        clock += LASTS_MS / 5;
         sessions.whose(secret);
       }
       clock += 1;
 
       expect(sessions.whose(secret)).toBeUndefined();
+    });
+
+    it('lasts as long as the environment says when it is told nothing', () => {
+      const wasSaid = process.env[SESSION_DAYS_ENV];
+      process.env[SESSION_DAYS_ENV] = '3';
+
+      try {
+        const sessions = new Sessions({ now: at });
+        const secret = sessions.begin('dave');
+
+        clock += 3 * DAY_MS + 1;
+
+        expect(sessions.whose(secret)).toBeUndefined();
+      } finally {
+        if (wasSaid === undefined) delete process.env[SESSION_DAYS_ENV];
+        else process.env[SESSION_DAYS_ENV] = wasSaid;
+      }
     });
   });
 
@@ -168,7 +181,7 @@ describe('the sessions a browser is known by', () => {
       const secret = before.begin('dave');
       await written(before);
 
-      clock += LONGEST_MS + 1;
+      clock += LASTS_MS + 1;
       const after = aSessions({ now: at, keptIn: kept() });
 
       expect(await after.pickUp()).toBe(0);
@@ -235,7 +248,7 @@ describe('the sessions a browser is known by', () => {
       const sessions = aSessions({ now: at, keptIn: kept() });
       sessions.begin('dave');
 
-      clock += LONGEST_MS + 1;
+      clock += LASTS_MS + 1;
       sessions.begin('ada');
 
       expect(await written(sessions)).toEqual([expect.objectContaining({ caller: 'ada' })]);
@@ -246,7 +259,7 @@ describe('the sessions a browser is known by', () => {
       const secret = sessions.begin('dave');
       await written(sessions);
 
-      clock += LONGEST_MS + 1;
+      clock += LASTS_MS + 1;
       sessions.whose(secret);
 
       expect(await written(sessions)).toEqual([]);
@@ -273,5 +286,30 @@ describe('the sessions a browser is known by', () => {
 
       await expect(readFile(kept(), 'utf-8')).rejects.toThrow();
     });
+  });
+});
+
+describe('how long a session lasts when nobody says', () => {
+  const wasSaid = process.env[SESSION_DAYS_ENV];
+
+  afterEach(() => {
+    if (wasSaid === undefined) delete process.env[SESSION_DAYS_ENV];
+    else process.env[SESSION_DAYS_ENV] = wasSaid;
+  });
+
+  it('is a year when nothing says otherwise', () => {
+    delete process.env[SESSION_DAYS_ENV];
+    expect(defaultSessionMs()).toBe(365 * DAY_MS);
+  });
+
+  it('is what the environment says, in days', () => {
+    process.env[SESSION_DAYS_ENV] = '30';
+    expect(defaultSessionMs()).toBe(30 * DAY_MS);
+  });
+
+  // A shop that logged everybody out at once, or read a typo as a lifetime, is worse than its default.
+  it.each([['0'], ['forever'], ['1.5'], ['']])('falls back to the default when told %p', (said) => {
+    process.env[SESSION_DAYS_ENV] = said;
+    expect(defaultSessionMs()).toBe(365 * DAY_MS);
   });
 });
